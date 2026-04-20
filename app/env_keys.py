@@ -92,14 +92,27 @@ def _refresh_module_captures(name: str, value: str) -> None:
             import mailer
             mailer.GMAIL_PASSWORD = value
         elif name == "ANTHROPIC_API_KEY":
-            # Re-create the shared Anthropic clients so the new key is used,
-            # then re-install the usage-tracking wrapper on each.
-            import anthropic, analyzer, competitor_manager
+            # Re-create every cached Anthropic client so the new key takes
+            # effect without a restart. Three flavors to handle:
+            #  1) Module-level instances (engine modules) — replace in place
+            #     and re-wrap for usage tracking.
+            #  2) Module-level instance in app.competitor_autofill / deepen —
+            #     same shape, but these aren't wrapped for usage tracking
+            #     today; just recreating them fixes the stale-key bug.
+            #  3) Lazy-init caches (app.signals.summarize / llm_classify) —
+            #     null the cache so the next call re-reads os.environ.
+            import anthropic, analyzer, competitor_manager, deepen
+            from . import competitor_autofill as _autofill
+            from .signals import summarize as _sig_sum, llm_classify as _sig_llm
             from .usage import _wrap_anthropic_client
             analyzer.client = anthropic.Anthropic()
             competitor_manager.client = anthropic.Anthropic()
             _wrap_anthropic_client(analyzer.client)
             _wrap_anthropic_client(competitor_manager.client)
+            _autofill._client = anthropic.Anthropic()
+            deepen._client = anthropic.Anthropic()
+            _sig_sum._client = None
+            _sig_llm._client = None
         # SERPER_API_KEY is read at call time by SerperProvider — nothing cached.
     except Exception as e:
         print(f"[env_keys] refresh failed for {name}: {e}")
