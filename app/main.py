@@ -43,6 +43,25 @@ def _reap_orphan_runs() -> int:
         db.close()
 
 
+def _reset_db_if_requested():
+    """Escape hatch for a wedged DB. Set RESET_DB_ONCE=1 in the Railway
+    dashboard, redeploy, then unset it. Deletes app.db plus its WAL/SHM
+    sidecars so alembic can rebuild the schema from scratch. Guarded by
+    an env var so it never fires accidentally."""
+    if os.environ.get("RESET_DB_ONCE") != "1":
+        return
+    data_dir = os.environ.get("DATA_DIR", "data")
+    db_path = Path(data_dir) / "app.db"
+    removed = []
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        p = Path(str(db_path) + suffix)
+        if p.exists():
+            p.unlink()
+            removed.append(p.name)
+    print(f"  [startup] RESET_DB_ONCE=1 → removed {removed or 'nothing (already clean)'}", flush=True)
+    print("  [startup] REMEMBER to unset RESET_DB_ONCE in Railway after this deploy succeeds", flush=True)
+
+
 def _migrate_schema():
     """Bring the DB up to head at startup.
 
@@ -94,6 +113,7 @@ def _seed_volume_config():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _seed_volume_config()
+    _reset_db_if_requested()
     _migrate_schema()
     reaped = _reap_orphan_runs()
     if reaped:
