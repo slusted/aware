@@ -19,7 +19,7 @@ except ImportError:
 
 from datetime import datetime
 
-from .db import SessionLocal, engine
+from .db import Base, SessionLocal, engine
 from . import scheduler, skills as skills_module, ui, usage, search_providers
 from .models import Run, RunEvent
 from .routes import status, competitors, runs, findings, reports, usage as usage_routes, skills as skills_routes, context as context_routes, providers as providers_routes, env_keys as env_keys_routes, filters as filters_routes, auth as auth_routes, users as users_routes
@@ -63,16 +63,19 @@ def _reset_db_if_requested():
 
 
 def _migrate_schema():
-    """Bring the DB up to head at startup.
+    """Bootstrap schema at startup.
 
-    Earlier deploys let `Base.metadata.create_all()` own the schema, which
-    only creates missing tables — it never adds new columns. When the auth
-    columns landed in `l8f2a3b4c6d7`, that left existing Railway installs
-    stuck on a stale `users` table with no `password_hash`, and the Procfile
-    `release` step on Railway turned out not to fire. Running alembic here
-    closes both gaps: fresh DBs get the full migration chain; legacy DBs
-    get stamped at whatever revision their observable schema matches, then
-    upgraded to head.
+    History: running the alembic chain against the Railway SQLite volume
+    was crash-looping silently inside every batch_alter_table migration,
+    and digging layer by layer wasn't converging. The fundamental fix is
+    to stop running the chain on fresh DBs at all — Base.metadata.create_all()
+    builds the entire current schema from models.py in one step, no batch
+    mode, nothing to fail. We still stamp alembic at head so any future
+    migration authored against a real prod DB has the right baseline.
+
+    Existing DBs with an alembic_version row follow the normal upgrade
+    path. The RESET_DB_ONCE escape hatch (above) is how we shift a
+    wedged volume DB onto the create_all track.
     """
     from alembic import command
     from alembic.config import Config
@@ -82,17 +85,19 @@ def _migrate_schema():
     insp = inspect(engine)
     tables = set(insp.get_table_names())
 
-    if tables and "alembic_version" not in tables:
-        # Legacy DB produced by create_all(); infer the stamp point from the
-        # schema we can see. Only two branch points matter in practice: pre-
-        # vs post-auth, since the auth migration is the first one that adds
-        # columns rather than creating new tables.
-        user_cols = {c["name"] for c in insp.get_columns("users")} if "users" in tables else set()
-        stamp_at = "l8f2a3b4c6d7" if "password_hash" in user_cols else "k7e1f2a3b4c5"
-        print(f"  [startup] stamping legacy DB at {stamp_at}")
-        command.stamp(cfg, stamp_at)
+    if "alembic_version" in tables:
+        print("  [startup] existing alembic_version → running upgrade head", flush=True)
+        command.upgrade(cfg, "head")
+        return
 
-    command.upgrade(cfg, "head")
+    # No alembic_version: fresh DB (after RESET_DB_ONCE) or legacy
+    # create_all-seeded DB. In either case, create_all is safe — it only
+    # creates missing tables, never alters existing ones, and then we
+    # stamp head so future migrations line up.
+    print(f"  [startup] bootstrapping schema (tables seen: {len(tables)})", flush=True)
+    Base.metadata.create_all(bind=engine)
+    command.stamp(cfg, "head")
+    print("  [startup] create_all + stamp head complete", flush=True)
 
 
 def _seed_volume_config():
