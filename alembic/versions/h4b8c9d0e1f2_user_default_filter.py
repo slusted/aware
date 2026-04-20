@@ -19,15 +19,12 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("users") as batch:
-        batch.add_column(sa.Column("default_filter_id", sa.Integer(), nullable=True))
-        batch.create_foreign_key(
-            "fk_users_default_filter_id",
-            "saved_filters",
-            ["default_filter_id"],
-            ["id"],
-            ondelete="SET NULL",
-        )
+    # Plain ADD COLUMN without the FK constraint. SQLite can't add a FK to an
+    # existing table via ALTER — it would need batch-mode table rewrite, which
+    # was crash-looping Railway. The relationship is defined in the ORM model
+    # (User.default_filter_id → SavedFilter) and enforced there; DB-level
+    # CASCADE isn't load-bearing because foreign_keys pragma isn't on.
+    op.execute("ALTER TABLE users ADD COLUMN default_filter_id INTEGER")
 
 
 def downgrade() -> None:

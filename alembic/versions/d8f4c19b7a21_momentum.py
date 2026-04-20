@@ -20,10 +20,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("competitors") as batch:
-        batch.add_column(sa.Column("app_store_id", sa.String(length=32), nullable=True))
-        batch.add_column(sa.Column("play_package", sa.String(length=128), nullable=True))
-        batch.add_column(sa.Column("trends_keyword", sa.String(length=128), nullable=True))
+    op.execute("ALTER TABLE competitors ADD COLUMN app_store_id VARCHAR(32)")
+    op.execute("ALTER TABLE competitors ADD COLUMN play_package VARCHAR(128)")
+    op.execute("ALTER TABLE competitors ADD COLUMN trends_keyword VARCHAR(128)")
 
     op.create_table(
         "competitor_metrics",

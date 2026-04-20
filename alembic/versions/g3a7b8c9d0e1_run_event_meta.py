@@ -19,8 +19,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("run_events") as batch:
-        batch.add_column(sa.Column("meta", sa.JSON(), nullable=False, server_default="{}"))
+    op.execute("ALTER TABLE run_events ADD COLUMN meta JSON NOT NULL DEFAULT '{}'")
 
 
 def downgrade() -> None:

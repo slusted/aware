@@ -19,10 +19,12 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("findings") as batch:
-        batch.add_column(sa.Column("search_provider", sa.String(length=32), nullable=True))
-        batch.add_column(sa.Column("score", sa.Float(), nullable=True))
-        batch.add_column(sa.Column("published_at", sa.DateTime(), nullable=True))
+    # Raw ALTER TABLE bypasses alembic's batch-mode DDL rewriter, which was
+    # crash-looping the container on Railway. SQLite supports ADD COLUMN
+    # natively.
+    op.execute("ALTER TABLE findings ADD COLUMN search_provider VARCHAR(32)")
+    op.execute("ALTER TABLE findings ADD COLUMN score FLOAT")
+    op.execute("ALTER TABLE findings ADD COLUMN published_at DATETIME")
     op.create_index(
         "ix_findings_search_provider",
         "findings",

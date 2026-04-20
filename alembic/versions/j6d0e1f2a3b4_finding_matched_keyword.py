@@ -22,9 +22,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("findings") as batch:
-        batch.add_column(sa.Column("matched_keyword", sa.String(length=255), nullable=True))
-        batch.create_index("ix_findings_matched_keyword", ["matched_keyword"])
+    op.execute("ALTER TABLE findings ADD COLUMN matched_keyword VARCHAR(255)")
+    op.create_index("ix_findings_matched_keyword", "findings", ["matched_keyword"])
 
 
 def downgrade() -> None:

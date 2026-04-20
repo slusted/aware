@@ -20,10 +20,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("findings") as batch:
-        batch.add_column(sa.Column("signal_type", sa.String(length=32), nullable=True))
-        batch.add_column(sa.Column("payload", sa.JSON(), nullable=False, server_default="{}"))
-        batch.add_column(sa.Column("materiality", sa.Float(), nullable=True))
+    op.execute("ALTER TABLE findings ADD COLUMN signal_type VARCHAR(32)")
+    op.execute("ALTER TABLE findings ADD COLUMN payload JSON NOT NULL DEFAULT '{}'")
+    op.execute("ALTER TABLE findings ADD COLUMN materiality FLOAT")
 
     op.create_index("ix_findings_signal_type", "findings", ["signal_type"])
     op.create_index("ix_findings_materiality", "findings", ["materiality"])

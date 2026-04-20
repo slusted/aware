@@ -20,9 +20,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("competitors") as batch:
-        batch.add_column(sa.Column("min_relevance_score", sa.Float(), nullable=True))
-        batch.add_column(sa.Column("social_score_multiplier", sa.Float(), nullable=True))
+    op.execute("ALTER TABLE competitors ADD COLUMN min_relevance_score FLOAT")
+    op.execute("ALTER TABLE competitors ADD COLUMN social_score_multiplier FLOAT")
 
 
 def downgrade() -> None:

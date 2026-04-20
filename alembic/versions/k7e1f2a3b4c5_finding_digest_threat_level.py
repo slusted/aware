@@ -23,9 +23,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("findings") as batch:
-        batch.add_column(sa.Column("digest_threat_level", sa.String(length=16), nullable=True))
-        batch.create_index("ix_findings_digest_threat_level", ["digest_threat_level"])
+    op.execute("ALTER TABLE findings ADD COLUMN digest_threat_level VARCHAR(16)")
+    op.create_index("ix_findings_digest_threat_level", "findings", ["digest_threat_level"])
 
 
 def downgrade() -> None:

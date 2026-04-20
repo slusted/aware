@@ -22,8 +22,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("findings") as batch:
-        batch.add_column(sa.Column("summary", sa.Text(), nullable=True))
+    op.execute("ALTER TABLE findings ADD COLUMN summary TEXT")
 
 
 def downgrade() -> None:
