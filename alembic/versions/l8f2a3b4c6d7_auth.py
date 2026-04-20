@@ -20,10 +20,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("users") as batch:
-        batch.add_column(sa.Column("password_hash", sa.String(length=255), nullable=True))
-        batch.add_column(sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()))
-        batch.add_column(sa.Column("last_login_at", sa.DateTime(), nullable=True))
+    # Plain ADD COLUMN, not batch_alter_table: SQLite supports ADD COLUMN
+    # natively, and batch mode's table-rewrite path fails in production when
+    # there are live FKs (auth_sessions.user_id, documents.uploaded_by,
+    # signal_views.user_id, saved_filters.owner_id) pointing at users — the
+    # rewrite rolls back silently and the container crash-loops.
+    op.add_column("users", sa.Column("password_hash", sa.String(length=255), nullable=True))
+    op.add_column("users", sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()))
+    op.add_column("users", sa.Column("last_login_at", sa.DateTime(), nullable=True))
 
     op.create_table(
         "auth_sessions",
@@ -49,6 +53,10 @@ def downgrade() -> None:
     op.drop_index("ix_auth_sessions_expires_at", table_name="auth_sessions")
     op.drop_index("ix_auth_sessions_user_id", table_name="auth_sessions")
     op.drop_table("auth_sessions")
+    # DROP COLUMN isn't natively supported on older SQLite; batch_alter is
+    # still the right tool for a downgrade. Kept symmetric with upgrade only
+    # in intent — in practice this is a one-way migration for existing
+    # deployments.
     with op.batch_alter_table("users") as batch:
         batch.drop_column("last_login_at")
         batch.drop_column("is_active")
