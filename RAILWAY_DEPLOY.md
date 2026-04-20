@@ -10,6 +10,7 @@ Single-process FastAPI + APScheduler + SQLite. A Railway persistent volume mount
 - `.python-version` — pins Python 3.12 for the Nixpacks builder.
 - `app/db.py` — respects `DATA_DIR` for the SQLite path.
 - `app/main.py` — respects `ENV_PATH` for runtime-set API keys, and seeds `config.json` from the repo onto the volume on first boot.
+- `app/auth.py` + `/login` / `/setup` — cookie-based sessions with bcrypt passwords. The session cookie auto-enables `Secure` when served over HTTPS, which Railway provides out of the box.
 
 No further code changes are needed.
 
@@ -85,7 +86,7 @@ Set only the keys you actually use — missing optional providers fail quiet.
 
 ## Verify it's working
 
-1. **Open the URL** — should land on the dashboard.
+1. **Open the URL** — on first deploy you'll land on `/setup`, which is shown only while no admin account exists. Enter your email, name, and a password (≥ 8 chars). On submit you're signed in and redirected to the dashboard; `/setup` is then closed and all future visitors go through `/login`. Additional accounts are created from **Admin → Users** once you're signed in.
 2. **Check logs** (Deployments → View Logs). Expect to see:
    - `seeded /data/config.json from repo config.json` (first deploy only)
    - `Scheduler started`

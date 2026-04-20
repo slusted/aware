@@ -1,6 +1,9 @@
 from typing import Generator
-from fastapi import Depends, HTTPException
+
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+
+from .auth import AuthenticationRequired, SESSION_COOKIE, lookup_session
 from .db import SessionLocal
 from .models import User
 
@@ -13,16 +16,23 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-def get_current_user(db: Session = Depends(get_db)) -> User:
-    """Phase 1 stub: always returns the single admin user.
-    When real auth lands, swap this dependency — endpoint signatures don't change.
+def get_current_user(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> User:
+    """Resolve the logged-in user from the session cookie.
+
+    Raises AuthenticationRequired when the request has no valid session —
+    main.py's handler turns that into a login redirect for HTML requests, an
+    HX-Redirect for HTMX partials, and a 401 JSON body for API calls. Route
+    signatures elsewhere in the app don't change; this is still just
+    `user = Depends(get_current_user)`.
     """
-    user = db.query(User).filter(User.email == "admin@local").first()
-    if not user:
-        user = User(email="admin@local", name="Admin", role="admin")
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+    token = request.cookies.get(SESSION_COOKIE, "")
+    hit = lookup_session(db, token)
+    if not hit:
+        raise AuthenticationRequired()
+    _, user = hit
     return user
 
 
@@ -31,4 +41,5 @@ def require_role(*allowed: str):
         if user.role not in allowed:
             raise HTTPException(403, f"requires role in {allowed}")
         return user
+
     return _check

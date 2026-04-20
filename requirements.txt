@@ -13,6 +13,9 @@ alembic>=1.13.0
 apscheduler>=3.10.0
 pydantic>=2.7.0
 
+# Auth: password hashing
+bcrypt>=4.0.0
+
 # Momentum tracking (daily competitor signals)
 pytrends>=4.9.0
 google-play-scraper>=1.2.0

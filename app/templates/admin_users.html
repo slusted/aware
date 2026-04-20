@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Users · Admin{% endblock %}
+
+{% block content %}
+
+{% if message %}<div class="auth-error" style="background:rgba(76,183,130,0.1); border-color:rgba(76,183,130,0.3); color:var(--ok)">{{ message }}</div>{% endif %}
+{% if error %}<div class="auth-error">{{ error }}</div>{% endif %}
+
+<div class="panel">
+  <div class="panel-header"><h2>Invite a new user</h2></div>
+  <form method="post" action="/admin/users" style="display:grid; grid-template-columns:repeat(4, 1fr) auto; gap:10px; padding:12px">
+    <label>Email
+      <input type="email" name="email" required>
+    </label>
+    <label>Name
+      <input type="text" name="name" required>
+    </label>
+    <label>Role
+      <select name="role">
+        {% for r in roles %}<option value="{{ r }}" {% if r == 'viewer' %}selected{% endif %}>{{ r }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Temp password
+      <input type="text" name="password" required minlength="8" placeholder="≥ 8 chars">
+    </label>
+    <div style="display:flex; align-items:end"><button type="submit" class="btn primary">Create</button></div>
+  </form>
+</div>
+
+<div class="panel">
+  <div class="panel-header"><h2>Users</h2></div>
+  <table>
+    <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>Last login</th><th style="text-align:right">Actions</th></tr></thead>
+    <tbody>
+    {% for u in users %}
+      <tr {% if not u.is_active %}style="opacity:0.55"{% endif %}>
+        <td>{{ u.email }}{% if u.id == user.id %} <span class="muted">(you)</span>{% endif %}</td>
+        <td>{{ u.name }}</td>
+        <td><span class="pill">{{ u.role }}</span></td>
+        <td>
+          {% if not u.password_hash %}<span class="muted">stub</span>
+          {% elif u.is_active %}<span class="pill ok">active</span>
+          {% else %}<span class="pill error">disabled</span>{% endif %}
+        </td>
+        <td class="muted">{% if u.last_login_at %}{{ u.last_login_at.strftime('%Y-%m-%d %H:%M') }}{% else %}—{% endif %}</td>
+        <td style="text-align:right">
+          {% if u.id != user.id and u.password_hash %}
+            {% if u.is_active %}
+              <form method="post" action="/admin/users/{{ u.id }}/deactivate" style="display:inline">
+                <button class="btn-mini" type="submit">Deactivate</button>
+              </form>
+            {% else %}
+              <form method="post" action="/admin/users/{{ u.id }}/activate" style="display:inline">
+                <button class="btn-mini" type="submit">Activate</button>
+              </form>
+            {% endif %}
+          {% endif %}
+          {% if u.password_hash %}
+            <form method="post" action="/admin/users/{{ u.id }}/reset_password" style="display:inline; margin-left:6px">
+              <input type="password" name="password" placeholder="new password" minlength="8" required style="width:140px; padding:2px 6px">
+              <button class="btn-mini" type="submit">Reset</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No users yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

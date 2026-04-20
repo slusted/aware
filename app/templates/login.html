@@ -1,0 +1,22 @@
+{% extends "auth_base.html" %}
+{% block title %}Sign in · Competitor Watch{% endblock %}
+{% block content %}
+<h1 class="auth-title">Sign in</h1>
+
+{% if error %}
+<div class="auth-error">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/login" class="auth-form">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label>
+    <span>Email</span>
+    <input type="email" name="email" value="{{ email or '' }}" required autofocus autocomplete="username">
+  </label>
+  <label>
+    <span>Password</span>
+    <input type="password" name="password" required autocomplete="current-password">
+  </label>
+  <button type="submit" class="btn primary">Sign in</button>
+</form>
+{% endblock %}

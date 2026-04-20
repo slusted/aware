@@ -759,3 +759,102 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
 }
 .btn-mini:hover { background: var(--bg-raised); color: var(--text); }
 .btn-mini.active { color: var(--warn); border-color: rgba(224,165,0,0.3); }
+
+/* ---------- Auth pages (login / setup) ---------- */
+
+.auth-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+}
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 28px 28px 32px;
+}
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 20px;
+}
+.auth-brand .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.auth-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+.auth-sub {
+  color: var(--text-muted);
+  margin: 0 0 18px;
+  font-size: 13px;
+}
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.auth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.auth-form input {
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: var(--r);
+  font: inherit;
+  outline: none;
+}
+.auth-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.auth-form .btn.primary {
+  margin-top: 6px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: white;
+  padding: 9px 12px;
+  border-radius: var(--r);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.auth-form .btn.primary:hover { background: var(--accent-hover); }
+.auth-error {
+  background: rgba(239,68,68,0.1);
+  border: 1px solid rgba(239,68,68,0.3);
+  color: var(--err);
+  padding: 8px 10px;
+  border-radius: var(--r);
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.footer .logout-form { margin-top: 6px; }
+.footer .logout-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.footer .logout-btn:hover { color: var(--text); }
