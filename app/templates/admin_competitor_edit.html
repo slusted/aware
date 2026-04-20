@@ -185,10 +185,27 @@
       });
 
       src.addEventListener('error', function (e) {
-        // EventSource errors do not carry the HTTP status — on a non-200
-        // response the connection just closes. Probe the endpoint with fetch
-        // so we can show a real reason (404 = server stale, 403 = auth, etc).
+        // Two sources fire this listener:
+        //  1. Server sent `event: error` with a data payload — the agent ran
+        //     but failed for a known reason (bad API key, timeout, etc.).
+        //     `e.data` is set; parse it and show the message directly.
+        //  2. Transport failure — non-200 response or the stream died.
+        //     `e.data` is empty; probe the URL with fetch to surface a real
+        //     status/body. We MUST NOT re-fetch in case 1, because that
+        //     starts a second agent run and streams its body back as "the
+        //     error" — which is what used to show "error: 200 event: progress…".
         src.close();
+        autofillBtn.disabled = false;
+        if (e && e.data) {
+          var msg = 'agent error';
+          try {
+            var d = JSON.parse(e.data);
+            msg = d.message || msg;
+          } catch(_) { msg = String(e.data).slice(0, 300); }
+          autofillStatus.textContent = 'error: ' + msg;
+          logAppend('error: ' + msg, 'error');
+          return;
+        }
         fetch(url).then(function(r){
           return r.text().then(function(t){ return {status: r.status, body: t}; });
         }).then(function(info){
@@ -198,8 +215,6 @@
         }).catch(function(err){
           autofillStatus.textContent = 'error: ' + err;
           logAppend('error: ' + err, 'error');
-        }).finally(function(){
-          autofillBtn.disabled = false;
         });
       });
 
