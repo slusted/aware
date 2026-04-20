@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ name }}{% endblock %}
+{% block page_actions %}
+  <a href="/admin/skills" class="btn btn-ghost">Back</a>
+  <button id="save-btn" type="button">Save as new version</button>
+{% endblock %}
+
+{% block content %}
+
+<div style="margin-bottom:14px">
+  <h2 style="margin:0 0 4px; font-size:16px">
+    <span class="mono">{{ name }}</span>
+    {% if active %}<span class="chip" style="margin-left:6px">v{{ active.version }} active</span>{% endif %}
+  </h2>
+  <p class="muted" style="margin:0; max-width:720px">{{ description }}</p>
+</div>
+
+<div class="panel">
+  <div class="panel-header">
+    <h2>Editor</h2>
+    <span class="muted" style="font-size:11px">Markdown · used as the LLM system prompt</span>
+  </div>
+  <div class="panel-body">
+    <textarea id="body" rows="20" class="mono" style="font-size:12.5px; line-height:1.55">{{ body_md }}</textarea>
+    <p class="muted" style="font-size:11px; margin-top:8px; margin-bottom:0">
+      Saving creates a new version and makes it active immediately.
+      The next LLM call that uses <code>{{ name }}</code> picks up the new text —
+      no restart needed. Prior version is kept.
+    </p>
+  </div>
+</div>
+
+{% if history and history|length > 1 %}
+<div class="panel">
+  <div class="panel-header"><h2>Version history</h2></div>
+  <table>
+    <thead><tr><th>Version</th><th>Saved</th><th>Preview</th><th></th></tr></thead>
+    <tbody>
+    {% for h in history %}
+      <tr>
+        <td>v{{ h.version }}{% if h.active %} <span class="chip">active</span>{% endif %}</td>
+        <td class="muted">{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="muted" style="font-size:12px">{{ (h.body_md or '')[:140] }}…</td>
+        <td style="text-align:right">
+          {% if not h.active %}
+            <a href="#" data-ver="{{ h.version }}" class="restore-link">restore →</a>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<script>
+(function () {
+  var btn = document.getElementById('save-btn');
+  var ta  = document.getElementById('body');
+  var name = '{{ name }}';
+
+  btn.addEventListener('click', async function () {
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      var resp = await fetch('/api/skills/' + name, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({body_md: ta.value}),
+      });
+      if (resp.ok) {
+        location.reload();
+      } else {
+        alert('Failed: ' + resp.status + '\n' + await resp.text());
+        btn.disabled = false; btn.textContent = 'Save as new version';
+      }
+    } catch (e) {
+      alert(e);
+      btn.disabled = false; btn.textContent = 'Save as new version';
+    }
+  });
+
+  document.querySelectorAll('.restore-link').forEach(function (a) {
+    a.addEventListener('click', async function (e) {
+      e.preventDefault();
+      var ver = a.getAttribute('data-ver');
+      if (!confirm('Restore version ' + ver + ' as active?')) return;
+      var resp = await fetch('/api/skills/' + name + '/activate/' + ver, {method: 'POST'});
+      if (resp.ok) location.reload();
+      else alert('Failed: ' + resp.status);
+    });
+  });
+})();
+</script>
+{% endblock %}

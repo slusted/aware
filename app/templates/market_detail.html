@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ report.title }}{% endblock %}
+{% block page_actions %}
+  <button id="regen-digest-btn" type="button" class="btn btn-ghost"
+          title="LLM only — re-synthesize the market digest over existing findings + reviews">Regenerate digest</button>
+  {% if report.run_id %}<a href="/runs/{{ report.run_id }}" class="btn btn-ghost">View run</a>{% endif %}
+{% endblock %}
+
+{% block content %}
+<p class="muted" style="margin-top:0">{{ report.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+<div class="panel">
+  <div class="panel-body">
+    <div id="report-body" class="markdown"></div>
+    <script id="report-src" type="text/plain">{{ report.body_md }}</script>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  (function() {
+    var src = document.getElementById('report-src');
+    var out = document.getElementById('report-body');
+    if (src && out && window.marked) out.innerHTML = window.marked.parse(src.textContent);
+  })();
+</script>
+
+<script>
+  (function () {
+    var btn = document.getElementById('regen-digest-btn');
+    if (!btn) return;
+    var currentId = {{ report.id }};
+
+    btn.addEventListener('click', async function () {
+      btn.disabled = true;
+      var label = btn.textContent;
+      btn.textContent = 'Queued…';
+      try {
+        var r = await fetch('/api/runs/market-digest', {method: 'POST'});
+        if (!r.ok) {
+          alert('Failed: ' + r.status + '\n' + await r.text());
+          btn.disabled = false; btn.textContent = label;
+          return;
+        }
+        btn.textContent = 'Generating…';
+        var start = Date.now();
+        var iv = setInterval(async function () {
+          try {
+            var rr = await fetch('/api/reports?limit=1');
+            if (rr.ok) {
+              var rows = await rr.json();
+              if (rows.length && rows[0].id > currentId) {
+                clearInterval(iv);
+                window.location.href = '/market/' + rows[0].id;
+                return;
+              }
+            }
+          } catch (e) { /* keep polling */ }
+          if (Date.now() - start > 300000) {
+            clearInterval(iv);
+            alert('Timed out after 5 minutes. Check /runs for status.');
+            btn.disabled = false; btn.textContent = label;
+          }
+        }, 4000);
+      } catch (e) {
+        btn.disabled = false; btn.textContent = label;
+      }
+    });
+  })();
+</script>
+{% endblock %}

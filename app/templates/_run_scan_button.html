@@ -1,0 +1,76 @@
+{% if is_running %}
+  <button type="button" disabled title="A scan is already running — finish or view it first">
+    Scan running…
+  </button>
+{% else %}
+  <div class="scan-launcher" style="display:inline-flex; align-items:stretch">
+    <button type="button" id="scan-go"
+            style="border-top-right-radius:0; border-bottom-right-radius:0">
+      Run scan
+    </button>
+    <button type="button" id="scan-chev" aria-label="Scan options"
+            style="border-top-left-radius:0; border-bottom-left-radius:0;
+                   padding:0 9px; border-left:1px solid rgba(0,0,0,0.2)">
+      <svg viewBox="0 0 10 6" width="9" height="6" fill="currentColor"><path d="M0 0l5 6 5-6z"/></svg>
+    </button>
+    <div id="scan-menu" role="menu"
+         style="display:none; position:absolute; top:52px; right:28px; z-index:20;
+                background:var(--bg-raised); border:1px solid var(--border-strong);
+                border-radius:var(--r); min-width:220px; padding:4px;
+                box-shadow:0 8px 24px rgba(0,0,0,0.4)">
+      <div class="label" style="padding:8px 10px 4px; color:var(--text-dim); font-size:11px; text-transform:uppercase; letter-spacing:0.04em">Freshness</div>
+      {% for d, label in [
+        (None,  'Auto — since last scan'),
+        (1,     'Last 24 hours'),
+        (3,     'Last 3 days'),
+        (7,     'Last 7 days'),
+        (14,    'Last 14 days'),
+        (30,    'Last 30 days'),
+      ] %}
+        <a href="#" data-days="{{ d if d is not none else '' }}"
+           class="scan-opt"
+           style="display:block; padding:7px 10px; border-radius:var(--r-sm);
+                  color:var(--text); font-size:13px; text-decoration:none">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var go   = document.getElementById('scan-go');
+    var chev = document.getElementById('scan-chev');
+    var menu = document.getElementById('scan-menu');
+
+    function trigger(days) {
+      var url = '/api/runs/scan' + (days ? '?days=' + days : '');
+      go.disabled = chev.disabled = true;
+      go.textContent = 'Queuing…';
+      fetch(url, {method: 'POST'})
+        .then(r => r.ok ? null : r.text().then(t => Promise.reject(t)))
+        .then(() => setTimeout(() => location.reload(), 500))
+        .catch(err => {
+          alert('Failed: ' + err);
+          go.disabled = chev.disabled = false;
+          go.textContent = 'Run scan';
+        });
+    }
+
+    go.addEventListener('click', () => trigger(null));
+    chev.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    });
+    menu.querySelectorAll('.scan-opt').forEach(a => {
+      a.addEventListener('mouseenter', () => a.style.background = 'var(--bg-subtle)');
+      a.addEventListener('mouseleave', () => a.style.background = '');
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        menu.style.display = 'none';
+        var d = a.getAttribute('data-days');
+        trigger(d || null);
+      });
+    });
+    document.addEventListener('click', () => { menu.style.display = 'none'; });
+  })();
+  </script>
+{% endif %}

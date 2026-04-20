@@ -1,0 +1,27 @@
+<div class="stat-grid">
+  <div class="stat">
+    <div class="label">Status</div>
+    <div class="value" style="display:flex; align-items:center; gap:8px">
+      {% if is_running %}
+        <span class="live-dot"></span><span>Running</span>
+      {% else %}
+        <span>Idle</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="stat">
+    <div class="label">Last run</div>
+    <div class="value" style="font-size:14px; font-weight:500">
+      {% if last_run %}
+        <a href="/runs/{{ last_run.id }}">{{ last_run.started_at.strftime('%b %d, %H:%M') }}</a>
+        <span class="pill {{ last_run.status }}" style="margin-left:6px">{{ last_run.status }}</span>
+      {% else %}<span class="muted">never</span>{% endif %}
+    </div>
+  </div>
+  <div class="stat">
+    <div class="label">Next scheduled</div>
+    <div class="value" style="font-size:14px; font-weight:500">
+      {% if next_run_at %}{{ next_run_at.strftime('%b %d, %H:%M') }}{% else %}<span class="muted">—</span>{% endif %}
+    </div>
+  </div>
+</div>

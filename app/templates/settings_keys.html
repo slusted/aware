@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}API keys{% endblock %}
+
+{% block content %}
+{% include "_settings_nav.html" %}
+
+<p class="muted" style="margin-top:0; max-width:720px">
+  Keys are stored in <code>.env</code> in the project root. Updates here apply
+  immediately — no restart needed for Tavily, Serper, Claude, or Gmail keys.
+  Values are never shown in full after saving; only a masked preview.
+</p>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Variable</th><th>Purpose</th><th>Status</th><th>Value</th><th></th></tr></thead>
+    <tbody>
+    {% for k in keys %}
+      <tr class="key-row" data-name="{{ k.name }}">
+        <td class="mono" style="font-size:12px">
+          {{ k.name }}{% if k.required %} <span class="chip" style="color:var(--warn)">required</span>{% endif %}
+        </td>
+        <td class="muted" style="max-width:360px">{{ k.description }}</td>
+        <td>
+          {% if k.set %}<span class="pill ok">configured</span>
+          {% elif k.required %}<span class="pill error">missing</span>
+          {% else %}<span class="pill">not set</span>{% endif %}
+        </td>
+        <td class="mono muted" style="font-size:12px">{{ k.hint or '—' }}</td>
+        <td style="text-align:right; white-space:nowrap">
+          <button type="button" class="btn-ghost edit-btn" style="font-size:12px">
+            {{ 'Update' if k.set else 'Set' }}
+          </button>
+          {% if k.set %}
+          <button type="button" class="btn-ghost clear-btn" style="font-size:12px; color:var(--err); margin-left:4px">
+            Clear
+          </button>
+          {% endif %}
+        </td>
+      </tr>
+      <tr class="edit-row" id="edit-{{ k.name }}" style="display:none">
+        <td colspan="5" style="background:var(--bg); padding:14px 16px">
+          <div style="display:flex; gap:8px; align-items:center; max-width:720px">
+            <input type="password" class="key-input" placeholder="Paste new value"
+                   autocomplete="off" style="flex:1">
+            <button type="button" class="save-btn">Save</button>
+            <button type="button" class="btn-ghost cancel-btn">Cancel</button>
+          </div>
+          <div class="muted" style="font-size:11px; margin-top:6px">
+            Saved to <code>.env</code> and applied in-process immediately.
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="muted" style="font-size:12px">
+  If you prefer editing <code>.env</code> directly, that still works — but you'll need to restart the server for the change to apply.
+</p>
+
+<script>
+document.querySelectorAll('.key-row').forEach(function (row) {
+  var name = row.dataset.name;
+  var editRow = document.getElementById('edit-' + name);
+  var input   = editRow.querySelector('.key-input');
+
+  row.querySelector('.edit-btn').addEventListener('click', function () {
+    editRow.style.display = editRow.style.display === 'none' ? 'table-row' : 'none';
+    if (editRow.style.display !== 'none') input.focus();
+  });
+  editRow.querySelector('.cancel-btn').addEventListener('click', function () {
+    editRow.style.display = 'none'; input.value = '';
+  });
+  editRow.querySelector('.save-btn').addEventListener('click', async function () {
+    var v = input.value.trim();
+    if (!v) { alert('Value is empty'); return; }
+    this.disabled = true; this.textContent = 'Saving…';
+    var resp = await fetch('/api/settings/keys/' + name, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: v}),
+    });
+    if (resp.ok) location.reload();
+    else { alert('Failed: ' + resp.status + '\n' + await resp.text()); this.disabled = false; this.textContent = 'Save'; }
+  });
+
+  var clearBtn = row.querySelector('.clear-btn');
+  if (clearBtn) clearBtn.addEventListener('click', async function () {
+    if (!confirm('Clear ' + name + '?')) return;
+    var resp = await fetch('/api/settings/keys/' + name, {method: 'DELETE'});
+    if (resp.ok || resp.status === 204) location.reload();
+    else alert('Failed: ' + resp.status);
+  });
+});
+</script>
+{% endblock %}

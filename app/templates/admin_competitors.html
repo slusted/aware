@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Manage watchlist{% endblock %}
+{% block page_actions %}
+  <a href="/admin/competitors/new"><button>+ New competitor</button></a>
+{% endblock %}
+
+{% block content %}
+<p class="muted" style="margin:0 0 20px; max-width:640px">
+  Changes here update <code>config.json</code> and take effect on the next scan.
+  Deleting a competitor is soft — their history stays intact; the engine simply stops scanning them.
+</p>
+
+<div class="panel">
+  <div class="panel-header"><h2>Active · {{ active|length }}</h2></div>
+  <table>
+    <thead><tr><th>Name</th><th>Category</th><th>Source</th><th>Keywords</th><th>Last activity</th><th></th></tr></thead>
+    <tbody>
+    {% for c in active %}
+      <tr>
+        <td><a href="/competitors/{{ c.id }}">{{ c.name }}</a></td>
+        <td class="muted">{{ c.category or '—' }}</td>
+        <td class="muted">{{ c.source }}</td>
+        <td class="muted">{{ (c.keywords or [])|length }} kw</td>
+        <td class="muted">{% if c.last_activity_at %}{{ c.last_activity_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}</td>
+        <td style="text-align:right">
+          <a href="/admin/competitors/{{ c.id }}/edit">edit</a>
+          &nbsp;·&nbsp;
+          <a href="#" style="color:var(--err)"
+             hx-delete="/api/competitors/{{ c.id }}"
+             hx-confirm="Deactivate {{ c.name }}?"
+             hx-on::after-request="if(event.detail.successful) location.reload()">delete</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No active competitors.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if inactive %}
+<div class="panel">
+  <div class="panel-header"><h2>Inactive · {{ inactive|length }}</h2></div>
+  <table>
+    <thead><tr><th>Name</th><th>Category</th><th></th></tr></thead>
+    <tbody>
+    {% for c in inactive %}
+      <tr>
+        <td class="muted">{{ c.name }}</td>
+        <td class="muted">{{ c.category or '—' }}</td>
+        <td style="text-align:right">
+          <a href="#" hx-post="/api/competitors/{{ c.id }}/restore"
+             hx-on::after-request="if(event.detail.successful) location.reload()">restore</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,472 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block page_actions %}
+  <button id="regen-btn" type="button" class="btn-ghost"
+          title="LLM only — re-synthesize brief over existing findings + docs">Regenerate brief</button>
+  {% if scope == 'customer' %}
+  <div class="scan-launcher" style="display:inline-flex; align-items:stretch; position:relative">
+    <button id="scan-btn" type="button"
+            title="End-to-end: new subreddit + twitter sweep + save findings + refresh brief"
+            style="border-top-right-radius:0; border-bottom-right-radius:0">Full scan</button>
+    <button id="scan-chev" type="button" aria-label="Freshness options"
+            style="border-top-left-radius:0; border-bottom-left-radius:0;
+                   padding:0 9px; border-left:1px solid rgba(0,0,0,0.2)">
+      <svg viewBox="0 0 10 6" width="9" height="6" fill="currentColor"><path d="M0 0l5 6 5-6z"/></svg>
+    </button>
+    <div id="scan-menu" role="menu"
+         style="display:none; position:absolute; top:40px; right:0; z-index:20;
+                background:var(--bg-raised); border:1px solid var(--border-strong);
+                border-radius:var(--r); min-width:220px; padding:4px;
+                box-shadow:0 8px 24px rgba(0,0,0,0.4)">
+      <div class="label" style="padding:8px 10px 4px; color:var(--text-dim); font-size:11px; text-transform:uppercase; letter-spacing:0.04em">Freshness window</div>
+      {% for d, label in [
+        (None, 'Auto — since last scan'),
+        (1,    'Last 24 hours'),
+        (3,    'Last 3 days'),
+        (7,    'Last 7 days'),
+        (14,   'Last 14 days'),
+        (30,   'Last 30 days'),
+        (90,   'Last 90 days'),
+      ] %}
+        <a href="#" data-days="{{ d if d is not none else '' }}"
+           class="scan-opt"
+           style="display:block; padding:7px 10px; border-radius:var(--r-sm); color:var(--text); font-size:13px; text-decoration:none">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+
+<p class="muted" style="margin-top:0; max-width:720px">
+  {% if scope == 'company' %}
+    Your company's living strategic brief — synthesized from uploaded public documents (investor decks, annual reports, earnings transcripts) and recent external signals. This brief is injected into every market digest so the cross-competitor analysis knows where you stand.
+  {% else %}
+    What your customers want, how they're behaving, and what's shifting. Synthesized from uploaded research, voice-of-customer transcripts, and recent market signals. Injected into every market digest.
+  {% endif %}
+</p>
+
+<div class="panel">
+  <div class="panel-header">
+    <h2>Current brief</h2>
+    {% if latest %}
+      <span class="muted" style="font-size:11px">{{ latest.created_at.strftime('%H:%M') }}</span>
+    {% endif %}
+  </div>
+  <div class="panel-body">
+  {% if latest %}
+    <div class="brief-meta">
+      <div class="brief-meta-item">
+        <span class="brief-meta-label">Refreshed</span>
+        <span class="brief-meta-value">{{ latest.created_at.strftime('%b %d, %Y') }}</span>
+      </div>
+      <div class="brief-meta-item">
+        <span class="brief-meta-label">Cycle</span>
+        <span class="brief-meta-value">#{{ history|length + 1 }}</span>
+      </div>
+      <div class="brief-meta-item">
+        <span class="brief-meta-label">Sources</span>
+        <span class="brief-meta-value">{{ docs|length }} doc{% if docs|length != 1 %}s{% endif %}</span>
+      </div>
+      {% if latest.model %}
+      <div class="brief-meta-item">
+        <span class="brief-meta-label">Model</span>
+        <span class="brief-meta-value mono">{{ latest.model }}</span>
+      </div>
+      {% endif %}
+      <div class="brief-meta-item">
+        <span class="brief-meta-label">Scope</span>
+        <span class="brief-meta-value">{{ scope|capitalize }}</span>
+      </div>
+    </div>
+    <div id="brief-body" class="markdown"></div>
+    <script id="brief-src" type="text/plain">{{ latest.body_md }}</script>
+  {% else %}
+    <p class="muted" style="margin:0">
+      No brief yet. Upload a source document below, or click <strong>Regenerate brief</strong> once there's material to work with.
+    </p>
+  {% endif %}
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-header">
+    <h2>Source documents · {{ docs|length }}</h2>
+    <label for="upload-input" class="btn btn-ghost" style="cursor:pointer">+ Upload</label>
+    <input id="upload-input" type="file" style="display:none"
+           accept=".pdf,.docx,.md,.txt">
+  </div>
+  <table>
+    <thead><tr><th>Filename</th><th>Size</th><th>Uploaded</th><th>Extracted</th><th></th></tr></thead>
+    <tbody id="docs-tbody">
+    {% for d in docs %}
+      <tr>
+        <td class="mono" style="font-size:12px">{{ d.filename }}</td>
+        <td class="muted">{{ (d.size_bytes or 0) // 1024 }} KB</td>
+        <td class="muted">{{ d.created_at.strftime('%Y-%m-%d') }}</td>
+        <td>{% if d.summary %}<span class="pill ok">yes</span>{% else %}<span class="pill pending">pending</span>{% endif %}</td>
+        <td style="text-align:right">
+          <a href="#" style="color:var(--err)"
+             hx-delete="/api/context/{{ scope }}/docs/{{ d.id }}"
+             hx-confirm="Delete {{ d.filename }}?"
+             hx-on::after-request="if(event.detail.successful) location.reload()">delete</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No documents uploaded yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if scope == 'customer' %}
+<div class="panel">
+  <div class="panel-header">
+    <h2>Watch sources</h2>
+    <button id="save-watch-btn" type="button" class="btn-ghost" style="font-size:12px">Save changes</button>
+  </div>
+  <div class="panel-body" style="display:grid; gap:14px; max-width:720px">
+    <div class="field">
+      <label class="label">Subreddits <span class="hint">one per line, no r/ prefix — each is scanned once per competitor</span></label>
+      <textarea id="watch-subs" rows="5" class="mono">{{ '\n'.join(watch.subreddits or []) }}</textarea>
+    </div>
+    <div class="field" style="display:flex; gap:14px; align-items:center">
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px">
+        <input type="checkbox" id="watch-enabled" {% if watch.enabled %}checked{% endif %}>
+        Enabled
+      </label>
+      <label style="font-size:13px">
+        Max per source:
+        <input type="number" id="watch-max" value="{{ watch.max_results_per_source or 6 }}" min="1" max="20" style="width:70px; display:inline-block; margin-left:6px">
+      </label>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-header">
+    <h2>Recent findings · {{ discussion|length }}</h2>
+    <span class="muted" style="font-size:11px">Reddit threads discussing each competitor (VoC)</span>
+  </div>
+  <table>
+    <thead><tr>
+      <th></th>
+      <th>When</th>
+      <th>Source</th>
+      <th>Provider</th>
+      <th>Score</th>
+      <th>Published</th>
+      <th>Title</th>
+    </tr></thead>
+    <tbody>
+    {% for f in discussion %}
+      <tr class="finding-row" data-fid="{{ f.id }}" style="cursor:pointer">
+        <td style="width:24px; text-align:center; color:var(--text-muted)">
+          <span class="caret">›</span>
+        </td>
+        <td class="muted">{{ f.created_at.strftime('%Y-%m-%d') }}</td>
+        <td class="muted">{{ f.source }}</td>
+        <td class="muted">{{ f.search_provider or '—' }}</td>
+        <td class="muted">{% if f.score is not none %}{{ '%.2f'|format(f.score) }}{% else %}—{% endif %}</td>
+        <td class="muted">{% if f.published_at %}{{ f.published_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}</td>
+        <td>
+          {% if f.url %}<a href="{{ f.url }}" target="_blank" onclick="event.stopPropagation()">{{ f.title or (f.content or '')[:120] }}</a>
+          {% else %}{{ f.title or (f.content or '')[:120] }}{% endif %}
+        </td>
+      </tr>
+      <tr id="finding-{{ f.id }}-detail" style="display:none; background:var(--bg)">
+        <td colspan="7" style="padding:14px 20px">
+          <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:10px; font-size:11px" class="muted">
+            <span><strong>URL:</strong> {% if f.url %}<a href="{{ f.url }}" target="_blank" class="mono" style="font-size:11px">{{ f.url[:90] }}</a>{% else %}—{% endif %}</span>
+            <span><strong>Topic:</strong> {{ f.topic or '—' }}</span>
+            <span><strong>Hash:</strong> <span class="mono">{{ f.hash[:12] }}</span></span>
+            <span><strong>Run:</strong> {% if f.run_id %}<a href="/runs/{{ f.run_id }}">#{{ f.run_id }}</a>{% else %}—{% endif %}</span>
+            <span><strong>Length:</strong> {{ (f.content or '')|length }} chars</span>
+          </div>
+          <pre style="margin:0; white-space:pre-wrap; word-break:break-word; max-height:400px; overflow:auto; font-size:12px; line-height:1.5">{{ f.content or '(no content stored — this finding arrived as snippet-only)' }}</pre>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">No customer-discussion findings yet. Run a Full scan to collect some.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if history %}
+<div class="panel">
+  <div class="panel-header"><h2>Prior briefs</h2></div>
+  <table>
+    <thead><tr><th>Date</th><th>Model</th><th>Inputs</th><th></th></tr></thead>
+    <tbody>
+    {% for r in history %}
+      <tr>
+        <td class="muted">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="muted">{{ r.model or '' }}</td>
+        <td class="muted">{{ r.source_summary or '' }}</td>
+        <td style="text-align:right"><a href="#" onclick="showPrior({{ r.id }}); return false">view</a></td>
+      </tr>
+      <tr id="prior-{{ r.id }}" style="display:none">
+        <td colspan="4" style="background:var(--bg)"><div class="markdown" style="padding:10px 4px">{{ r.body_md }}</div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  (function renderBrief() {
+    var src = document.getElementById('brief-src');
+    var out = document.getElementById('brief-body');
+    if (src && out && window.marked) out.innerHTML = window.marked.parse(src.textContent);
+  })();
+
+  function showPrior(id) {
+    var row = document.getElementById('prior-' + id);
+    if (row) row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+  }
+
+  // Per-finding detail row toggle (URL, topic, hash, run, full stored content).
+  document.querySelectorAll('.finding-row').forEach(function (row) {
+    row.addEventListener('click', function () {
+      var fid = row.dataset.fid;
+      var detail = document.getElementById('finding-' + fid + '-detail');
+      if (!detail) return;
+      var open = detail.style.display !== 'none';
+      detail.style.display = open ? 'none' : 'table-row';
+      var caret = row.querySelector('.caret');
+      if (caret) caret.textContent = open ? '›' : '⌄';
+    });
+  });
+
+  // Regenerate brief (LLM-only, no new scraping)
+  document.getElementById('regen-btn').addEventListener('click', async function () {
+    this.disabled = true; this.textContent = 'Queuing…';
+    try {
+      var r = await fetch('/api/context/{{ scope }}/briefs', {method: 'POST'});
+      if (!r.ok) throw await r.text();
+      var baseline = {{ (latest.id if latest else 0) }};
+      var start = Date.now();
+      var iv = setInterval(async function () {
+        var resp = await fetch('/api/context/{{ scope }}');
+        if (resp.ok) {
+          var j = await resp.json();
+          if (j.brief && j.brief.id > baseline) {
+            clearInterval(iv); location.reload();
+          }
+        }
+        if (Date.now() - start > 120000) { clearInterval(iv); alert('Timed out'); }
+      }, 3000);
+    } catch (e) {
+      alert(e);
+      this.disabled = false; this.textContent = 'Regenerate brief';
+    }
+  });
+
+  {% if scope == 'customer' %}
+  // ── Customer Full scan: mirror of competitor profile state machine ──
+  // idle → starting → running → cancelling. Polls /api/runs for an active
+  // customer_scan run; flips the button to "Stop scan #N" while in flight.
+  var scanState = 'idle';
+  var activeRunId = null;
+  var briefBaseline = {{ (latest.id if latest else 0) }};
+  var scanPoll = null;
+
+  function $scanBtn()  { return document.getElementById('scan-btn');  }
+  function $scanChev() { return document.getElementById('scan-chev'); }
+  function $regenBtn() { return document.getElementById('regen-btn'); }
+
+  function renderScanButton() {
+    var btn = $scanBtn(), chev = $scanChev(), regen = $regenBtn();
+    switch (scanState) {
+      case 'idle':
+        btn.textContent = 'Full scan';
+        btn.disabled = false;
+        btn.title = 'End-to-end: new subreddit + twitter sweep + save findings + refresh brief';
+        btn.classList.remove('btn-danger');
+        chev.style.display = '';
+        chev.disabled = false;
+        regen.disabled = false;
+        break;
+      case 'starting':
+        btn.textContent = 'Queued…';
+        btn.disabled = true;
+        chev.style.display = 'none';
+        regen.disabled = true;
+        break;
+      case 'running':
+        btn.textContent = activeRunId ? ('Stop scan #' + activeRunId) : 'Stop scan';
+        btn.disabled = false;
+        btn.title = 'Cancel the in-flight run. The current HTTP call finishes, then the job exits.';
+        btn.classList.add('btn-danger');
+        chev.style.display = 'none';
+        regen.disabled = true;
+        break;
+      case 'cancelling':
+        btn.textContent = 'Cancelling…';
+        btn.disabled = true;
+        chev.style.display = 'none';
+        regen.disabled = true;
+        break;
+    }
+  }
+
+  async function fetchActiveCustomerRun() {
+    try {
+      var resp = await fetch('/api/runs?limit=10');
+      if (!resp.ok) return null;
+      var rows = await resp.json();
+      for (var i = 0; i < rows.length; i++) {
+        if ((rows[i].status === 'running' || rows[i].status === 'cancelling')
+            && rows[i].kind === 'customer_scan') {
+          return rows[i];
+        }
+      }
+    } catch (e) { /* network blip — try again next tick */ }
+    return null;
+  }
+
+  async function checkBriefAppeared() {
+    try {
+      var resp = await fetch('/api/context/customer');
+      if (!resp.ok) return false;
+      var j = await resp.json();
+      return j.brief && j.brief.id > briefBaseline;
+    } catch (e) { return false; }
+  }
+
+  function startPolling() {
+    if (scanPoll) return;
+    scanPoll = setInterval(tickScanState, 3000);
+  }
+  function stopPolling() {
+    if (scanPoll) { clearInterval(scanPoll); scanPoll = null; }
+  }
+
+  async function tickScanState() {
+    var active = await fetchActiveCustomerRun();
+    if (active) {
+      activeRunId = active.id;
+      scanState = active.status === 'cancelling' ? 'cancelling' : 'running';
+      renderScanButton();
+      return;
+    }
+    if (await checkBriefAppeared()) {
+      stopPolling(); location.reload(); return;
+    }
+    activeRunId = null;
+    scanState = 'idle';
+    renderScanButton();
+    stopPolling();
+  }
+
+  function triggerScan(days) {
+    scanState = 'starting';
+    renderScanButton();
+    var url = '/api/context/customer/scan' + (days ? '?days=' + days : '');
+    fetch(url, {method: 'POST'})
+      .then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error(r.status + ': ' + t); });
+        startPolling();
+      })
+      .catch(function (e) {
+        alert('Failed: ' + e.message);
+        scanState = 'idle';
+        renderScanButton();
+      });
+  }
+
+  async function cancelScan() {
+    if (!activeRunId) return;
+    var prev = scanState;
+    scanState = 'cancelling';
+    renderScanButton();
+    try {
+      var r = await fetch('/api/runs/' + activeRunId + '/cancel', {method: 'POST'});
+      if (!r.ok) {
+        var msg = await r.text();
+        alert('Failed to cancel: ' + r.status + '\n' + msg);
+        scanState = prev;
+        renderScanButton();
+      }
+    } catch (e) {
+      alert('Failed to cancel: ' + e.message);
+      scanState = prev;
+      renderScanButton();
+    }
+  }
+
+  document.getElementById('scan-btn').addEventListener('click', function () {
+    if (scanState === 'running') { cancelScan(); return; }
+    if (scanState === 'idle') { triggerScan(null); return; }
+  });
+
+  (function initScanMenu() {
+    var chev = $scanChev();
+    var menu = document.getElementById('scan-menu');
+    if (!chev || !menu) return;
+    chev.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (scanState !== 'idle') return;
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    });
+    menu.querySelectorAll('.scan-opt').forEach(function (a) {
+      a.addEventListener('mouseenter', function () { a.style.background = 'var(--bg-subtle)'; });
+      a.addEventListener('mouseleave', function () { a.style.background = ''; });
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        menu.style.display = 'none';
+        var d = a.getAttribute('data-days');
+        triggerScan(d || null);
+      });
+    });
+    document.addEventListener('click', function () { menu.style.display = 'none'; });
+  })();
+
+  (async function initScanState() {
+    var active = await fetchActiveCustomerRun();
+    if (active) {
+      activeRunId = active.id;
+      scanState = active.status === 'cancelling' ? 'cancelling' : 'running';
+      renderScanButton();
+      startPolling();
+    }
+  })();
+  {% endif %}
+
+  // Customer watch editor
+  var saveWatch = document.getElementById('save-watch-btn');
+  if (saveWatch) {
+    saveWatch.addEventListener('click', async function () {
+      saveWatch.disabled = true; saveWatch.textContent = 'Saving…';
+      var parseLines = function(s){ return (s||'').split('\n').map(x=>x.trim()).filter(Boolean); };
+      var payload = {
+        enabled: document.getElementById('watch-enabled').checked,
+        subreddits: parseLines(document.getElementById('watch-subs').value),
+        max_results_per_source: parseInt(document.getElementById('watch-max').value, 10) || 6,
+      };
+      var resp = await fetch('/api/context/customer/watch', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+      if (resp.ok) { saveWatch.textContent = 'Saved'; setTimeout(()=>location.reload(), 400); }
+      else { alert('Failed: ' + resp.status); saveWatch.disabled = false; saveWatch.textContent = 'Save changes'; }
+    });
+  }
+
+  // Upload
+  document.getElementById('upload-input').addEventListener('change', async function (e) {
+    var f = e.target.files[0];
+    if (!f) return;
+    var fd = new FormData(); fd.append('file', f);
+    var resp = await fetch('/api/context/{{ scope }}/docs', {method: 'POST', body: fd});
+    if (resp.ok) location.reload();
+    else alert('Upload failed: ' + resp.status + '\n' + await resp.text());
+  });
+</script>
+{% endblock %}

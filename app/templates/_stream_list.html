@@ -1,0 +1,11 @@
+{# Stream list partial — reloaded when filters change. #}
+{% if not findings %}
+  <div class="stream-empty muted">
+    No signals match these filters. Try loosening materiality, widening the date range, or picking fewer signal types.
+  </div>
+{% else %}
+  {% for f in findings %}
+    {% set view = views.get(f.id) %}
+    {% include "_stream_card.html" %}
+  {% endfor %}
+{% endif %}

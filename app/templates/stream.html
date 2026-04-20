@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Stream{% endblock %}
+
+{% block content %}
+
+<form id="stream-filters"
+      class="stream-filters"
+      hx-get="/partials/stream_list"
+      hx-target="#stream-list"
+      hx-swap="innerHTML"
+      hx-trigger="change delay:150ms, input delay:300ms">
+
+  {# Signal-type chips — multi-select checkboxes styled as pills #}
+  <div class="filter-row">
+    <label class="filter-label">Signal type</label>
+    <div class="chip-group">
+      {% for value, label in signal_types %}
+        <label class="chip">
+          <input type="checkbox" name="signal_types" value="{{ value }}"
+                 {% if value in filters.signal_types %}checked{% endif %}>
+          <span class="chip-body type-{{ value }}">{{ label }}</span>
+        </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="filter-row">
+    <label class="filter-label">Competitor</label>
+    <select name="competitor">
+      <option value="">Any competitor</option>
+      {% for c in competitors %}
+        <option value="{{ c }}" {% if filters.competitor == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="filter-label" style="margin-left:16px">Since</label>
+    <select name="since_days">
+      <option value=""       {% if not filters.since_days %}selected{% endif %}>All time</option>
+      <option value="1"      {% if filters.since_days == 1 %}selected{% endif %}>24 hours</option>
+      <option value="7"      {% if filters.since_days == 7 %}selected{% endif %}>7 days</option>
+      <option value="30"     {% if filters.since_days == 30 %}selected{% endif %}>30 days</option>
+      <option value="90"     {% if filters.since_days == 90 %}selected{% endif %}>90 days</option>
+    </select>
+
+    <label class="filter-label" style="margin-left:16px">Min materiality</label>
+    <input type="range" name="min_materiality" min="0" max="1" step="0.1"
+           value="{{ filters.min_materiality if filters.min_materiality is not none else 0 }}"
+           oninput="document.getElementById('mat-readout').textContent = this.value">
+    <span id="mat-readout" class="muted" style="min-width:28px; display:inline-block">
+      {{ '%.1f' % (filters.min_materiality or 0) }}
+    </span>
+
+    <label class="filter-label" style="margin-left:16px">
+      <input type="checkbox" name="include_dismissed" value="1"
+             {% if filters.include_dismissed %}checked{% endif %}>
+      Show dismissed
+    </label>
+
+    {# Down-weight stale: hidden "0" always posts so unchecking is observable;
+       when the checkbox is ticked the "1" takes precedence in the form body. #}
+    <label class="filter-label" style="margin-left:16px" title="Push findings published over a year ago to the bottom of the list.">
+      <input type="hidden" name="downweight_stale" value="0">
+      <input type="checkbox" name="downweight_stale" value="1"
+             {% if filters.downweight_stale %}checked{% endif %}>
+      Down-weight stale
+    </label>
+  </div>
+
+</form>
+
+{# Save / load controls live OUTSIDE the filter form so their own input
+   events don't bubble up and re-trigger the list reload on every keystroke.
+   The save form hx-includes the filter form so current filter state is
+   captured in the saved spec. #}
+<div class="stream-secondary">
+  <div id="saved-filters-slot">
+    {% include "_stream_saved_filters.html" %}
+  </div>
+
+  <form id="stream-save-form"
+        hx-post="/partials/stream_save_filter"
+        hx-include="#stream-filters"
+        hx-target="#saved-filters-slot"
+        hx-swap="innerHTML"
+        class="stream-save-form">
+    <input type="text" name="name" placeholder="Name this filter…" class="stream-save-name">
+    <select name="visibility" class="stream-save-visibility">
+      <option value="private">Private</option>
+      <option value="team">Team</option>
+    </select>
+    <button type="submit" class="btn-ghost">Save filter</button>
+  </form>
+</div>
+
+<div id="stream-list" class="stream-list">
+  {% include "_stream_list.html" %}
+</div>
+
+{% endblock %}

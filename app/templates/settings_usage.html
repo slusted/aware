@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Usage &amp; spend{% endblock %}
+
+{% block content %}
+{% include "_settings_nav.html" %}
+
+<div class="stat-grid">
+  <div class="stat">
+    <div class="label">24 hours</div>
+    <div class="value">${{ '%.4f' % totals.day.cost }}</div>
+    <div class="sub">{{ totals.day.calls }} calls · {{ '{:,}'.format(totals.day.input) }}→{{ '{:,}'.format(totals.day.output) }} toks</div>
+  </div>
+  <div class="stat">
+    <div class="label">7 days</div>
+    <div class="value">${{ '%.4f' % totals.week.cost }}</div>
+    <div class="sub">{{ totals.week.calls }} calls</div>
+  </div>
+  <div class="stat">
+    <div class="label">30 days</div>
+    <div class="value">${{ '%.4f' % totals.month.cost }}</div>
+    <div class="sub">{{ totals.month.calls }} calls</div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-header"><h2>By provider &amp; model · 30 days</h2></div>
+  <table>
+    <thead><tr><th>Provider</th><th>Model</th><th style="text-align:right">Calls</th><th style="text-align:right">Input</th><th style="text-align:right">Output</th><th style="text-align:right">Credits</th><th style="text-align:right">Cost</th></tr></thead>
+    <tbody>
+    {% for p, m, calls, it, ot, cr, cost in by_model %}
+      <tr>
+        <td><span class="chip">{{ p }}</span></td>
+        <td class="muted mono" style="font-size:12px">{{ m or '—' }}</td>
+        <td style="text-align:right">{{ calls }}</td>
+        <td style="text-align:right" class="muted">{{ '{:,}'.format(it) }}</td>
+        <td style="text-align:right" class="muted">{{ '{:,}'.format(ot) }}</td>
+        <td style="text-align:right" class="muted">{{ cr }}</td>
+        <td style="text-align:right">${{ '%.4f' % cost }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">No usage recorded yet. Run a scan to populate.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <div class="panel-header"><h2>Recent calls</h2></div>
+  <table>
+    <thead><tr><th>Time</th><th>Run</th><th>Provider</th><th>Model</th><th style="text-align:right">Tokens</th><th style="text-align:right">Cost</th><th></th></tr></thead>
+    <tbody>
+    {% for e in recent %}
+      <tr>
+        <td class="muted">{{ e.ts.strftime('%m-%d %H:%M:%S') }}</td>
+        <td>{% if e.run_id %}<a href="/runs/{{ e.run_id }}">#{{ e.run_id }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td><span class="chip">{{ e.provider }}</span></td>
+        <td class="muted mono" style="font-size:12px">{{ e.model or '' }}</td>
+        <td style="text-align:right" class="muted">
+          {% if e.input_tokens or e.output_tokens %}{{ e.input_tokens }}→{{ e.output_tokens }}{% else %}—{% endif %}
+        </td>
+        <td style="text-align:right">${{ '%.4f' % e.cost_usd }}</td>
+        <td>{% if not e.success %}<span class="pill error">failed</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">Nothing yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="muted" style="font-size:12px">
+  Prices live in <code>app/pricing.py</code>. Past events keep their original cost when you update rates.
+</p>
+{% endblock %}

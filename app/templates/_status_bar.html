@@ -1,0 +1,21 @@
+<div class="status-bar status-bar-{{ state }}">
+  {% if state == 'running' %}
+    <span class="live-dot"></span>
+    <span><strong>{{ run.kind }} #{{ run.id }}</strong> running</span>
+    <span class="muted" style="font-size:11px">· {{ event_count }} event{{ 's' if event_count != 1 else '' }}</span>
+    <a href="/runs/{{ run.id }}" style="margin-left:auto; font-size:12px">view →</a>
+  {% elif state == 'done' %}
+    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--ok)">
+      <path d="M3 8.5l3 3L13 4"/>
+    </svg>
+    <span><strong>{{ run.kind }} #{{ run.id }}</strong> finished</span>
+    <span class="muted" style="font-size:11px">· {{ run.findings_count }} finding{{ 's' if run.findings_count != 1 else '' }}</span>
+    <a href="/runs/{{ run.id }}" style="margin-left:auto; font-size:12px">view →</a>
+  {% elif state == 'error' %}
+    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--err)">
+      <circle cx="8" cy="8" r="6"/><path d="M6 6l4 4M10 6l-4 4"/>
+    </svg>
+    <span><strong>{{ run.kind }} #{{ run.id }}</strong> failed</span>
+    <a href="/runs/{{ run.id }}" style="margin-left:auto; font-size:12px">view →</a>
+  {% endif %}
+</div>

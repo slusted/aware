@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 style="margin-top:0">Usage &amp; spend</h2>
+
+<div class="grid">
+  <div class="card">
+    <div class="label">Today</div>
+    <div class="value">${{ '%.4f' % totals.day.cost }}</div>
+    <div class="muted" style="font-size:0.8rem">{{ totals.day.calls }} calls · {{ totals.day.input }}→{{ totals.day.output }} toks · {{ totals.day.credits }} credits</div>
+  </div>
+  <div class="card">
+    <div class="label">7 days</div>
+    <div class="value">${{ '%.4f' % totals.week.cost }}</div>
+    <div class="muted" style="font-size:0.8rem">{{ totals.week.calls }} calls</div>
+  </div>
+  <div class="card">
+    <div class="label">30 days</div>
+    <div class="value">${{ '%.4f' % totals.month.cost }}</div>
+    <div class="muted" style="font-size:0.8rem">{{ totals.month.calls }} calls</div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>By provider / model (30 days)</h2>
+  <table>
+    <thead><tr><th>Provider</th><th>Model</th><th>Calls</th><th>Input</th><th>Output</th><th>Credits</th><th>Cost (USD)</th></tr></thead>
+    <tbody>
+    {% for p, m, calls, it, ot, cr, cost in by_model %}
+      <tr>
+        <td>{{ p }}</td>
+        <td class="muted">{{ m or '—' }}</td>
+        <td>{{ calls }}</td>
+        <td>{{ '{:,}'.format(it) }}</td>
+        <td>{{ '{:,}'.format(ot) }}</td>
+        <td>{{ cr }}</td>
+        <td>${{ '%.4f' % cost }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">No usage recorded yet. Run a scan to populate.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Recent calls</h2>
+  <table>
+    <thead><tr><th>Time</th><th>Run</th><th>Provider</th><th>Model</th><th>In/Out</th><th>Credits</th><th>Cost</th><th></th></tr></thead>
+    <tbody>
+    {% for e in recent %}
+      <tr>
+        <td class="muted">{{ e.ts.strftime('%m-%d %H:%M:%S') }}</td>
+        <td>{% if e.run_id %}<a href="/runs/{{ e.run_id }}">#{{ e.run_id }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{{ e.provider }}</td>
+        <td class="muted">{{ e.model or '' }}</td>
+        <td>{% if e.input_tokens or e.output_tokens %}{{ e.input_tokens }}→{{ e.output_tokens }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{{ e.credits or '' }}</td>
+        <td>${{ '%.4f' % e.cost_usd }}</td>
+        <td>{% if not e.success %}<span class="status-error">failed</span>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="muted">Nothing yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="muted" style="font-size:0.8rem">
+  Prices live in <code>app/pricing.py</code>. Update rates there when providers change pricing — past events keep their original cost.
+</p>
+{% endblock %}

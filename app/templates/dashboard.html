@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block page_actions %}
+  {% include "_run_scan_button.html" %}
+{% endblock %}
+
+{% block content %}
+
+<div hx-get="/partials/status" hx-trigger="every 10s" hx-swap="outerHTML">
+  {% include "_status.html" %}
+</div>
+
+<div id="live-run-slot" hx-get="/partials/live_run" hx-trigger="load, every 2s" hx-swap="innerHTML"></div>
+
+<div class="stat-grid">
+  <div class="stat">
+    <div class="label">Active competitors</div>
+    <div class="value">{{ competitor_count }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Findings · 24h</div>
+    <div class="value">{{ findings_today }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Spend · 24h</div>
+    <div class="value">${{ '%.4f' % cost_today }}</div>
+    <div class="sub"><a href="/settings/usage">details →</a></div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-header"><h2>Recent runs</h2></div>
+  <table>
+    <thead><tr><th>When</th><th>Kind</th><th>Status</th><th style="text-align:right">Findings</th><th>Trigger</th></tr></thead>
+    <tbody>
+    {% for r in recent_runs %}
+      <tr>
+        <td><a href="/runs/{{ r.id }}">{{ r.started_at.strftime('%Y-%m-%d %H:%M') }}</a></td>
+        <td class="muted">{{ r.kind }}</td>
+        <td><span class="pill {{ r.status }}">{{ r.status }}</span></td>
+        <td style="text-align:right">{{ r.findings_count }}</td>
+        <td class="muted">{{ r.triggered_by }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No runs yet. Trigger one above.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <div class="panel-header"><h2>Recent findings</h2></div>
+  <table>
+    <thead><tr>
+      <th>Time</th><th>Competitor</th><th>Source</th>
+      <th>Provider</th><th>Score</th><th>Title</th>
+    </tr></thead>
+    <tbody>
+    {% for f in recent_findings %}
+      <tr>
+        <td class="muted">{{ f.created_at.strftime('%m-%d %H:%M') }}</td>
+        <td>{{ f.competitor }}</td>
+        <td class="muted">{{ f.source }}</td>
+        <td class="muted">{{ f.search_provider or '—' }}</td>
+        <td class="muted">{% if f.score is not none %}{{ '%.2f'|format(f.score) }}{% else %}—{% endif %}</td>
+        <td>
+          {% if f.url %}<a href="{{ f.url }}" target="_blank">{{ f.title or (f.content or '')[:80] }}</a>
+          {% else %}{{ f.title or (f.content or '')[:80] if f.content else '' }}{% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">Nothing yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

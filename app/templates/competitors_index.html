@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Competitors{% endblock %}
+{% block page_actions %}
+  <a href="/admin/competitors" class="btn btn-ghost">Manage watchlist</a>
+{% endblock %}
+
+{% block content %}
+<div class="card-grid">
+{% for item in items %}
+  <a href="/competitors/{{ item.c.id }}" class="card">
+    <div class="row">
+      <div class="title">{{ item.c.name }}</div>
+      {% if item.c.category %}<span class="chip">{{ item.c.category }}</span>{% endif %}
+    </div>
+    <div class="meta">
+      {% if item.latest %}
+        Updated {{ item.latest.created_at.strftime('%b %d') }}
+      {% else %}
+        <span style="color:var(--warn)">No review yet</span>
+      {% endif %}
+      · {{ item.recent_findings }} finding{{ 's' if item.recent_findings != 1 else '' }} (30d)
+    </div>
+    {% if item.c.threat_angle %}
+    <div class="body">
+      {{ item.c.threat_angle[:160] }}{% if item.c.threat_angle|length > 160 %}…{% endif %}
+    </div>
+    {% endif %}
+  </a>
+{% else %}
+  <p class="muted">No active competitors.</p>
+{% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Manage skills{% endblock %}
+
+{% block content %}
+<p class="muted" style="margin-top:0; max-width:720px">
+  Skills are the system prompts that drive each LLM call. Edit in-browser;
+  every save bumps the version and becomes active. Prior versions are kept
+  so you can restore them.
+</p>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Skill</th><th>Purpose</th><th>Version</th><th>Last updated</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><strong class="mono" style="font-size:13px">{{ r.name }}</strong></td>
+        <td class="muted">{{ r.description }}</td>
+        <td>
+          {% if r.active %}<span class="chip">v{{ r.active.version }}</span>
+          {% else %}<span class="pill warn">not set</span>{% endif %}
+          {% if r.total_versions > 1 %}<span class="muted" style="font-size:11px">· {{ r.total_versions }} versions</span>{% endif %}
+        </td>
+        <td class="muted">{% if r.active %}{{ r.active.created_at.strftime('%Y-%m-%d %H:%M') }}{% else %}—{% endif %}</td>
+        <td style="text-align:right">
+          <a href="/admin/skills/{{ r.name }}">edit →</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

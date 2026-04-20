@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Search providers{% endblock %}
+
+{% block content %}
+{% include "_settings_nav.html" %}
+
+<p class="muted" style="margin-top:0; max-width:720px">
+  Providers are layered: Tavily is the primary engine (page-content extraction).
+  Secondary providers like Serper add coverage for specific scopes — today
+  that's <strong>news</strong>. When multiple news providers are enabled, every
+  news query runs against all of them and results are merged with URL dedup.
+</p>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Provider</th><th>Purpose</th><th>API key</th><th>Scope</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for p in providers %}
+      <tr>
+        <td><strong class="mono" style="font-size:13px">{{ p.name }}</strong></td>
+        <td class="muted" style="max-width:380px">{{ p.description }}</td>
+        <td class="muted mono" style="font-size:12px">
+          {{ p.env_var }}
+          {% if p.env_present %}<span class="pill ok" style="margin-left:6px">set</span>
+          {% else %}<span class="pill error" style="margin-left:6px">missing</span>{% endif %}
+        </td>
+        <td>
+          {% for s in p.scope %}<span class="chip">{{ s }}</span>{% endfor %}
+        </td>
+        <td>
+          {% if p.enabled %}
+            {% if p.available %}<span class="pill ok">enabled</span>
+            {% else %}<span class="pill warn">key missing</span>{% endif %}
+          {% else %}<span class="pill">disabled</span>{% endif %}
+        </td>
+        <td style="text-align:right">
+          <button type="button" class="btn-ghost toggle-btn"
+                  data-name="{{ p.name }}"
+                  data-enabled="{{ 'true' if p.enabled else 'false' }}"
+                  data-scope='{{ p.scope|tojson }}'
+                  style="font-size:12px">
+            {{ 'Disable' if p.enabled else 'Enable' }}
+          </button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <div class="panel-header">
+    <h2>Content extraction</h2>
+    <span class="muted" style="font-size:11px">Where page bodies come from</span>
+  </div>
+  <div class="panel-body" style="max-width:760px">
+    <p class="muted" style="margin-top:0">
+      When scanning finds a URL, we fetch the page body for the LLM to read.
+      The fetcher has three tiers: <strong>ZenRows</strong> (paid, primary by default),
+      <strong>ScrapingBee</strong> (paid fallback that clears Cloudflare / JS walls), and
+      <strong>trafilatura</strong> over urllib (self-hosted, free).
+    </p>
+    <div style="display:flex; align-items:flex-start; gap:14px; padding:12px 14px; background:var(--bg); border-radius:var(--r); margin-top:10px">
+      <label style="display:flex; align-items:center; gap:10px; cursor:pointer; flex:1">
+        <input type="checkbox" id="zr-primary-toggle"
+               {% if zenrows_primary %}checked{% endif %}
+               {% if not zenrows_key_set %}disabled{% endif %}>
+        <div>
+          <div style="font-weight:500">Use ZenRows as primary fetcher</div>
+          <div class="muted" style="font-size:12px; margin-top:2px">
+            {% if zenrows_key_set %}
+              When ON (default): every URL goes through ZenRows first. ScrapingBee + free tiers act as fallback if ZenRows fails.<br>
+              When OFF: skip ZenRows on the first pass and use the ScrapingBee / free-tier cascade instead.
+            {% else %}
+              <span style="color:var(--warn)">ZENROWS_API_KEY not set — add it under <a href="/settings/keys">API keys</a> first.</span>
+            {% endif %}
+          </div>
+        </div>
+      </label>
+      <span id="zr-primary-status" class="muted" style="font-size:11px; white-space:nowrap; padding-top:2px"></span>
+    </div>
+    <div style="display:flex; align-items:flex-start; gap:14px; padding:12px 14px; background:var(--bg); border-radius:var(--r); margin-top:10px">
+      <label style="display:flex; align-items:center; gap:10px; cursor:pointer; flex:1">
+        <input type="checkbox" id="sb-primary-toggle"
+               {% if scrapingbee_primary %}checked{% endif %}
+               {% if not scrapingbee_key_set %}disabled{% endif %}>
+        <div>
+          <div style="font-weight:500">Use ScrapingBee as primary fetcher</div>
+          <div class="muted" style="font-size:12px; margin-top:2px">
+            {% if scrapingbee_key_set %}
+              When ON: every URL goes through ScrapingBee first (only effective if ZenRows is OFF or its key is missing). Highest cost (~25 credits per URL).<br>
+              When OFF: free tiers try first; ScrapingBee is only used if they fail.
+            {% else %}
+              <span style="color:var(--warn)">SCRAPINGBEE_API_KEY not set — add it under <a href="/settings/keys">API keys</a> first.</span>
+            {% endif %}
+          </div>
+        </div>
+      </label>
+      <span id="sb-primary-status" class="muted" style="font-size:11px; white-space:nowrap; padding-top:2px"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+function bindFetcherToggle(cbId, statusId, payloadKey, keySet) {
+  var cb = document.getElementById(cbId);
+  var status = document.getElementById(statusId);
+  if (!cb) return;
+  cb.addEventListener('change', async function () {
+    status.textContent = 'Saving…';
+    cb.disabled = true;
+    try {
+      var body = {};
+      body[payloadKey] = cb.checked;
+      var resp = await fetch('/api/providers/fetcher', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      status.textContent = 'Saved';
+      setTimeout(function () { status.textContent = ''; }, 1500);
+    } catch (e) {
+      cb.checked = !cb.checked;
+      status.textContent = 'Failed';
+      alert('Failed: ' + e);
+    } finally {
+      cb.disabled = !keySet;
+    }
+  });
+}
+bindFetcherToggle('zr-primary-toggle', 'zr-primary-status', 'zenrows_primary', {{ 'true' if zenrows_key_set else 'false' }});
+bindFetcherToggle('sb-primary-toggle', 'sb-primary-status', 'scrapingbee_primary', {{ 'true' if scrapingbee_key_set else 'false' }});
+</script>
+
+<div class="panel">
+  <div class="panel-header"><h2>Adding a key</h2></div>
+  <div class="panel-body">
+    <ol style="margin:0; padding-left:1.3em; line-height:1.7">
+      <li>Get a Serper key at <a href="https://serper.dev" target="_blank">serper.dev</a> (free tier: 2500 queries).</li>
+      <li>Add to <code>.env</code>: <code>SERPER_API_KEY=...</code></li>
+      <li>Optional: override pricing with <code>SERPER_USD_PER_CALL=0.0003</code> (default).</li>
+      <li>Restart the server, then come back here and click Enable.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.toggle-btn').forEach(function (btn) {
+  btn.addEventListener('click', async function () {
+    var name = btn.dataset.name;
+    var currentlyOn = btn.dataset.enabled === 'true';
+    var scope = JSON.parse(btn.dataset.scope);
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      var resp = await fetch('/api/providers/' + name, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({enabled: !currentlyOn, scope: scope}),
+      });
+      if (resp.ok) location.reload();
+      else { alert('Failed: ' + resp.status); btn.disabled = false; btn.textContent = currentlyOn ? 'Disable' : 'Enable'; }
+    } catch (e) { alert(e); btn.disabled = false; }
+  });
+});
+</script>
+{% endblock %}

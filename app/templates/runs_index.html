@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Runs{% endblock %}
+{% block page_actions %}
+  {% include "_run_scan_button.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <table>
+    <thead><tr><th>When</th><th>Kind</th><th>Status</th><th style="text-align:right">Findings</th><th>Duration</th><th>Trigger</th></tr></thead>
+    <tbody>
+    {% for r in runs %}
+      <tr>
+        <td><a href="/runs/{{ r.id }}">{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</a></td>
+        <td class="muted">{{ r.kind }}</td>
+        <td><span class="pill {{ r.status }}">{{ r.status }}</span></td>
+        <td style="text-align:right">{{ r.findings_count }}</td>
+        <td class="muted">
+          {% if r.finished_at %}
+            {{ ((r.finished_at - r.started_at).total_seconds()|int) }}s
+          {% else %}—{% endif %}
+        </td>
+        <td class="muted">{{ r.triggered_by }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No runs yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

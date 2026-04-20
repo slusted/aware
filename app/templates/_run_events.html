@@ -1,0 +1,26 @@
+{# Partial: events panel for one run. Polls itself every 2s while running, stops when done. #}
+<div id="run-events-panel"
+     {% if is_running %}hx-get="/partials/run_events/{{ run.id }}"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML"{% endif %}>
+  <div class="panel">
+    <div class="panel-header" style="display:flex; align-items:center; justify-content:space-between">
+      <h2 style="margin:0">Events · {{ events|length }}</h2>
+      {% if is_running %}
+        <span class="pill running" style="font-size:11px">live · polling</span>
+      {% endif %}
+    </div>
+    <pre id="run-events-pre"
+         style="margin:0; border:0; border-radius:0; max-height:600px; overflow-y:auto">{% for e in events %}<span class="dim">{{ e.ts.strftime('%H:%M:%S') }}</span>  {% if e.level=='error' %}<span style="color:var(--err)">{{ e.message }}</span>{% elif e.level=='warn' %}<span style="color:var(--warn)">{{ e.message }}</span>{% elif e.level=='material' and e.meta and e.meta.competitor_id %}<span class="event-material"><span class="event-material-badge type-{{ e.meta.signal_type }}">{{ e.meta.signal_type }}</span> <a href="/competitors/{{ e.meta.competitor_id }}" class="event-material-link">{{ e.meta.competitor_name }}</a> · {{ e.meta.title }}</span>{% else %}{{ e.message }}{% endif %}
+{% endfor %}{% if not events %}<span class="muted">no events yet</span>{% endif %}</pre>
+  </div>
+  {% if is_running %}
+  <script>
+    // Auto-scroll to the bottom after each poll so the newest line is visible.
+    (function(){
+      var pre = document.getElementById('run-events-pre');
+      if (pre) pre.scrollTop = pre.scrollHeight;
+    })();
+  </script>
+  {% endif %}
+</div>

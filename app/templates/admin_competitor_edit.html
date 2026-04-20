@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit ' + c.name if c else 'New competitor' }}{% endblock %}
+{% block page_actions %}
+  <a href="/admin/competitors" class="btn btn-ghost">Cancel</a>
+  <button form="edit-form" type="submit">{{ 'Save' if c else 'Create' }}</button>
+{% endblock %}
+
+{% block content %}
+<form id="edit-form" class="panel" style="padding:20px; max-width:720px">
+
+  <div class="field">
+    <label class="label">Name</label>
+    <input name="name" required value="{{ c.name if c else '' }}">
+    <div style="margin-top:8px; display:flex; gap:8px; align-items:center">
+      <button type="button" id="autofill-btn" class="btn btn-ghost">
+        {{ 'Optimise with agent' if c else 'Auto-fill with agent' }}
+      </button>
+      <span id="autofill-status" class="hint"></span>
+    </div>
+    <div id="autofill-log" class="hint" style="
+         display:none; margin-top:8px; padding:8px 10px;
+         max-height:220px; overflow-y:auto;
+         background:rgba(0,0,0,0.03); border:1px solid rgba(0,0,0,0.08);
+         border-radius:4px; font-family:ui-monospace,Consolas,monospace;
+         font-size:12px; line-height:1.5; white-space:pre-wrap"></div>
+    <div id="autofill-proposals" style="
+         display:none; margin-top:12px; padding:12px;
+         background:rgba(100,120,255,0.04); border:1px solid rgba(100,120,255,0.2);
+         border-radius:6px">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+        <strong id="proposals-heading">Proposed changes</strong>
+        <div style="display:flex; gap:6px">
+          <button type="button" id="proposals-select-all" class="btn btn-ghost" style="padding:4px 10px; font-size:12px">Accept all</button>
+          <button type="button" id="proposals-deselect-all" class="btn btn-ghost" style="padding:4px 10px; font-size:12px">Reject all</button>
+        </div>
+      </div>
+      <div id="proposals-list"></div>
+      <div style="margin-top:10px; display:flex; gap:8px">
+        <button type="button" id="proposals-apply" class="btn">Apply selected</button>
+        <button type="button" id="proposals-cancel" class="btn btn-ghost">Dismiss</button>
+      </div>
+    </div>
+    <p class="hint" style="margin-top:6px">
+      {% if c %}
+        Re-run Claude to refine these fields — it sees the current values
+        and only rewrites where it can improve them. Takes ~30–60s. Review
+        the diff-in-your-head before saving.
+      {% else %}
+        Type the competitor name above, then let Claude research them and
+        fill the rest of the form. Takes ~30–60s. Review everything before
+        saving.
+      {% endif %}
+    </p>
+  </div>
+
+  <div class="field">
+    <label class="label">Category</label>
+    <select name="category">
+      <option value="">—</option>
+      {% for opt in ['job_board', 'ats', 'labour_hire', 'adjacent', 'other'] %}
+        <option value="{{ opt }}" {% if c and c.category == opt %}selected{% endif %}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="field">
+    <label class="label">Threat angle <span class="hint">why they matter</span></label>
+    <textarea name="threat_angle" rows="2">{{ c.threat_angle if c and c.threat_angle else '' }}</textarea>
+  </div>
+
+  {% set lists = [
+    ('keywords', 'Search keywords', 'comma-separated. Each one drives its own product / strategy / AI / news searches. Tip: specific sub-products beat the company name — e.g. "LinkedIn Recruiter", "LinkedIn Jobs", "LinkedIn Sales Navigator" filter noise better than just "LinkedIn". Blank = falls back to the competitor name.'),
+    ('subreddits', 'Subreddits', 'one per line'),
+    ('careers_domains', 'Careers domains', 'e.g. careers.example.com, one per line'),
+    ('newsroom_domains', 'Newsroom domains', 'e.g. news.example.com, one per line'),
+  ] %}
+  {% for field, title, hint in lists %}
+    <div class="field">
+      <label class="label">{{ title }} <span class="hint">{{ hint }}</span></label>
+      <textarea name="{{ field }}" rows="3" class="mono">{{ '\n'.join(c[field] or []) if c else '' }}</textarea>
+    </div>
+  {% endfor %}
+
+  <h3 style="margin-top:30px; margin-bottom:4px">Momentum tracking</h3>
+  <p class="hint" style="margin-bottom:16px">Optional identifiers used by the daily momentum job. Leave blank to skip that signal.</p>
+
+  <div class="field">
+    <label class="label">iOS App Store ID <span class="hint">numeric id from the App Store URL, e.g. 284910350</span></label>
+    <input name="app_store_id" value="{{ c.app_store_id if c and c.app_store_id else '' }}" placeholder="e.g. 284910350">
+  </div>
+
+  <div class="field">
+    <label class="label">Google Play package <span class="hint">e.g. au.com.seek.jobs</span></label>
+    <input name="play_package" value="{{ c.play_package if c and c.play_package else '' }}" placeholder="e.g. au.com.seek.jobs">
+  </div>
+
+  <div class="field">
+    <label class="label">Google Trends keyword <span class="hint">override; defaults to competitor name</span></label>
+    <input name="trends_keyword" value="{{ c.trends_keyword if c and c.trends_keyword else '' }}" placeholder="defaults to '{{ c.name if c else '' }}'">
+  </div>
+
+  <h3 style="margin-top:30px; margin-bottom:4px">Search-quality thresholds</h3>
+  <p class="hint" style="margin-bottom:16px">
+    Override the global noise filters for this competitor only. Findings below
+    the min relevance score are dropped before they hit the LLM. Social media
+    (reddit/linkedin) uses a stricter multiplier to kill low-relevance complaints.
+    Leave blank to use the global defaults (0.25 and 1.5×).
+  </p>
+
+  <div class="field">
+    <label class="label">
+      Minimum relevance score
+      <span class="hint">0.0–1.0 — Tavily's relevance score per result; anything below gets dropped. Global default: 0.25. Try 0.35–0.45 for noisy competitors like LinkedIn or Indeed.</span>
+    </label>
+    <input name="min_relevance_score" type="number" step="0.01" min="0" max="1"
+           value="{{ '%.2f'|format(c.min_relevance_score) if c and c.min_relevance_score is not none else '' }}"
+           placeholder="blank = use global default (0.25)">
+  </div>
+
+  <div class="field">
+    <label class="label">
+      Social threshold multiplier
+      <span class="hint">Multiplier applied to min score for reddit/linkedin/twitter findings. Higher = stricter social filtering. Global default: 1.5. Try 2.0 if social noise dominates.</span>
+    </label>
+    <input name="social_score_multiplier" type="number" step="0.1" min="1" max="5"
+           value="{{ '%.1f'|format(c.social_score_multiplier) if c and c.social_score_multiplier is not none else '' }}"
+           placeholder="blank = use global default (1.5)">
+  </div>
+</form>
+
+<script>
+(function () {
+  var form = document.getElementById('edit-form');
+  var isEdit = {{ 'true' if c else 'false' }};
+  var id    = {{ c.id if c else 'null' }};
+  function parseLines(s){ return (s||'').split('\n').map(x=>x.trim()).filter(Boolean); }
+  function parseCsv(s){ return (s||'').split(',').map(x=>x.trim()).filter(Boolean); }
+
+  var autofillBtn = document.getElementById('autofill-btn');
+  if (autofillBtn) {
+    var autofillStatus = document.getElementById('autofill-status');
+    var autofillLog = document.getElementById('autofill-log');
+
+    function logAppend(msg, level) {
+      if (!autofillLog) return;
+      autofillLog.style.display = 'block';
+      var t = new Date();
+      var hh = String(t.getHours()).padStart(2,'0');
+      var mm = String(t.getMinutes()).padStart(2,'0');
+      var ss = String(t.getSeconds()).padStart(2,'0');
+      var row = document.createElement('div');
+      row.textContent = '[' + hh + ':' + mm + ':' + ss + '] ' + msg;
+      if (level === 'error') row.style.color = 'var(--color-danger, #c33)';
+      if (level === 'done')  row.style.color = 'var(--color-success, #2a7)';
+      autofillLog.appendChild(row);
+      autofillLog.scrollTop = autofillLog.scrollHeight;
+    }
+
+    autofillBtn.addEventListener('click', function () {
+      var nameInput = form.querySelector('input[name=name]');
+      var name = (nameInput.value || '').trim();
+      if (!name) {
+        autofillStatus.textContent = 'enter a name first';
+        nameInput.focus();
+        return;
+      }
+      autofillBtn.disabled = true;
+      autofillStatus.textContent = 'starting…';
+      // Reset the log panel on each run so the user sees only the current
+      // session's trace, not history from earlier clicks.
+      if (autofillLog) { autofillLog.innerHTML = ''; autofillLog.style.display = 'none'; }
+      logAppend('starting agent for ' + name);
+
+      var url = '/api/competitors/autofill/stream?name=' + encodeURIComponent(name);
+      if (isEdit && id != null) url += '&competitor_id=' + id;
+      var src = new EventSource(url);
+
+      src.addEventListener('progress', function (e) {
+        try {
+          var d = JSON.parse(e.data);
+          var msg = d.message || 'working…';
+          autofillStatus.textContent = msg;
+          logAppend(msg);
+        } catch(_) {}
+      });
+
+      src.addEventListener('error', function (e) {
+        // EventSource errors do not carry the HTTP status — on a non-200
+        // response the connection just closes. Probe the endpoint with fetch
+        // so we can show a real reason (404 = server stale, 403 = auth, etc).
+        src.close();
+        fetch(url).then(function(r){
+          return r.text().then(function(t){ return {status: r.status, body: t}; });
+        }).then(function(info){
+          var detail = info.status + ' ' + (info.body || '').slice(0, 200);
+          autofillStatus.textContent = 'error: ' + detail;
+          logAppend('error: ' + detail, 'error');
+        }).catch(function(err){
+          autofillStatus.textContent = 'error: ' + err;
+          logAppend('error: ' + err, 'error');
+        }).finally(function(){
+          autofillBtn.disabled = false;
+        });
+      });
+
+      src.addEventListener('done', function (e) {
+        src.close();
+        autofillBtn.disabled = false;
+        var payload;
+        try { payload = JSON.parse(e.data) || {}; } catch(_) { payload = {}; }
+
+        if (payload.mode === 'proposals') {
+          var proposals = Array.isArray(payload.proposals) ? payload.proposals : [];
+          if (!proposals.length) {
+            autofillStatus.textContent = 'no changes proposed — config looks good';
+            logAppend('no changes proposed — config looks good', 'done');
+            return;
+          }
+          autofillStatus.textContent = proposals.length + ' change' +
+            (proposals.length === 1 ? '' : 's') + ' proposed — review below';
+          logAppend(proposals.length + ' proposals returned', 'done');
+          renderProposals(proposals);
+        } else {
+          // Autofill mode (new competitor) — fill form directly, as before.
+          var d = payload.data || {};
+          function setVal(sel, v){ var el=form.querySelector(sel); if(el) el.value = v || ''; }
+          function setLines(sel, arr){ setVal(sel, (arr||[]).join('\n')); }
+          function setCsv(sel, arr){ setVal(sel, (arr||[]).join(', ')); }
+          var cat = form.querySelector('select[name=category]');
+          if (cat && d.category) cat.value = d.category;
+          setVal('textarea[name=threat_angle]', d.threat_angle);
+          setCsv('textarea[name=keywords]', d.keywords);
+          setLines('textarea[name=subreddits]', d.subreddits);
+          setLines('textarea[name=careers_domains]', d.careers_domains);
+          setLines('textarea[name=newsroom_domains]', d.newsroom_domains);
+          setVal('input[name=app_store_id]', d.app_store_id);
+          setVal('input[name=play_package]', d.play_package);
+          setVal('input[name=trends_keyword]', d.trends_keyword);
+          setVal('input[name=min_relevance_score]',
+                 d.min_relevance_score != null ? d.min_relevance_score : '');
+          setVal('input[name=social_score_multiplier]',
+                 d.social_score_multiplier != null ? d.social_score_multiplier : '');
+          autofillStatus.textContent = 'filled — review and save';
+          logAppend('filled — review and save', 'done');
+        }
+      });
+    });
+
+    // ── Proposal review UI ─────────────────────────────────────────
+    var proposalsPanel = document.getElementById('autofill-proposals');
+    var proposalsList  = document.getElementById('proposals-list');
+    var proposalsApply = document.getElementById('proposals-apply');
+    var proposalsCancel= document.getElementById('proposals-cancel');
+    var proposalsHeading = document.getElementById('proposals-heading');
+    var proposalsSelectAll = document.getElementById('proposals-select-all');
+    var proposalsDeselectAll = document.getElementById('proposals-deselect-all');
+    var currentProposals = [];
+
+    // Map each CompetitorIn field to the form selector we read/write.
+    var FIELD_TO_SEL = {
+      category:                'select[name=category]',
+      threat_angle:            'textarea[name=threat_angle]',
+      keywords:                'textarea[name=keywords]',
+      subreddits:              'textarea[name=subreddits]',
+      careers_domains:         'textarea[name=careers_domains]',
+      newsroom_domains:        'textarea[name=newsroom_domains]',
+      app_store_id:            'input[name=app_store_id]',
+      play_package:            'input[name=play_package]',
+      trends_keyword:          'input[name=trends_keyword]',
+      min_relevance_score:     'input[name=min_relevance_score]',
+      social_score_multiplier: 'input[name=social_score_multiplier]',
+    };
+    // keywords is comma-separated in the textarea; all other list fields are newline-separated.
+    var LIST_FIELDS = ['keywords', 'subreddits', 'careers_domains', 'newsroom_domains'];
+    function listJoiner(field){ return field === 'keywords' ? ', ' : '\n'; }
+    function listSplitter(field){
+      return field === 'keywords'
+        ? function(s){ return (s||'').split(',').map(function(x){return x.trim();}).filter(Boolean); }
+        : function(s){ return (s||'').split('\n').map(function(x){return x.trim();}).filter(Boolean); };
+    }
+
+    function renderProposals(proposals) {
+      currentProposals = proposals;
+      proposalsList.innerHTML = '';
+      proposals.forEach(function (p, i) {
+        var row = document.createElement('div');
+        row.className = 'proposal-row';
+        row.style.cssText = 'padding:10px; margin-bottom:8px; border:1px solid rgba(0,0,0,0.08);' +
+          'border-radius:4px; background:white';
+        var badgeColor = p.action === 'drop' ? '#c33' : (p.action === 'add' ? '#2a7' : '#36d');
+        var badge = '<span style="display:inline-block; padding:1px 7px; border-radius:3px;' +
+          'background:' + badgeColor + '; color:white; font-size:10px; font-weight:bold;' +
+          'text-transform:uppercase; letter-spacing:0.5px">' + p.action + '</span>';
+        var diffLine = '';
+        if (p.action === 'replace') {
+          diffLine = '<div style="margin:6px 0; font-size:13px">' +
+            '<code style="background:#fee; color:#7a2020; padding:1px 4px; border-radius:2px; text-decoration:line-through; opacity:0.85">' +
+            escapeHtml(formatVal(p.old_value)) + '</code>' +
+            ' → <code style="background:#efe; color:#1e5c2f; padding:1px 4px; border-radius:2px">' +
+            escapeHtml(formatVal(p.value)) + '</code></div>';
+        } else if (p.action === 'add') {
+          diffLine = '<div style="margin:6px 0; font-size:13px">' +
+            '<code style="background:#efe; color:#1e5c2f; padding:1px 4px; border-radius:2px">+ ' +
+            escapeHtml(String(p.value)) + '</code></div>';
+        } else { // drop
+          diffLine = '<div style="margin:6px 0; font-size:13px">' +
+            '<code style="background:#fee; color:#7a2020; padding:1px 4px; border-radius:2px; text-decoration:line-through">- ' +
+            escapeHtml(String(p.value)) + '</code></div>';
+        }
+        var evidence = p.evidence_url
+          ? '<a href="' + escapeHtml(p.evidence_url) + '" target="_blank" rel="noopener" style="font-size:12px">evidence ↗</a>'
+          : '<span class="hint" style="font-size:12px">no source link</span>';
+        row.innerHTML =
+          '<label style="display:flex; gap:10px; cursor:pointer; align-items:flex-start">' +
+            '<input type="checkbox" class="proposal-check" data-idx="' + i + '" checked style="margin-top:3px">' +
+            '<div style="flex:1; min-width:0">' +
+              '<div style="display:flex; align-items:center; gap:8px; margin-bottom:2px">' +
+                badge +
+                '<code style="font-size:12px; color:#555">' + escapeHtml(p.field) + '</code>' +
+              '</div>' +
+              diffLine +
+              '<div style="font-size:13px; color:#444; margin-top:4px">' + escapeHtml(p.rationale) + '</div>' +
+              '<div style="margin-top:4px">' + evidence + '</div>' +
+            '</div>' +
+          '</label>';
+        proposalsList.appendChild(row);
+      });
+      proposalsHeading.textContent = 'Proposed changes (' + proposals.length + ')';
+      proposalsPanel.style.display = 'block';
+    }
+
+    function formatVal(v) {
+      if (v === null || v === undefined) return '(empty)';
+      if (Array.isArray(v)) return v.length ? v.join(', ') : '(empty)';
+      var s = String(v);
+      return s.length ? s : '(empty)';
+    }
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function setAllChecks(v) {
+      proposalsList.querySelectorAll('.proposal-check').forEach(function(cb){ cb.checked = v; });
+    }
+    proposalsSelectAll && proposalsSelectAll.addEventListener('click', function(){ setAllChecks(true); });
+    proposalsDeselectAll && proposalsDeselectAll.addEventListener('click', function(){ setAllChecks(false); });
+
+    proposalsCancel && proposalsCancel.addEventListener('click', function () {
+      proposalsPanel.style.display = 'none';
+      proposalsList.innerHTML = '';
+      currentProposals = [];
+      autofillStatus.textContent = 'proposals dismissed — no changes applied';
+    });
+
+    proposalsApply && proposalsApply.addEventListener('click', function () {
+      var accepted = [];
+      proposalsList.querySelectorAll('.proposal-check').forEach(function (cb) {
+        if (cb.checked) accepted.push(currentProposals[parseInt(cb.dataset.idx, 10)]);
+      });
+      if (!accepted.length) {
+        autofillStatus.textContent = 'nothing selected';
+        return;
+      }
+      applyProposals(accepted);
+      proposalsPanel.style.display = 'none';
+      proposalsList.innerHTML = '';
+      currentProposals = [];
+      autofillStatus.textContent = 'applied ' + accepted.length + ' change' +
+        (accepted.length === 1 ? '' : 's') + ' — review form and Save';
+      logAppend('applied ' + accepted.length + ' proposals to form', 'done');
+    });
+
+    function applyProposals(accepted) {
+      // Group by field so we can apply list add/drops in a single write per field.
+      var byField = {};
+      accepted.forEach(function (p) {
+        (byField[p.field] = byField[p.field] || []).push(p);
+      });
+      Object.keys(byField).forEach(function (field) {
+        var el = form.querySelector(FIELD_TO_SEL[field]);
+        if (!el) return;
+        var ops = byField[field];
+        if (LIST_FIELDS.indexOf(field) >= 0) {
+          var split = listSplitter(field);
+          var items = split(el.value);
+          ops.forEach(function (p) {
+            if (p.action === 'add' && items.indexOf(p.value) < 0) items.push(p.value);
+            else if (p.action === 'drop') {
+              var ix = items.indexOf(p.value);
+              if (ix >= 0) items.splice(ix, 1);
+            }
+          });
+          el.value = items.join(listJoiner(field));
+        } else {
+          // Scalars — last replace wins if multiple (shouldn't happen, but defensive).
+          var last = ops[ops.length - 1];
+          if (last.action === 'replace') {
+            el.value = last.value == null ? '' : String(last.value);
+          }
+        }
+      });
+    }
+  }
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var data = new FormData(form);
+    var payload = {
+      name: data.get('name'),
+      category: data.get('category') || null,
+      threat_angle: (data.get('threat_angle') || '').trim() || null,
+      keywords: parseCsv(data.get('keywords')),
+      subreddits: parseLines(data.get('subreddits')),
+      careers_domains: parseLines(data.get('careers_domains')),
+      newsroom_domains: parseLines(data.get('newsroom_domains')),
+      app_store_id: (data.get('app_store_id') || '').trim() || null,
+      play_package: (data.get('play_package') || '').trim() || null,
+      trends_keyword: (data.get('trends_keyword') || '').trim() || null,
+      min_relevance_score: (function(){ var v=(data.get('min_relevance_score')||'').trim(); return v ? parseFloat(v) : null; })(),
+      social_score_multiplier: (function(){ var v=(data.get('social_score_multiplier')||'').trim(); return v ? parseFloat(v) : null; })(),
+    };
+    var url = isEdit ? '/api/competitors/' + id : '/api/competitors';
+    var method = isEdit ? 'PUT' : 'POST';
+    var resp = await fetch(url, {
+      method: method,
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (resp.ok) window.location = '/admin/competitors';
+    else alert('Failed: ' + resp.status + '\n' + await resp.text());
+  });
+})();
+</script>
+{% endblock %}

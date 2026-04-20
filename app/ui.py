@@ -1,0 +1,841 @@
+"""HTMX/Jinja renderer. Calls the same DB the JSON API uses.
+When React lands later, this module is deleted; the JSON API is unchanged.
+"""
+import os
+from pathlib import Path
+from datetime import datetime, timedelta
+from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+
+from sqlalchemy import func as _func
+
+from .deps import get_db, get_current_user
+from .models import Run, Finding, Competitor, CompetitorReport, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter
+from . import scheduler
+
+
+# Signal-stream taxonomy, surfaced in the stream filter bar. Order here
+# drives the order of filter chips in the UI.
+SIGNAL_TYPES = [
+    ("funding",        "Funding"),
+    ("new_hire",       "Hires"),
+    ("product_launch", "Launches"),
+    ("integration",    "Integrations"),
+    ("price_change",   "Pricing"),
+    ("messaging_shift","Messaging"),
+    ("voc_mention",    "VoC"),
+    ("news",           "News"),
+    ("momentum_point", "Momentum"),
+    ("other",          "Other"),
+]
+
+templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+router = APIRouter(include_in_schema=False)
+
+
+@router.get("/", response_class=HTMLResponse)
+def dashboard(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    last_run = db.query(Run).order_by(Run.started_at.desc()).first()
+    recent_runs = db.query(Run).order_by(Run.started_at.desc()).limit(10).all()
+    recent_findings = db.query(Finding).order_by(Finding.created_at.desc()).limit(20).all()
+    since = datetime.utcnow() - timedelta(days=1)
+    findings_today = db.query(func.count(Finding.id)).filter(Finding.created_at >= since).scalar() or 0
+    competitor_count = db.query(func.count(Competitor.id)).filter(Competitor.active == True).scalar() or 0
+    is_running = db.query(Run).filter(Run.status == "running").first() is not None
+    cost_today = db.query(func.coalesce(func.sum(UsageEvent.cost_usd), 0.0)).filter(UsageEvent.ts >= since).scalar() or 0.0
+
+    return templates.TemplateResponse(request, "dashboard.html", {
+        "user": user,
+        "last_run": last_run,
+        "next_run_at": scheduler.next_run_at("daily_scan"),
+        "is_running": is_running,
+        "findings_today": findings_today,
+        "competitor_count": competitor_count,
+        "recent_runs": recent_runs,
+        "recent_findings": recent_findings,
+        "cost_today": float(cost_today),
+    })
+
+
+@router.get("/company", response_class=HTMLResponse)
+def company_page(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    return _context_page(request, db, user, scope="company", title="Company")
+
+
+@router.get("/customer", response_class=HTMLResponse)
+def customer_page(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    return _context_page(request, db, user, scope="customer", title="Customer")
+
+
+def _context_page(request, db, user, *, scope: str, title: str):
+    from .models import ContextBrief, Document, Finding
+    latest = (
+        db.query(ContextBrief)
+        .filter(ContextBrief.scope == scope)
+        .order_by(ContextBrief.created_at.desc())
+        .first()
+    )
+    history = (
+        db.query(ContextBrief)
+        .filter(ContextBrief.scope == scope)
+        .order_by(ContextBrief.created_at.desc())
+        .offset(1)
+        .limit(10)
+        .all()
+    )
+    docs = (
+        db.query(Document)
+        .filter(Document.bucket == scope)
+        .order_by(Document.created_at.desc())
+        .all()
+    )
+
+    # Customer scope gets an extra panel: recent aggregated discussion from
+    # the customer_watch sweep.
+    discussion = []
+    watch = None
+    if scope == "customer":
+        # Reddit VoC findings — pulled regardless of whether they came from the
+        # customer Full scan or from an individual competitor's full scan. Both
+        # save with topic="voice of customer" and source="reddit/r/<sub>".
+        discussion = (
+            db.query(Finding)
+            .filter(Finding.topic == "voice of customer")
+            .filter(Finding.source.like("reddit/%"))
+            .order_by(Finding.created_at.desc())
+            .limit(50)
+            .all()
+        )
+        import json, os
+        try:
+            with open(os.environ.get("CONFIG_PATH", "config.json"), encoding="utf-8") as f:
+                watch = (json.load(f).get("customer_watch") or {})
+        except Exception:
+            watch = {}
+
+    return templates.TemplateResponse(request, "context_page.html", {
+        "user": user,
+        "scope": scope,
+        "title": title,
+        "latest": latest,
+        "history": history,
+        "docs": docs,
+        "discussion": discussion,
+        "watch": watch,
+    })
+
+
+@router.get("/competitors", response_class=HTMLResponse)
+def competitors_index(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    rows = db.query(Competitor).filter(Competitor.active == True).order_by(Competitor.name).all()
+    # latest CompetitorReport per competitor + finding count in last 30d
+    since = datetime.utcnow() - timedelta(days=30)
+    summaries = []
+    for c in rows:
+        latest = (
+            db.query(CompetitorReport)
+            .filter(CompetitorReport.competitor_id == c.id)
+            .order_by(CompetitorReport.created_at.desc())
+            .first()
+        )
+        recent_findings = (
+            db.query(_func.count(Finding.id))
+            .filter(Finding.competitor == c.name)
+            .filter(Finding.created_at >= since)
+            .scalar() or 0
+        )
+        summaries.append({"c": c, "latest": latest, "recent_findings": recent_findings})
+    return templates.TemplateResponse(request, "competitors_index.html", {
+        "user": user, "items": summaries,
+    })
+
+
+@router.get("/competitors/{competitor_id}", response_class=HTMLResponse)
+def competitor_profile(competitor_id: int, request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    c = db.get(Competitor, competitor_id)
+    if not c:
+        raise HTTPException(404)
+    latest = (
+        db.query(CompetitorReport)
+        .filter(CompetitorReport.competitor_id == c.id)
+        .order_by(CompetitorReport.created_at.desc())
+        .first()
+    )
+    history = (
+        db.query(CompetitorReport)
+        .filter(CompetitorReport.competitor_id == c.id)
+        .order_by(CompetitorReport.created_at.desc())
+        .offset(1)
+        .limit(10)
+        .all()
+    )
+    findings = (
+        db.query(Finding)
+        .filter(Finding.competitor == c.name)
+        .order_by(Finding.created_at.desc())
+        .limit(30)
+        .all()
+    )
+    # Per-provider aggregate so the user can see at a glance which provider
+    # delivered the most results and how relevant they were for this competitor.
+    since = datetime.utcnow() - timedelta(days=30)
+    breakdown_rows = (
+        db.query(
+            Finding.search_provider.label("provider"),
+            func.count(Finding.id).label("count"),
+            func.avg(Finding.score).label("avg_score"),
+        )
+        .filter(Finding.competitor == c.name, Finding.created_at >= since)
+        .group_by(Finding.search_provider)
+        .order_by(func.count(Finding.id).desc())
+        .all()
+    )
+    provider_breakdown = [
+        {"provider": r.provider, "count": r.count, "avg_score": r.avg_score}
+        for r in breakdown_rows
+    ]
+
+    # ── Momentum time-series for this competitor ──────────────────
+    # For each metric we track, pull the last 30 days of values (oldest → newest)
+    # for a sparkline, plus the latest value and its delta vs ~7 days ago.
+    momentum_since = datetime.utcnow() - timedelta(days=30)
+    raw_metrics = (
+        db.query(CompetitorMetric)
+        .filter(
+            CompetitorMetric.competitor_id == c.id,
+            CompetitorMetric.collected_at >= momentum_since,
+        )
+        .order_by(CompetitorMetric.metric, CompetitorMetric.collected_at)
+        .all()
+    )
+    series: dict[str, list[CompetitorMetric]] = {}
+    for m in raw_metrics:
+        series.setdefault(m.metric, []).append(m)
+
+    # How to render each known metric. direction="lower_better" means smaller
+    # is better (rank). Anything else = higher better (installs, rating, trends).
+    METRIC_DISPLAY = {
+        "google_trends": {"label": "Google Trends", "unit": "/100", "direction": "higher_better"},
+        "ios_rank":      {"label": "iOS App Store rank", "unit": "", "direction": "lower_better", "prefix": "#"},
+        "play_installs": {"label": "Play Store installs (min)", "unit": "", "direction": "higher_better"},
+        "play_rating":   {"label": "Play Store rating", "unit": "/5", "direction": "higher_better"},
+        "play_reviews":  {"label": "Play Store reviews", "unit": "", "direction": "higher_better"},
+    }
+    momentum = []
+    for metric_name, display in METRIC_DISPLAY.items():
+        points = series.get(metric_name, [])
+        if not points:
+            continue
+        latest_pt = points[-1]
+        # Find the point closest to 7 days before latest for the delta
+        target = latest_pt.collected_at - timedelta(days=7)
+        earlier = min(points, key=lambda p: abs((p.collected_at - target).total_seconds()))
+        delta = None
+        if latest_pt.value is not None and earlier.value is not None and earlier.id != latest_pt.id:
+            delta = latest_pt.value - earlier.value
+        # Build a compact spark series (just value + date) for the template
+        spark = [
+            {"v": p.value, "d": p.collected_date}
+            for p in points if p.value is not None
+        ]
+        momentum.append({
+            "metric": metric_name,
+            "label": display["label"],
+            "unit": display["unit"],
+            "prefix": display.get("prefix", ""),
+            "direction": display["direction"],
+            "latest_value": latest_pt.value,
+            "latest_at": latest_pt.collected_at,
+            "latest_meta": latest_pt.meta or {},
+            "delta": delta,
+            "spark": spark,
+        })
+
+    return templates.TemplateResponse(request, "competitor_profile.html", {
+        "user": user, "c": c, "latest": latest, "history": history,
+        "findings": findings, "provider_breakdown": provider_breakdown,
+        "momentum": momentum,
+    })
+
+
+@router.get("/admin/competitors", response_class=HTMLResponse)
+def admin_competitors(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    active = db.query(Competitor).filter(Competitor.active == True).order_by(Competitor.name).all()
+    inactive = db.query(Competitor).filter(Competitor.active == False).order_by(Competitor.name).all()
+    return templates.TemplateResponse(request, "admin_competitors.html", {
+        "user": user, "active": active, "inactive": inactive,
+    })
+
+
+@router.get("/admin/competitors/new", response_class=HTMLResponse)
+def admin_competitor_new(request: Request, user=Depends(get_current_user)):
+    return templates.TemplateResponse(request, "admin_competitor_edit.html", {
+        "user": user, "c": None,
+    })
+
+
+@router.get("/admin/competitors/{competitor_id}/edit", response_class=HTMLResponse)
+def admin_competitor_edit(competitor_id: int, request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    c = db.get(Competitor, competitor_id)
+    if not c:
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, "admin_competitor_edit.html", {
+        "user": user, "c": c,
+    })
+
+
+@router.get("/settings", response_class=HTMLResponse)
+def settings_home(request: Request, user=Depends(get_current_user)):
+    return templates.TemplateResponse(request, "settings_home.html", {"user": user})
+
+
+@router.get("/settings/keys", response_class=HTMLResponse)
+def settings_keys(request: Request, user=Depends(get_current_user)):
+    from . import env_keys as _env_keys
+    return templates.TemplateResponse(request, "settings_keys.html", {
+        "user": user, "keys": _env_keys.status(),
+    })
+
+
+@router.get("/settings/usage", response_class=HTMLResponse)
+def settings_usage(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    return admin_usage(request, db, user)
+
+
+@router.get("/settings/providers", response_class=HTMLResponse)
+def settings_providers(request: Request, user=Depends(get_current_user)):
+    import json
+    from . import search_providers
+    from .config_sync import CONFIG_PATH  # absolute path, resolved once at import
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception as e:
+        print(f"[settings/providers] failed to read config: {e}")
+        cfg = {}
+    fetcher_cfg = cfg.get("fetcher") or {}
+    return templates.TemplateResponse(request, "settings_providers.html", {
+        "user": user,
+        "providers": search_providers.provider_status(cfg),
+        "zenrows_primary":    bool(fetcher_cfg.get("zenrows_primary", True)),
+        "zenrows_key_set":    bool(os.environ.get("ZENROWS_API_KEY", "")),
+        "scrapingbee_primary": bool(fetcher_cfg.get("scrapingbee_primary", False)),
+        "scrapingbee_key_set": bool(os.environ.get("SCRAPINGBEE_API_KEY", "")),
+    })
+
+
+@router.get("/admin/skills", response_class=HTMLResponse)
+def admin_skills(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    from .models import Skill as SkillModel
+    from .skills import KNOWN_SKILLS
+    rows = []
+    for name, (_fname, desc) in KNOWN_SKILLS.items():
+        active = (
+            db.query(SkillModel)
+            .filter(SkillModel.name == name, SkillModel.active == True)
+            .order_by(SkillModel.version.desc())
+            .first()
+        )
+        total = db.query(SkillModel).filter(SkillModel.name == name).count()
+        rows.append({
+            "name": name, "description": desc,
+            "active": active, "total_versions": total,
+        })
+    return templates.TemplateResponse(request, "admin_skills.html", {
+        "user": user, "rows": rows,
+    })
+
+
+@router.get("/admin/skills/{name}", response_class=HTMLResponse)
+def admin_skill_edit(name: str, request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    from .models import Skill as SkillModel
+    from .skills import KNOWN_SKILLS, load_active
+    if name not in KNOWN_SKILLS:
+        raise HTTPException(404)
+    active = (
+        db.query(SkillModel)
+        .filter(SkillModel.name == name, SkillModel.active == True)
+        .order_by(SkillModel.version.desc())
+        .first()
+    )
+    history = (
+        db.query(SkillModel)
+        .filter(SkillModel.name == name)
+        .order_by(SkillModel.version.desc())
+        .all()
+    )
+    return templates.TemplateResponse(request, "admin_skill_edit.html", {
+        "user": user,
+        "name": name,
+        "description": KNOWN_SKILLS[name][1],
+        "active": active,
+        "history": history,
+        "body_md": active.body_md if active else load_active(name),
+    })
+
+
+@router.get("/admin/usage", response_class=HTMLResponse)
+def admin_usage(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    now = datetime.utcnow()
+
+    def _sum(since):
+        cost, it, ot, cr, calls = db.query(
+            _func.coalesce(_func.sum(UsageEvent.cost_usd), 0.0),
+            _func.coalesce(_func.sum(UsageEvent.input_tokens), 0),
+            _func.coalesce(_func.sum(UsageEvent.output_tokens), 0),
+            _func.coalesce(_func.sum(UsageEvent.credits), 0),
+            _func.count(UsageEvent.id),
+        ).filter(UsageEvent.ts >= since).one()
+        return {"cost": float(cost), "input": int(it), "output": int(ot),
+                "credits": int(cr), "calls": int(calls)}
+
+    totals = {
+        "day":   _sum(now - timedelta(days=1)),
+        "week":  _sum(now - timedelta(days=7)),
+        "month": _sum(now - timedelta(days=30)),
+    }
+
+    by_model = (
+        db.query(
+            UsageEvent.provider, UsageEvent.model,
+            _func.count(UsageEvent.id),
+            _func.coalesce(_func.sum(UsageEvent.input_tokens), 0),
+            _func.coalesce(_func.sum(UsageEvent.output_tokens), 0),
+            _func.coalesce(_func.sum(UsageEvent.credits), 0),
+            _func.coalesce(_func.sum(UsageEvent.cost_usd), 0.0),
+        )
+        .filter(UsageEvent.ts >= now - timedelta(days=30))
+        .group_by(UsageEvent.provider, UsageEvent.model)
+        .order_by(_func.sum(UsageEvent.cost_usd).desc())
+        .all()
+    )
+
+    recent = (
+        db.query(UsageEvent).order_by(UsageEvent.id.desc()).limit(30).all()
+    )
+
+    return templates.TemplateResponse(request, "settings_usage.html", {
+        "user": user,
+        "totals": totals,
+        "by_model": by_model,
+        "recent": recent,
+    })
+
+
+@router.get("/runs", response_class=HTMLResponse)
+def runs_index(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    rows = db.query(Run).order_by(Run.started_at.desc()).limit(100).all()
+    is_running = db.query(Run).filter(Run.status == "running").first() is not None
+    return templates.TemplateResponse(request, "runs_index.html", {
+        "user": user, "runs": rows, "is_running": is_running,
+    })
+
+
+@router.get("/runs/{run_id}", response_class=HTMLResponse)
+def run_detail(run_id: int, request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    run = db.get(Run, run_id)
+    if not run:
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, "run.html", {
+        "user": user, "run": run, "events": run.events,
+    })
+
+
+@router.get("/market", response_class=HTMLResponse)
+def market_index(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    rows = db.query(Report).order_by(Report.created_at.desc()).limit(100).all()
+    return templates.TemplateResponse(request, "market_index.html", {
+        "user": user, "reports": rows,
+    })
+
+
+@router.get("/market/{report_id}", response_class=HTMLResponse)
+def market_detail(report_id: int, request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    report = db.get(Report, report_id)
+    if not report:
+        raise HTTPException(404)
+    return templates.TemplateResponse(request, "market_detail.html", {
+        "user": user, "report": report,
+    })
+
+
+@router.get("/partials/status_bar", response_class=HTMLResponse)
+def partial_status_bar(request: Request, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    """Global footer status — shown on every page via base.html. Three states:
+    running, recently-finished (30s), recently-errored (60s). Else: empty."""
+    running = (
+        db.query(Run)
+        .filter(Run.status.in_(["running", "cancelling"]))
+        .order_by(Run.started_at.desc())
+        .first()
+    )
+    if running:
+        events = (
+            db.query(_func.count(Run.events.property.mapper.class_.id))
+            if False else None
+        )
+        from .models import RunEvent
+        ev_count = db.query(_func.count(RunEvent.id)).filter(RunEvent.run_id == running.id).scalar() or 0
+        return templates.TemplateResponse(request, "_status_bar.html", {
+            "state": "running", "run": running, "event_count": ev_count,
+        })
+
+    latest = db.query(Run).order_by(Run.started_at.desc()).first()
+    if latest and latest.finished_at:
+        age = (datetime.utcnow() - latest.finished_at).total_seconds()
+        if latest.status == "ok" and age < 30:
+            return templates.TemplateResponse(request, "_status_bar.html", {
+                "state": "done", "run": latest, "event_count": 0,
+            })
+        if latest.status == "error" and age < 60:
+            return templates.TemplateResponse(request, "_status_bar.html", {
+                "state": "error", "run": latest, "event_count": 0,
+            })
+    return HTMLResponse("")
+
+
+@router.get("/partials/status", response_class=HTMLResponse)
+def partial_status(request: Request, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    """HTMX polls this fragment every 10s to keep the dashboard header live."""
+    last_run = db.query(Run).order_by(Run.started_at.desc()).first()
+    is_running = db.query(Run).filter(Run.status == "running").first() is not None
+    return templates.TemplateResponse(request, "_status.html", {
+        "last_run": last_run,
+        "next_run_at": scheduler.next_run_at("daily_scan"),
+        "is_running": is_running,
+    })
+
+
+@router.get("/partials/live_run", response_class=HTMLResponse)
+def partial_live_run(request: Request, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    """HTMX polls this every ~2s while a run is in flight.
+    Returns empty when nothing is running, which causes the panel to vanish."""
+    from .models import RunEvent
+    run = (
+        db.query(Run)
+        .filter(Run.status.in_(["running", "cancelling"]))
+        .order_by(Run.started_at.desc())
+        .first()
+    )
+    if not run:
+        return HTMLResponse("")
+    events = (
+        db.query(RunEvent)
+        .filter(RunEvent.run_id == run.id)
+        .order_by(RunEvent.id.desc())
+        .limit(60)
+        .all()
+    )
+    events = list(reversed(events))
+    return templates.TemplateResponse(request, "_live_run.html", {
+        "run": run,
+        "events": events,
+    })
+
+
+@router.get("/partials/run_events/{run_id}", response_class=HTMLResponse)
+def partial_run_events(
+    run_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Events panel for a specific run, used by the run detail page.
+    Polls itself every 2s while the run is still 'running', then stops
+    (the returned HTML omits the hx-trigger when the run is finished)."""
+    from .models import RunEvent
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(404, "run not found")
+    events = (
+        db.query(RunEvent)
+        .filter(RunEvent.run_id == run.id)
+        .order_by(RunEvent.id.asc())
+        .all()
+    )
+    return templates.TemplateResponse(request, "_run_events.html", {
+        "run": run,
+        "events": events,
+        "is_running": run.status == "running",
+    })
+
+
+# ─── Stream ───────────────────────────────────────────────────────────────
+# Server-rendered feed for typed signals. Matches the /api/findings JSON
+# shape but renders HTML partials for HTMX swaps (filter change → list
+# reload; pin/dismiss → single card reload).
+
+def _parse_stream_filters(params: dict) -> dict:
+    """Read query params into a normalized filter dict. Centralised so the
+    full-page GET, the list partial, and saved-filter load all produce the
+    same filter state."""
+    raw_types = params.getlist("signal_types") if hasattr(params, "getlist") else params.get("signal_types", [])
+    if isinstance(raw_types, str):
+        raw_types = [raw_types]
+    try:
+        min_mat = float(params.get("min_materiality", "") or 0.0) or None
+    except ValueError:
+        min_mat = None
+    try:
+        since_days = int(params.get("since_days") or 0) or None
+    except ValueError:
+        since_days = None
+    # `downweight_stale` defaults on: pushes findings with published_at older
+    # than a year to the bottom of the order (still shown). The template
+    # emits a hidden "0" in front of the checkbox so form submissions always
+    # include the key when unchecked. When we're parsing a saved-filter dict
+    # (not a form), absence of the key means the spec predates this flag —
+    # fall back to the default.
+    is_form = hasattr(params, "getlist")
+    ds_vals = params.getlist("downweight_stale") if is_form else [params.get("downweight_stale")]
+    ds_vals = [v for v in ds_vals if v is not None and v != ""]
+    if ds_vals:
+        last = ds_vals[-1]
+        # QueryParams sends strings; saved-filter dicts store native bools.
+        downweight_stale = last is True or last == "1"
+    elif is_form and len(params) > 0:
+        downweight_stale = False  # form submitted without the key → unchecked
+    else:
+        downweight_stale = True  # bare URL or legacy saved spec → default on
+    return {
+        "competitor": (params.get("competitor") or "").strip() or None,
+        "signal_types": [t for t in raw_types if t],
+        "min_materiality": min_mat,
+        "since_days": since_days,
+        "include_dismissed": (params.get("include_dismissed") or "") == "1",
+        "downweight_stale": downweight_stale,
+    }
+
+
+def _stream_query(db, user, filters, *, limit=50, offset=0):
+    """Build + run the stream query. Returns (findings, view_by_finding_id)."""
+    from sqlalchemy import and_, or_, case
+    q = db.query(Finding)
+    if filters["competitor"]:
+        q = q.filter(Finding.competitor == filters["competitor"])
+    if filters["signal_types"]:
+        q = q.filter(Finding.signal_type.in_(filters["signal_types"]))
+    if filters["min_materiality"] is not None:
+        q = q.filter(Finding.materiality >= filters["min_materiality"])
+    if filters["since_days"]:
+        cutoff = datetime.utcnow() - timedelta(days=filters["since_days"])
+        q = q.filter(Finding.created_at >= cutoff)
+
+    # View-state filters: always exclude snoozed-active rows; exclude
+    # dismissed unless the user explicitly asked to see them.
+    q = q.outerjoin(
+        SignalView,
+        and_(SignalView.finding_id == Finding.id, SignalView.user_id == user.id),
+    )
+    if not filters["include_dismissed"]:
+        q = q.filter(or_(SignalView.state.is_(None), SignalView.state != "dismissed"))
+    now = datetime.utcnow()
+    q = q.filter(or_(
+        SignalView.state.is_(None),
+        SignalView.state != "snoozed",
+        SignalView.snoozed_until.is_(None),
+        SignalView.snoozed_until < now,
+    ))
+
+    if filters.get("downweight_stale"):
+        # Stale = published over a year ago. NULL published_at is treated as
+        # fresh so we don't penalise signals where the source didn't expose a
+        # date (many careers / VoC hits). Sorted 0-before-1 pushes stale rows
+        # to the bottom while keeping created_at as the within-group order.
+        one_year_ago = datetime.utcnow() - timedelta(days=365)
+        stale_flag = case(
+            (and_(Finding.published_at.isnot(None), Finding.published_at < one_year_ago), 1),
+            else_=0,
+        )
+        q = q.order_by(stale_flag.asc(), Finding.created_at.desc())
+    else:
+        q = q.order_by(Finding.created_at.desc())
+
+    findings = q.offset(offset).limit(limit).all()
+    views: dict[int, SignalView] = {}
+    if findings:
+        ids = [f.id for f in findings]
+        for v in db.query(SignalView).filter(
+            SignalView.user_id == user.id,
+            SignalView.finding_id.in_(ids),
+        ).all():
+            views[v.finding_id] = v
+    return findings, views
+
+
+@router.get("/stream", response_class=HTMLResponse)
+def stream_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    # Auto-apply the user's default filter only when the URL is bare —
+    # any query param (even an empty submission from the form) means the
+    # user is steering and should override the default.
+    if not request.query_params and user.default_filter_id:
+        default_sf = db.get(SavedFilter, user.default_filter_id)
+        filters = _parse_stream_filters(default_sf.spec) if default_sf else _parse_stream_filters({})
+    else:
+        filters = _parse_stream_filters(request.query_params)
+    findings, views = _stream_query(db, user, filters)
+    competitors = [c.name for c in db.query(Competitor).filter(Competitor.active == True).order_by(Competitor.name).all()]
+    # Saved filters (own + team-shared) for the dropdown.
+    from sqlalchemy import or_ as _or
+    saved = (
+        db.query(SavedFilter)
+        .filter(_or(SavedFilter.owner_id == user.id, SavedFilter.owner_id.is_(None)))
+        .order_by(SavedFilter.created_at.desc())
+        .all()
+    )
+    return templates.TemplateResponse(request, "stream.html", {
+        "user": user,
+        "filters": filters,
+        "findings": findings,
+        "views": views,
+        "competitors": competitors,
+        "signal_types": SIGNAL_TYPES,
+        "saved_filters": saved,
+        "default_filter_id": user.default_filter_id,
+    })
+
+
+@router.get("/partials/stream_list", response_class=HTMLResponse)
+def partial_stream_list(
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    filters = _parse_stream_filters(request.query_params)
+    findings, views = _stream_query(db, user, filters)
+    return templates.TemplateResponse(request, "_stream_list.html", {
+        "findings": findings,
+        "views": views,
+    })
+
+
+@router.post("/partials/stream_view/{finding_id}", response_class=HTMLResponse)
+async def partial_stream_view(
+    finding_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Upsert SignalView and return the re-rendered card.
+
+    Dismissed cards still render (with a 'dismissed' style) so the user
+    sees the action landed; the stream query will omit them on next
+    filter reload unless include_dismissed=1 is set.
+    """
+    form = await request.form()
+    state = (form.get("state") or "").strip()
+    allowed = {"seen", "pinned", "dismissed", "snoozed"}
+    if state not in allowed:
+        raise HTTPException(400, f"state must be one of {sorted(allowed)}")
+    snoozed_until = None
+    if state == "snoozed":
+        # Default: snooze for 7 days. A custom value could come via form later.
+        snoozed_until = datetime.utcnow() + timedelta(days=7)
+
+    f = db.get(Finding, finding_id)
+    if not f:
+        raise HTTPException(404, "finding not found")
+    existing = (
+        db.query(SignalView)
+        .filter(SignalView.user_id == user.id, SignalView.finding_id == finding_id)
+        .first()
+    )
+    now = datetime.utcnow()
+    if existing:
+        existing.state = state
+        existing.snoozed_until = snoozed_until
+        existing.updated_at = now
+        v = existing
+    else:
+        v = SignalView(
+            user_id=user.id,
+            finding_id=finding_id,
+            state=state,
+            snoozed_until=snoozed_until,
+            updated_at=now,
+        )
+        db.add(v)
+    db.commit()
+    return templates.TemplateResponse(request, "_stream_card.html", {
+        "f": f,
+        "view": v,
+    })
+
+
+@router.post("/partials/stream_save_filter", response_class=HTMLResponse)
+async def partial_stream_save_filter(
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Save the current filter state as a SavedFilter. Form-encoded: name +
+    the same filter query params the list endpoint takes. Returns the
+    updated saved-filter dropdown partial."""
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name required")
+    # Re-parse filter state from the form body (client posts current filter values)
+    filters = _parse_stream_filters(form)
+    spec = {
+        "competitor": filters["competitor"],
+        "signal_types": filters["signal_types"],
+        "min_materiality": filters["min_materiality"],
+        "since_days": filters["since_days"],
+        "downweight_stale": filters["downweight_stale"],
+    }
+    visibility = "team" if (form.get("visibility") == "team") else "private"
+    row = SavedFilter(
+        owner_id=None if visibility == "team" else user.id,
+        name=name,
+        spec={k: v for k, v in spec.items() if v not in (None, [], "")},
+        visibility=visibility,
+    )
+    db.add(row)
+    db.commit()
+    from sqlalchemy import or_ as _or
+    saved = (
+        db.query(SavedFilter)
+        .filter(_or(SavedFilter.owner_id == user.id, SavedFilter.owner_id.is_(None)))
+        .order_by(SavedFilter.created_at.desc())
+        .all()
+    )
+    return templates.TemplateResponse(request, "_stream_saved_filters.html", {
+        "saved_filters": saved,
+        "default_filter_id": user.default_filter_id,
+    })
+
+
+@router.post("/partials/stream_toggle_default/{filter_id}", response_class=HTMLResponse)
+async def partial_stream_toggle_default(
+    filter_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Toggle a saved filter as the user's default. Returns the refreshed
+    saved-filter list so the star icon updates in place."""
+    sf = db.get(SavedFilter, filter_id)
+    if not sf:
+        raise HTTPException(404, "filter not found")
+    # Toggle: clearing happens by clicking the currently-default star again.
+    user.default_filter_id = None if user.default_filter_id == filter_id else filter_id
+    db.commit()
+    from sqlalchemy import or_ as _or
+    saved = (
+        db.query(SavedFilter)
+        .filter(_or(SavedFilter.owner_id == user.id, SavedFilter.owner_id.is_(None)))
+        .order_by(SavedFilter.created_at.desc())
+        .all()
+    )
+    return templates.TemplateResponse(request, "_stream_saved_filters.html", {
+        "saved_filters": saved,
+        "default_filter_id": user.default_filter_id,
+    })

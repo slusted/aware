@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Run #{{ run.id }} — {{ run.kind }}{% endblock %}
+{% block page_actions %}
+  {% if run.report_id %}
+    <a href="/market/{{ run.report_id }}" class="btn btn-ghost">View digest</a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="stat-grid" style="margin-bottom:20px">
+  <div class="stat">
+    <div class="label">Status</div>
+    <div class="value" style="font-size:14px; font-weight:500"><span class="pill {{ run.status }}">{{ run.status }}</span></div>
+  </div>
+  <div class="stat">
+    <div class="label">Started</div>
+    <div class="value" style="font-size:14px; font-weight:500">{{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Finished</div>
+    <div class="value" style="font-size:14px; font-weight:500">
+      {% if run.finished_at %}{{ run.finished_at.strftime('%H:%M:%S') }}{% else %}<span class="muted">—</span>{% endif %}
+    </div>
+  </div>
+  <div class="stat">
+    <div class="label">Findings</div>
+    <div class="value">{{ run.findings_count }}</div>
+    <div class="sub">triggered {{ run.triggered_by }}</div>
+  </div>
+</div>
+
+{% if run.error %}
+<div class="panel" style="border-color:rgba(239,68,68,0.3)">
+  <div class="panel-header" style="border-bottom-color:rgba(239,68,68,0.2)"><h2 style="color:var(--err)">Error</h2></div>
+  <div class="panel-body"><pre style="margin:0; border:0; padding:0; color:var(--err)">{{ run.error }}</pre></div>
+</div>
+{% endif %}
+
+{# Events panel — polls itself every 2s while run.status == "running" #}
+<div hx-get="/partials/run_events/{{ run.id }}"
+     hx-trigger="load"
+     hx-swap="innerHTML">
+  <div class="panel">
+    <div class="panel-header"><h2>Events · loading…</h2></div>
+    <pre style="margin:0; border:0; border-radius:0"><span class="muted">loading events…</span></pre>
+  </div>
+</div>
+{% endblock %}

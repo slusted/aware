@@ -1,0 +1,30 @@
+{# Saved-filter list — click name to apply, ★ to toggle as default. #}
+<div class="stream-saved-filters">
+  <span class="filter-label">Saved filters</span>
+  {% if not saved_filters %}
+    <span class="muted">none yet</span>
+  {% else %}
+    {% for sf in saved_filters %}
+      {% set qs = [] %}
+      {% if sf.spec.get("competitor") %}{% set _ = qs.append("competitor=" ~ sf.spec["competitor"]) %}{% endif %}
+      {% for t in sf.spec.get("signal_types", []) %}{% set _ = qs.append("signal_types=" ~ t) %}{% endfor %}
+      {% if sf.spec.get("min_materiality") is not none %}{% set _ = qs.append("min_materiality=" ~ sf.spec["min_materiality"]) %}{% endif %}
+      {% if sf.spec.get("since_days") %}{% set _ = qs.append("since_days=" ~ sf.spec["since_days"]) %}{% endif %}
+      {% set is_default = (default_filter_id == sf.id) %}
+      <span class="saved-filter">
+        <a href="/stream?{{ qs|join('&') }}" class="saved-filter-name">
+          {{ sf.name }}{% if sf.visibility == "team" %} · team{% endif %}
+        </a>
+        <button type="button"
+                class="saved-filter-default{% if is_default %} is-default{% endif %}"
+                hx-post="/partials/stream_toggle_default/{{ sf.id }}"
+                hx-target="#saved-filters-slot"
+                hx-swap="innerHTML"
+                title="{% if is_default %}Default — click to clear{% else %}Set as default{% endif %}"
+                aria-pressed="{{ 'true' if is_default else 'false' }}">
+          {% if is_default %}★{% else %}☆{% endif %}
+        </button>
+      </span>
+    {% endfor %}
+  {% endif %}
+</div>

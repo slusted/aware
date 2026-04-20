@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }}{% endblock %}
+
+{% block page_actions %}
+  <a href="/admin/competitors/{{ c.id }}/edit" class="btn btn-ghost">Edit</a>
+  <button id="regen-btn" type="button" class="btn-ghost" title="LLM only — re-synthesize over existing findings">Regenerate review</button>
+  <div class="scan-launcher" style="display:inline-flex; align-items:stretch; position:relative">
+    <button id="scan-btn" type="button"
+            title="End-to-end: new web search + extract + LLM review"
+            style="border-top-right-radius:0; border-bottom-right-radius:0">Full scan</button>
+    <button id="scan-chev" type="button" aria-label="Freshness options"
+            style="border-top-left-radius:0; border-bottom-left-radius:0;
+                   padding:0 9px; border-left:1px solid rgba(0,0,0,0.2)">
+      <svg viewBox="0 0 10 6" width="9" height="6" fill="currentColor"><path d="M0 0l5 6 5-6z"/></svg>
+    </button>
+    <div id="scan-menu" role="menu"
+         style="display:none; position:absolute; top:40px; right:0; z-index:20;
+                background:var(--bg-raised); border:1px solid var(--border-strong);
+                border-radius:var(--r); min-width:220px; padding:4px;
+                box-shadow:0 8px 24px rgba(0,0,0,0.4)">
+      <div class="label" style="padding:8px 10px 4px; color:var(--text-dim); font-size:11px; text-transform:uppercase; letter-spacing:0.04em">Freshness window</div>
+      {% for d, label in [
+        (None, 'Auto — since last scan'),
+        (1,    'Last 24 hours'),
+        (3,    'Last 3 days'),
+        (7,    'Last 7 days'),
+        (14,   'Last 14 days'),
+        (30,   'Last 30 days'),
+        (90,   'Last 90 days'),
+      ] %}
+        <a href="#" data-days="{{ d if d is not none else '' }}"
+           class="scan-opt"
+           style="display:block; padding:7px 10px; border-radius:var(--r-sm); color:var(--text); font-size:13px; text-decoration:none">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+{% endblock %}
+
+{% block content %}
+
+<div style="margin-bottom:20px">
+  {% if c.category %}<span class="chip">{{ c.category }}</span>{% endif %}
+  {% if c.source %}<span class="chip">{{ c.source }}</span>{% endif %}
+  {% if c.threat_angle %}
+    <p class="muted" style="margin-top:10px; max-width:720px">{{ c.threat_angle }}</p>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <div class="panel-header">
+    <h2>Current strategy review</h2>
+    {% if latest %}
+      <span class="muted" style="font-size:11px">
+        {{ latest.created_at.strftime('%Y-%m-%d %H:%M') }}
+        {% if latest.source_summary %} · {{ latest.source_summary }}{% endif %}
+      </span>
+    {% endif %}
+  </div>
+  <div class="panel-body">
+  {% if latest %}
+    <div id="review-body" class="markdown"></div>
+    <script id="review-src" type="text/plain">{{ latest.body_md }}</script>
+  {% else %}
+    <p class="muted" style="margin:0">No review yet. Click <strong>Regenerate review</strong> above, or wait for the next scan.</p>
+  {% endif %}
+  </div>
+</div>
+
+{% if momentum %}
+<div class="panel">
+  <div class="panel-header">
+    <h2>Momentum</h2>
+    <span class="muted" style="font-size:11px">Daily signals over last 30 days · hover a sparkline for detail</span>
+  </div>
+  <table>
+    <thead><tr>
+      <th style="width:30%">Metric</th>
+      <th>Latest</th>
+      <th>7-day delta</th>
+      <th>Trend (30d)</th>
+      <th>Collected</th>
+    </tr></thead>
+    <tbody>
+    {% for m in momentum %}
+      {% set is_good_delta = (m.delta is not none) and (
+            (m.direction == 'higher_better' and m.delta > 0) or
+            (m.direction == 'lower_better' and m.delta < 0)
+         ) %}
+      {% set is_bad_delta  = (m.delta is not none) and (
+            (m.direction == 'higher_better' and m.delta < 0) or
+            (m.direction == 'lower_better' and m.delta > 0)
+         ) %}
+      <tr>
+        <td>
+          <strong>{{ m.label }}</strong>
+          {% if m.latest_meta.get('keyword') %}
+            <div class="muted" style="font-size:11px">kw: {{ m.latest_meta['keyword'] }}</div>
+          {% elif m.latest_meta.get('package') %}
+            <div class="muted" style="font-size:11px">{{ m.latest_meta['package'] }}</div>
+          {% elif m.latest_meta.get('app_store_id') %}
+            <div class="muted" style="font-size:11px">id {{ m.latest_meta['app_store_id'] }}</div>
+          {% endif %}
+        </td>
+        <td>
+          {% if m.latest_value is not none %}
+            <strong>{{ m.prefix }}{% if m.metric == 'play_rating' %}{{ '%.2f'|format(m.latest_value) }}{% elif m.latest_value == m.latest_value|int %}{{ m.latest_value|int }}{% else %}{{ '%.1f'|format(m.latest_value) }}{% endif %}{{ m.unit }}</strong>
+          {% else %}
+            <span class="muted">—{% if m.latest_meta.get('note') %} <span style="font-size:11px">({{ m.latest_meta['note'] }})</span>{% endif %}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if m.delta is not none %}
+            <span style="color: {{ 'var(--ok, #2a8)' if is_good_delta else ('var(--err, #c44)' if is_bad_delta else 'var(--muted)') }}">
+              {{ '+' if m.delta > 0 else '' }}{% if m.delta == m.delta|int %}{{ m.delta|int }}{% else %}{{ '%.2f'|format(m.delta) }}{% endif %}
+            </span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if m.spark|length > 1 %}
+            {% set vmin = m.spark|map(attribute='v')|min %}
+            {% set vmax = m.spark|map(attribute='v')|max %}
+            {% set span = (vmax - vmin) if (vmax != vmin) else 1 %}
+            {% set n = m.spark|length %}
+            <svg width="120" height="28" viewBox="0 0 120 28" style="vertical-align:middle">
+              <polyline fill="none" stroke="currentColor" stroke-width="1.5"
+                points="{% for p in m.spark %}{{ (loop.index0 / (n - 1)) * 118 + 1 }},{{ 26 - ((p.v - vmin) / span) * 24 }} {% endfor %}"/>
+            </svg>
+          {% else %}
+            <span class="muted" style="font-size:11px">not enough data</span>
+          {% endif %}
+        </td>
+        <td class="muted" style="font-size:11px">{{ m.latest_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif c.app_store_id or c.play_package or c.trends_keyword %}
+<div class="panel">
+  <div class="panel-header"><h2>Momentum</h2></div>
+  <div class="panel-body">
+    <p class="muted" style="margin:0">No momentum data yet. Wait for the next daily run, or trigger it manually.</p>
+  </div>
+</div>
+{% else %}
+<div class="panel">
+  <div class="panel-header"><h2>Momentum</h2></div>
+  <div class="panel-body">
+    <p class="muted" style="margin:0">No momentum identifiers configured. Set an iOS App Store ID, Google Play package, or Trends keyword on the <a href="/admin/competitors/{{ c.id }}/edit">edit page</a> to start tracking.</p>
+  </div>
+</div>
+{% endif %}
+
+{% if history %}
+<div class="panel">
+  <div class="panel-header"><h2>Prior reviews</h2></div>
+  <table>
+    <thead><tr><th>Date</th><th>Model</th><th>Inputs</th><th></th></tr></thead>
+    <tbody>
+    {% for r in history %}
+      <tr>
+        <td class="muted">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="muted">{{ r.model or '' }}</td>
+        <td class="muted">{{ r.source_summary or '' }}</td>
+        <td style="text-align:right"><a href="#" onclick="showPrior({{ r.id }}); return false">view</a></td>
+      </tr>
+      <tr id="prior-{{ r.id }}" style="display:none">
+        <td colspan="4" style="background:var(--bg)"><div class="markdown" style="padding:10px 4px">{{ r.body_md|safe }}</div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="panel">
+  <div class="panel-header">
+    <h2>Recent findings</h2>
+    {% if provider_breakdown %}
+      <span class="muted" style="font-size:12px">
+        By provider:
+        {% for row in provider_breakdown %}
+          <span class="pill" style="font-size:11px; margin-left:4px"
+                title="avg relevance {{ '%.2f'|format(row.avg_score) if row.avg_score else '—' }}; {{ row.count }} findings">
+            {{ row.provider or 'unknown' }} · {{ row.count }}{% if row.avg_score %} · {{ '%.2f'|format(row.avg_score) }}{% endif %}
+          </span>
+        {% endfor %}
+      </span>
+    {% endif %}
+  </div>
+  <table>
+    <thead><tr>
+      <th></th>
+      <th>When</th>
+      <th>Source</th>
+      <th>Provider</th>
+      <th>Score</th>
+      <th>Published</th>
+      <th>Title</th>
+    </tr></thead>
+    <tbody>
+    {% for f in findings %}
+      <tr class="finding-row" data-fid="{{ f.id }}" style="cursor:pointer">
+        <td style="width:24px; text-align:center; color:var(--text-muted)">
+          <span class="caret">›</span>
+        </td>
+        <td class="muted">{{ f.created_at.strftime('%Y-%m-%d') }}</td>
+        <td class="muted">{{ f.source }}</td>
+        <td class="muted">{{ f.search_provider or '—' }}</td>
+        <td class="muted">{% if f.score is not none %}{{ '%.2f'|format(f.score) }}{% else %}—{% endif %}</td>
+        <td class="muted">{% if f.published_at %}{{ f.published_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}</td>
+        <td>
+          {% if f.url %}<a href="{{ f.url }}" target="_blank" onclick="event.stopPropagation()">{{ f.title or (f.content or '')[:120] }}</a>
+          {% else %}{{ f.title or (f.content or '')[:120] }}{% endif %}
+        </td>
+      </tr>
+      <tr id="finding-{{ f.id }}-detail" style="display:none; background:var(--bg)">
+        <td colspan="7" style="padding:14px 20px">
+          <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:10px; font-size:11px" class="muted">
+            <span><strong>URL:</strong> {% if f.url %}<a href="{{ f.url }}" target="_blank" class="mono" style="font-size:11px">{{ f.url[:90] }}</a>{% else %}—{% endif %}</span>
+            <span><strong>Topic:</strong> {{ f.topic or '—' }}</span>
+            <span><strong>Hash:</strong> <span class="mono">{{ f.hash[:12] }}</span></span>
+            <span><strong>Run:</strong> {% if f.run_id %}<a href="/runs/{{ f.run_id }}">#{{ f.run_id }}</a>{% else %}—{% endif %}</span>
+            <span><strong>Length:</strong> {{ (f.content or '')|length }} chars</span>
+          </div>
+          <pre style="margin:0; white-space:pre-wrap; word-break:break-word; max-height:400px; overflow:auto; font-size:12px; line-height:1.5">{{ f.content or '(no content stored — this finding arrived as snippet-only)' }}</pre>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">No findings on record.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  // Toggle the per-finding detail row (URL, topic, full stored content).
+  document.querySelectorAll('.finding-row').forEach(function (row) {
+    row.addEventListener('click', function () {
+      var fid = row.dataset.fid;
+      var detail = document.getElementById('finding-' + fid + '-detail');
+      if (!detail) return;
+      var open = detail.style.display !== 'none';
+      detail.style.display = open ? 'none' : 'table-row';
+      var caret = row.querySelector('.caret');
+      if (caret) caret.textContent = open ? '›' : '⌄';
+    });
+  });
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  (function renderReview() {
+    var src = document.getElementById('review-src');
+    var out = document.getElementById('review-body');
+    if (src && out && window.marked) {
+      out.innerHTML = window.marked.parse(src.textContent);
+    }
+  })();
+
+  function showPrior(id) {
+    var row = document.getElementById('prior-' + id);
+    if (row) row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+  }
+
+  // Scan button state machine:
+  //   idle       → "Full scan" (+ chevron for freshness override)
+  //   starting   → "Queued…"  (just clicked, no run row yet)
+  //   running    → "Stop scan #N" (cancel in-flight run)
+  //   cancelling → "Cancelling…"
+  // Polls /api/runs every 3s while scan is active to flip the button and
+  // reload the page once a fresh report appears.
+  var scanState = 'idle';
+  var activeRunId = null;
+  var reviewBaseline = {{ (latest.id if latest else 0) }};
+  var scanPoll = null;
+
+  function $scanBtn()  { return document.getElementById('scan-btn');  }
+  function $scanChev() { return document.getElementById('scan-chev'); }
+  function $regenBtn() { return document.getElementById('regen-btn'); }
+
+  function renderScanButton() {
+    var btn = $scanBtn(), chev = $scanChev(), regen = $regenBtn();
+    switch (scanState) {
+      case 'idle':
+        btn.textContent = 'Full scan';
+        btn.disabled = false;
+        btn.title = 'End-to-end: new web search + extract + LLM review';
+        btn.classList.remove('btn-danger');
+        chev.style.display = '';
+        chev.disabled = false;
+        regen.disabled = false;
+        break;
+      case 'starting':
+        btn.textContent = 'Queued…';
+        btn.disabled = true;
+        chev.style.display = 'none';
+        regen.disabled = true;
+        break;
+      case 'running':
+        btn.textContent = activeRunId ? ('Stop scan #' + activeRunId) : 'Stop scan';
+        btn.disabled = false;
+        btn.title = 'Cancel the in-flight run. The current HTTP call finishes, then the job exits.';
+        btn.classList.add('btn-danger');
+        chev.style.display = 'none';
+        regen.disabled = true;
+        break;
+      case 'cancelling':
+        btn.textContent = 'Cancelling…';
+        btn.disabled = true;
+        chev.style.display = 'none';
+        regen.disabled = true;
+        break;
+    }
+  }
+
+  async function fetchActiveRun() {
+    try {
+      var resp = await fetch('/api/runs?limit=5');
+      if (!resp.ok) return null;
+      var rows = await resp.json();
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].status === 'running' || rows[i].status === 'cancelling') {
+          return rows[i];
+        }
+      }
+    } catch (e) { /* network blip — try again next tick */ }
+    return null;
+  }
+
+  async function checkReviewAppeared() {
+    try {
+      var resp = await fetch('/api/competitors/{{ c.id }}/reports?limit=1');
+      if (!resp.ok) return false;
+      var rows = await resp.json();
+      return rows.length && rows[0].id > reviewBaseline;
+    } catch (e) { return false; }
+  }
+
+  function startPolling() {
+    if (scanPoll) return;
+    scanPoll = setInterval(tickScanState, 3000);
+  }
+  function stopPolling() {
+    if (scanPoll) { clearInterval(scanPoll); scanPoll = null; }
+  }
+
+  async function tickScanState() {
+    var active = await fetchActiveRun();
+    if (active) {
+      activeRunId = active.id;
+      scanState = active.status === 'cancelling' ? 'cancelling' : 'running';
+      renderScanButton();
+      return;
+    }
+    // No active run. Did a fresh review land? If so, reload to show it.
+    if (await checkReviewAppeared()) {
+      stopPolling(); location.reload(); return;
+    }
+    // Nothing running, no new review — settle back to idle.
+    activeRunId = null;
+    scanState = 'idle';
+    renderScanButton();
+    stopPolling();
+  }
+
+  // LLM-only regen (fast, doesn't create a Run — just polls for new report)
+  document.getElementById('regen-btn').addEventListener('click', async function () {
+    var self = this; self.disabled = true; self.textContent = 'Queued…';
+    try {
+      var r = await fetch('/api/competitors/{{ c.id }}/reports', {method: 'POST'});
+      if (!r.ok) {
+        alert('Failed: ' + r.status + '\n' + await r.text());
+        self.disabled = false; self.textContent = 'Regenerate review';
+        return;
+      }
+      // Poll for the new review row; bounded timeout in case of silent failure.
+      var start = Date.now();
+      var iv = setInterval(async function () {
+        if (await checkReviewAppeared()) { clearInterval(iv); location.reload(); return; }
+        if (Date.now() - start > 120000) {
+          clearInterval(iv);
+          alert('Timed out. Check /runs for status.');
+          self.disabled = false; self.textContent = 'Regenerate review';
+        }
+      }, 3000);
+    } catch (e) {
+      self.disabled = false; self.textContent = 'Regenerate review';
+    }
+  });
+
+  function triggerScan(days) {
+    scanState = 'starting';
+    renderScanButton();
+    var url = '/api/competitors/{{ c.id }}/scan' + (days ? '?days=' + days : '');
+    fetch(url, {method: 'POST'})
+      .then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error(r.status + ': ' + t); });
+        startPolling();
+      })
+      .catch(function (e) {
+        alert('Failed: ' + e.message);
+        scanState = 'idle';
+        renderScanButton();
+      });
+  }
+
+  async function cancelScan() {
+    if (!activeRunId) return;
+    var prev = scanState;
+    scanState = 'cancelling';
+    renderScanButton();
+    try {
+      var r = await fetch('/api/runs/' + activeRunId + '/cancel', {method: 'POST'});
+      if (!r.ok) {
+        var msg = await r.text();
+        alert('Failed to cancel: ' + r.status + '\n' + msg);
+        scanState = prev;
+        renderScanButton();
+      }
+    } catch (e) {
+      alert('Failed to cancel: ' + e.message);
+      scanState = prev;
+      renderScanButton();
+    }
+  }
+
+  document.getElementById('scan-btn').addEventListener('click', function () {
+    if (scanState === 'running') { cancelScan(); return; }
+    if (scanState === 'idle') { triggerScan(null); return; }
+    // starting / cancelling: button is disabled, no-op.
+  });
+
+  (function initScanMenu() {
+    var chev = $scanChev();
+    var menu = document.getElementById('scan-menu');
+    if (!chev || !menu) return;
+    chev.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (scanState !== 'idle') return;
+      menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    });
+    menu.querySelectorAll('.scan-opt').forEach(function (a) {
+      a.addEventListener('mouseenter', function () { a.style.background = 'var(--bg-subtle)'; });
+      a.addEventListener('mouseleave', function () { a.style.background = ''; });
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        menu.style.display = 'none';
+        var d = a.getAttribute('data-days');
+        triggerScan(d || null);
+      });
+    });
+    document.addEventListener('click', function () { menu.style.display = 'none'; });
+  })();
+
+  // On page load: if something is already running, flip to Stop immediately.
+  (async function initScanState() {
+    var active = await fetchActiveRun();
+    if (active) {
+      activeRunId = active.id;
+      scanState = active.status === 'cancelling' ? 'cancelling' : 'running';
+      renderScanButton();
+      startPolling();
+    }
+  })();
+</script>
+{% endblock %}

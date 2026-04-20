@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Market{% endblock %}
+
+{% block page_actions %}
+  <button id="regen-digest-btn" type="button" class="btn btn-ghost"
+          title="LLM only — re-synthesize the market digest over existing findings + reviews">Regenerate digest</button>
+{% endblock %}
+
+{% block content %}
+<p class="muted" style="margin-top:0; max-width:640px">
+  Market digests synthesize every scan across all competitors. Each one combines the per-competitor strategy reviews, the company brief, and customer context into a single read of the market.
+</p>
+<div class="panel">
+  <table>
+    <thead><tr><th>Date</th><th>Title</th><th></th></tr></thead>
+    <tbody>
+    {% for r in reports %}
+      <tr>
+        <td class="muted">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td><a href="/market/{{ r.id }}">{{ r.title }}</a></td>
+        <td style="text-align:right; font-size:12px" class="muted">
+          {% if r.run_id %}<a href="/runs/{{ r.run_id }}">run #{{ r.run_id }}</a>{% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="3" class="muted">No digests yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('regen-digest-btn');
+    if (!btn) return;
+    var latestId = {{ reports[0].id if reports else 0 }};
+
+    btn.addEventListener('click', async function () {
+      btn.disabled = true;
+      var label = btn.textContent;
+      btn.textContent = 'Queued…';
+      try {
+        var r = await fetch('/api/runs/market-digest', {method: 'POST'});
+        if (!r.ok) {
+          alert('Failed: ' + r.status + '\n' + await r.text());
+          btn.disabled = false; btn.textContent = label;
+          return;
+        }
+        btn.textContent = 'Generating…';
+        var start = Date.now();
+        var iv = setInterval(async function () {
+          try {
+            var rr = await fetch('/api/reports?limit=1');
+            if (rr.ok) {
+              var rows = await rr.json();
+              if (rows.length && rows[0].id > latestId) {
+                clearInterval(iv);
+                location.reload();
+                return;
+              }
+            }
+          } catch (e) { /* keep polling */ }
+          if (Date.now() - start > 300000) {
+            clearInterval(iv);
+            alert('Timed out after 5 minutes. Check /runs for status.');
+            btn.disabled = false; btn.textContent = label;
+          }
+        }, 4000);
+      } catch (e) {
+        btn.disabled = false; btn.textContent = label;
+      }
+    });
+  })();
+</script>
+{% endblock %}

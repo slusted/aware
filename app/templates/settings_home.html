@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+{% include "_settings_nav.html" %}
+
+<div class="card-grid">
+  <a href="/settings/providers" class="card">
+    <div class="title">Search providers</div>
+    <div class="body">Tavily, Serper. Enable, disable, and set scope for each provider.</div>
+  </a>
+  <a href="/settings/keys" class="card">
+    <div class="title">API keys</div>
+    <div class="body">Anthropic, Tavily, Serper, Gmail. Set inline — no restart needed.</div>
+  </a>
+  <a href="/settings/usage" class="card">
+    <div class="title">Usage &amp; spend</div>
+    <div class="body">Per-model token use and cost across the last 24h / 7d / 30d. Every API call logged.</div>
+  </a>
+  <a href="/docs" target="_blank" class="card">
+    <div class="title">API reference</div>
+    <div class="body">OpenAPI docs for every route the dashboard uses. Useful for scripting or extension.</div>
+  </a>
+</div>
+
+<p class="muted" style="margin-top:24px; font-size:13px">
+  Skills (the LLM system prompts) moved under <a href="/admin/skills">Admin → Manage skills</a>.
+</p>
+{% endblock %}

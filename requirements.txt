@@ -1,0 +1,22 @@
+anthropic>=0.90.0
+pdfplumber>=0.10.0
+pypdf>=4.0.0
+python-dotenv>=1.0.0
+
+# Web layer
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+jinja2>=3.1.0
+python-multipart>=0.0.9
+sqlalchemy>=2.0.0
+alembic>=1.13.0
+apscheduler>=3.10.0
+pydantic>=2.7.0
+
+# Momentum tracking (daily competitor signals)
+pytrends>=4.9.0
+google-play-scraper>=1.2.0
+
+# Article extraction — fetches pages ourselves instead of paying Tavily /extract.
+# Paid scrapers (ZenRows, ScrapingBee) are HTTP-only; trafilatura does local extraction.
+trafilatura>=1.12

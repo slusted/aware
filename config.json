@@ -1,0 +1,440 @@
+{
+  "company": "Seek",
+  "industry": "job search and recruitment platforms",
+  "scan_hour": 8,
+  "reply_check_minutes": 5,
+  "limits": {
+    "max_findings_per_competitor": 25,
+    "max_findings_total": 60,
+    "max_findings_report": 60,
+    "max_market_digests_report": 6,
+    "max_findings_brief": 40,
+    "min_relevance": 0.25,
+    "recency_days_report": 90,
+    "recency_days_brief": 120
+  },
+  "search_providers": {
+    "tavily": {
+      "enabled": true,
+      "scope": [
+        "news"
+      ]
+    },
+    "serper": {
+      "enabled": true,
+      "scope": [
+        "news"
+      ]
+    }
+  },
+  "customer_watch": {
+    "enabled": true,
+    "subreddits": [
+      "recruiting",
+      "jobs",
+      "humanresources"
+    ],
+    "twitter_queries": [
+      "(job board OR job search) (better than OR switched to OR quit OR frustrating OR love)",
+      "(recruiter OR hiring) (platform OR tool) (review OR switch OR prefer)"
+    ],
+    "max_results_per_source": 10
+  },
+  "competitors": [
+    {
+      "name": "Adecco",
+      "keywords": [
+        "Adecco",
+        "Adecco Group",
+        "Adecco staffing"
+      ],
+      "subreddits": [
+        "recruiting",
+        "jobs"
+      ],
+      "careers_domains": [
+        "adeccogroup.com/careers"
+      ],
+      "newsroom_domains": [
+        "adeccogroup.com/media",
+        "adeccogroup.com/future-of-work"
+      ],
+      "category": "labour_hire",
+      "_threat_angle": "Adecco is a €23B global staffing conglomerate executing an internal placement loop powered by unlimited-scale Agentforce 360 AI and decades of proprietary candidate data, now operationalised across 60 markets with enterprise sales motion active in H2 2026. The threat to Seek is structural disintermediation — Adecco closes repeat high-volume placements (temp, professional, tech, healthcare) without job board inventory, compressing the transaction volume and margin pool Seek depends on in labour hire."
+    },
+    {
+      "name": "Ashby",
+      "keywords": [
+        "Ashby ATS\nAshby recruiting\nAshby hiring platform"
+      ],
+      "subreddits": [
+        "recruiting",
+        "startups"
+      ],
+      "careers_domains": [
+        "ashbyhq.com/careers"
+      ],
+      "newsroom_domains": [
+        "ashbyhq.com/blog"
+      ],
+      "category": "ats",
+      "_threat_angle": "Ashby owns the tech-sector ATS replacement market with 4,000+ customers, 130% Y/Y growth, and self-sustaining organic displacement of Greenhouse through recruiter community channels. The strategic threat to Seek is category-level: Ashby's analytics-first consolidation model is reducing employer dependency on fragmented recruiting tools and advertising breadth, creating structural headwind against high-volume job board traffic and recruiter seat licensing."
+    },
+    {
+      "name": "Employment Hero",
+      "keywords": [
+        "Employment Hero",
+        "Employment Hero hiring",
+        "Employment Hero platform"
+      ],
+      "subreddits": [
+        "AusFinance",
+        "smallbusiness"
+      ],
+      "careers_domains": [
+        "employmenthero.com/careers"
+      ],
+      "newsroom_domains": [
+        "employmenthero.com/blog",
+        "employmenthero.com/newsroom"
+      ],
+      "category": "labour_hire",
+      "_threat_angle": "Employment Hero is a $250M+ ARR, six-market HR/payroll platform with $800M valuation and deep SMB lock-in through compliance automation and embedded hiring tools, operating profitably at scale with $140M capital reserves. The strategic threat is systematic: payroll-embedded hiring suite + daily-use stickiness features (Work Chat, analytics) progressively reduce employer dependence on Seek for candidate sourcing and hiring workflow, while multi-market simultaneous deployment of compliance-triggered activation creates a replicable playbook that compounds across ANZ, UK, Canada, and APAC."
+    },
+    {
+      "name": "Google Jobs",
+      "keywords": [
+        "Google for Jobs",
+        "Google job search",
+        "Google careers"
+      ],
+      "subreddits": [
+        "jobs",
+        "technology"
+      ],
+      "careers_domains": [
+        "careers.google.com"
+      ],
+      "newsroom_domains": [
+        "blog.google",
+        "workspaceupdates.googleblog.com",
+        "developers.googleblog.com"
+      ],
+      "category": "job_board",
+      "_threat_angle": "Google Jobs is a zero-investment structural aggregator capturing job-seeker first-touch at query time across nine consecutive cycles with no identifiable product team, backed by $198B parent Search revenue. Activation of AI Mode on job queries remains a single prioritisation decision away — requiring zero new builds and zero hiring signal — and would capture application-qualified candidates before Seek receives the visit, collapsing first-touch economics while application-layer UX friction remains Google's only current conversion leak."
+    },
+    {
+      "name": "Hays",
+      "keywords": [
+        "Hays Enterprise Solutions",
+        "Hays RPO",
+        "Hays recruitment",
+        "Hays Talent Solutions"
+      ],
+      "subreddits": [
+        "Recruitinghell",
+        "UKJobs",
+        "auscorp"
+      ],
+      "careers_domains": [
+        "hays.com.au/careers",
+        "hays.com/careers"
+      ],
+      "newsroom_domains": [
+        "haysplc.com/media/press-releases",
+        "hays.com.au/press-releases",
+        "hays.com/press-releases",
+        "social.hays.com"
+      ],
+      "category": "labour_hire",
+      "_threat_angle": "Hays is a structurally cost-optimised specialist staffing firm (~£2.5B revenue, 14% consultant headcount reduction complete) repositioning around employer hiring friction in white-collar segments where application inflation has degraded signal quality. Their \"51% application inflation\" narrative and Enterprise Solutions RPO/MSP pipeline conversion directly challenge Seek's ad-yield model with large employers, while their ANZ stability (0% reported) suggests the positioning may gain traction in Seek's core market if it penetrates HR trade press and procurement decision-makers."
+    },
+    {
+      "name": "Indeed",
+      "keywords": [
+        "Indeed.com\nIndeed jobs\nIndeed hiring\nindeed agent\nindeed pricing"
+      ],
+      "subreddits": [
+        "recruiting",
+        "jobs"
+      ],
+      "careers_domains": [
+        "indeed.com/cmp/Indeed/jobs",
+        "careers.indeed.com"
+      ],
+      "newsroom_domains": [
+        "uk.indeed.com/employers/whats-new",
+        "indeed.com/employers/whats-new",
+        "engineering.indeedblog.com",
+        "indeed.com/press",
+        "blog.indeed.com",
+        "indeed.com/lead"
+      ],
+      "category": "job_board",
+      "_threat_angle": "Indeed is the dominant global job board with $1.8B annual revenue, controlling 40%+ of job seeker traffic and commanding structural candidate density in blue-collar, healthcare, and hourly segments that no regional player can match. The enforced single-source feed policy and algorithmic gatekeeping on both employer and job seeker sides create a closed media-buying marketplace that extracts yield despite documented employer hostility, forcing Seek to compete primarily on trust and regional embeddedness rather than scale."
+    },
+    {
+      "name": "Lemon.io",
+      "keywords": [
+        "Lemon.io Southeast Asia expansion",
+        "Lemon.io Latin America market",
+        "Lemon.io contract talent marketplace growth"
+      ],
+      "subreddits": [
+        "recruiting",
+        "jobs"
+      ],
+      "careers_domains": [],
+      "newsroom_domains": [],
+      "_source": "discovered",
+      "_discovered_date": "2026-04-17",
+      "_threat_angle": "Lemon.io is a mid-tier vetted developer marketplace positioned between Toptal and Upwork, serving US and Western European startups with a $55–95/hr rate band and explicit 160-hour minimum commitments. The threat is structural rather than emergent—a stalled competitor with no ANZ presence, no funding activity, and an SEO-dependent demand model that is increasingly vulnerable to AI search disruption, making it relevant only as a cautionary case study of what happens when a marketplace strategy does not evolve beyond content marketing."
+    },
+    {
+      "name": "LinkedIn",
+      "keywords": [
+        "LinkedIn Jobs\nLinkedIn hiring\nLinkedIn recruiter\nlinkedin cognitive\nlinkedin hiring assistant\nlinkedin pricing"
+      ],
+      "subreddits": [
+        "recruiting",
+        "jobs",
+        "linkedin"
+      ],
+      "careers_domains": [
+        "careers.linkedin.com",
+        "linkedin.com/jobs/search"
+      ],
+      "newsroom_domains": [
+        "news.linkedin.com",
+        "blog.linkedin.com",
+        "engineering.linkedin.com"
+      ],
+      "category": "job_board",
+      "_threat_angle": "LinkedIn is the dominant global professional network controlling 1.3B+ members and enterprise hiring infrastructure, with Talent Solutions embedded as the intelligence layer above enterprise ATS systems and positioned as a priority AI asset within Microsoft's portfolio. They matter to Seek because their unmatched professional identity data, systematic ATS integration, cultural authority compounding via mainstream media, and structural pricing power across enterprise accounts create a widening moat in knowledge-worker hiring that ANZ pure-play job boards cannot replicate or disrupt at scale."
+    },
+    {
+      "name": "Mercor",
+      "keywords": [
+        "Mercor AI talent marketplace\nMercor APEX\nMercor expert hiring\nMercor RLHF jobs\nMercor Enterprise AI\nMercor"
+      ],
+      "subreddits": [
+        "mercor_ai",
+        "mercorai_workers"
+      ],
+      "careers_domains": [
+        "mercor.com/careers"
+      ],
+      "newsroom_domains": [
+        "mercor.com/blog"
+      ],
+      "category": "adjacent",
+      "_threat_angle": "Mercor is the dominant AI lab data intermediary at ~$450M ARR and $10B valuation, controlling access to 30,000+ vetted experts across frontier model training, evaluation, and emerging enterprise agent workflows. The March 2026 supply chain breach, Meta suspension, and multi-track security rebuild expose structural multi-tenancy vulnerabilities that directly threaten Seek's ability to scale enterprise AI agent services without equivalent data provenance and containment credibility."
+    },
+    {
+      "name": "Randstad",
+      "keywords": [
+        "Randstad",
+        "Randstad recruitment",
+        "Randstad staffing"
+      ],
+      "subreddits": [
+        "recruiting",
+        "jobs"
+      ],
+      "careers_domains": [
+        "randstad.com/careers"
+      ],
+      "newsroom_domains": [
+        "randstad.com/press",
+        "randstad.com/s3fs-media"
+      ],
+      "category": "labour_hire",
+      "_threat_angle": "Randstad is a global staffing incumbent embedding AI-enabled placement capability into enterprise ATS infrastructure (Workday partnership) and building proprietary candidate supply through technical contracting verticals (Randstad Digital), underpinned by labour market intelligence assets derived from 150M+ job posting analysis. The threat to Seek is architectural—ATS-embedded bypass of public job posting channels for mid-to-large enterprise technical hiring—though commercial validation at scale remains absent and ANZ presence is unproven."
+    },
+    {
+      "name": "StepStone",
+      "keywords": [
+        "StepStone",
+        "stepstone.com",
+        "StepStone jobs"
+      ],
+      "subreddits": [
+        "cscareerquestionsEU",
+        "jobs"
+      ],
+      "careers_domains": [
+        "stepstone.com/careers",
+        "boards.greenhouse.io/stepstone"
+      ],
+      "newsroom_domains": [
+        "stepstone.com/about",
+        "axelspringer.com/en/press-releases"
+      ],
+      "category": "job_board",
+      "_threat_angle": "StepStone Group operates entrenched job board incumbency in Germany and the UK (StepStone.de, Totaljobs) with programmatic distribution leverage via Appcast, but parent capital is structurally absorbed by Axel Springer's Telegraph integration and media priorities. The group's AI product surface is chatbot-class conversational only, with no confirmed agentic screening capability or employer-side AI workflow innovation, creating a meaningful capability gap as Seek invests in AI-native hiring automation."
+    },
+    {
+      "name": "TestCo Debug",
+      "keywords": [
+        "testco",
+        "test keyword"
+      ],
+      "subreddits": [],
+      "careers_domains": [],
+      "newsroom_domains": [
+        "news.testco.example"
+      ],
+      "_threat_angle": "I cannot produce the requested output. TestCo Debug has zero verified evidence across three consecutive review cycles, making any threat-angle summary a fabrication. No positioning, scale, or strategic implication can be attributed to a non-existent or unverified entity. Outputting invented intelligence would compromise the dashboard's integrity and violate the analytical standard your brief correctly upholds in the review above.\n\nThe correct action is remediation of the entity-tagging pipeline before any profile is published."
+    },
+    {
+      "name": "Totaljobs",
+      "keywords": [
+        "Totaljobs",
+        "totaljobs.com"
+      ],
+      "subreddits": [
+        "UKJobs",
+        "recruitinghell"
+      ],
+      "careers_domains": [
+        "totaljobs.com/jobs/careers"
+      ],
+      "newsroom_domains": [
+        "totaljobs.com/media-centre",
+        "totaljobs.com/advice"
+      ],
+      "category": "job_board",
+      "_threat_angle": "Totaljobs operates as a high-volume UK job board under StepStone Group ownership with defensible but stagnant market position, competing primarily on brand familiarity and listing scale rather than product capability. The platform enters the agentic AI recruitment cycle with zero deployed AI product—both the Mya and Good&Co initiatives have failed to reach market after five years—while independent sources increasingly position it as a free, self-service fallback channel, creating structural positioning erosion that compounds Seek's exposure if UK hiring volumes soften further."
+    },
+    {
+      "name": "Workday",
+      "keywords": [
+        "Workday recruiting",
+        "Workday HCM",
+        "Workday talent acquisition"
+      ],
+      "subreddits": [
+        "humanresources",
+        "hris"
+      ],
+      "careers_domains": [
+        "workday.com/en-us/company/careers"
+      ],
+      "newsroom_domains": [
+        "blog.workday.com",
+        "newsroom.workday.com"
+      ],
+      "category": "ats",
+      "_threat_angle": "Workday controls 65% of Fortune 500 HCM deployment with a fully assembled talent lifecycle stack (HCM + Paradox + HiredScore + Achievers recognition) now shipping as a single contract argument, systematically positioning external recruitment as cost-of-last-resort for enterprise employers. The closed-loop internal-fill-first model with unified AI orchestration across workforce data directly displaces Seek's volume hiring channels for high-volume and mid-market segments, with near-term adoption risk highest in frontline/QSR/logistics where Paradox automation already operates at scale."
+    },
+    {
+      "name": "ZipRecruiter",
+      "keywords": [
+        "ZipRecruiter",
+        "ziprecruiter.com"
+      ],
+      "subreddits": [
+        "recruiting",
+        "jobs"
+      ],
+      "careers_domains": [
+        "ziprecruiter.com/careers",
+        "boards.greenhouse.io/ziprecruiter"
+      ],
+      "newsroom_domains": [
+        "ziprecruiter.com/blog",
+        "ziprecruiter.com/newsroom"
+      ],
+      "category": "job_board",
+      "_threat_angle": "ZipRecruiter is a financially constrained US SMB job board ($235M market cap, $449M TTM revenue, -$33M net loss) positioned on speed-to-hire for frontline roles via multi-board distribution and AI matching. Its unaddressed data quality problems (ghost jobs, resume price extraction) and accelerating recruiter churn to Indeed and LinkedIn create a structural trust deficit that selective workflow features cannot repair, narrowing the differentiation window Seek's SMB positioning depends on."
+    },
+    {
+      "name": "bullhorn",
+      "keywords": [
+        "Bullhorn ATS",
+        "Bullhorn Amplify",
+        "Bullhorn CRM staffing",
+        "Bullhorn Automation",
+        "Bullhorn Recruitment Cloud",
+        "Bullhorn for Salesforce"
+      ],
+      "subreddits": [
+        "BullhornCRM",
+        "RecruitmentAgencies",
+        "ecruiting"
+      ],
+      "careers_domains": [
+        "careers.bullhorn.com"
+      ],
+      "newsroom_domains": [
+        "www.bullhorn.com/news-and-press"
+      ],
+      "category": "ats",
+      "_threat_angle": "Bullhorn dominates the staffing and recruitment agency ATS market with 10,000+ customers and 150,000 users, reinforced by mandatory integration status across the AI ecosystem and enterprise lock-in deals spanning 40+ markets. Their data moat—the Staffing Indicator now tracking 200,000+ workers across five segments—positions them as the authoritative labour market intelligence source, a capability Seek lacks and cannot easily replicate without equivalent installed-base data density."
+    },
+    {
+      "name": "iCIMS",
+      "keywords": [
+        "iCIMS",
+        "iCIMS recruiting",
+        "iCIMS talent cloud"
+      ],
+      "subreddits": [
+        "recruiting",
+        "humanresources"
+      ],
+      "careers_domains": [
+        "careers.icims.com"
+      ],
+      "newsroom_domains": [
+        "icims.com/blog",
+        "icims.com/company/newsroom"
+      ],
+      "category": "ats",
+      "_threat_angle": "iCIMS is repositioning itself as an AI-native recruiting platform backed by a formal brand refresh, Microsoft partnership reaffirmation, and planned Spring 2026 sourcing agent launch—credible positioning anchored in installed base of large enterprise employers. The threat to Seek is consolidation pressure: iCIMS will use enterprise IT alignment and candidate volume economics to convert ATS accounts into integrated sourcing-plus-matching conversations before Seek establishes equivalent attribution capability or enterprise partnership credibility."
+    },
+    {
+      "name": "jobadder",
+      "keywords": [
+        "JobAdder ATS",
+        "JobAdder recruitment CRM",
+        "JobAdder Temp Express",
+        "JobAdder AI recruitment software",
+        "JobAdder recruitment agency software",
+        "JobAdder Mobile Next Gen"
+      ],
+      "subreddits": [
+        "RecruitmentAgencies",
+        "Recruiting",
+        "Recruitment"
+      ],
+      "careers_domains": [
+        "jobadder.com/careers"
+      ],
+      "newsroom_domains": [],
+      "category": "ats",
+      "_threat_angle": "JobAdder is a SEEK-owned mid-market ATS/CRM with 26,000+ users, positioned between entry-level and enterprise tiers with particular strength in APAC temp/contract agencies. The gap between its AI narrative intensity and modest shipped automation features creates credibility risk with growth-stage agencies evaluating AI-native competitors like Loxo and Spott, while repeated churn signals indicate persistent BD/CRM capability shortfalls that ecosystem integrations alone cannot resolve."
+    }
+  ],
+  "watch_topics": [
+    "product launch",
+    "new feature",
+    "AI recruitment",
+    "pricing change",
+    "acquisition",
+    "partnership",
+    "customer complaint",
+    "employer branding",
+    "job seeker experience",
+    "startup competitor"
+  ],
+  "team": [
+    {
+      "email": "slusted@gmail.com",
+      "name": "Simon",
+      "role": "lead",
+      "competitors": "all",
+      "can_reply": true
+    }
+  ]
+}
