@@ -19,7 +19,7 @@ except ImportError:
 
 from datetime import datetime
 
-from .db import Base, SessionLocal, engine
+from .db import SessionLocal, engine
 from . import scheduler, skills as skills_module, ui, usage, search_providers
 from .models import Run, RunEvent
 from .routes import status, competitors, runs, findings, reports, usage as usage_routes, skills as skills_routes, context as context_routes, providers as providers_routes, env_keys as env_keys_routes, filters as filters_routes, auth as auth_routes, users as users_routes
@@ -43,6 +43,39 @@ def _reap_orphan_runs() -> int:
         db.close()
 
 
+def _migrate_schema():
+    """Bring the DB up to head at startup.
+
+    Earlier deploys let `Base.metadata.create_all()` own the schema, which
+    only creates missing tables — it never adds new columns. When the auth
+    columns landed in `l8f2a3b4c6d7`, that left existing Railway installs
+    stuck on a stale `users` table with no `password_hash`, and the Procfile
+    `release` step on Railway turned out not to fire. Running alembic here
+    closes both gaps: fresh DBs get the full migration chain; legacy DBs
+    get stamped at whatever revision their observable schema matches, then
+    upgraded to head.
+    """
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import inspect
+
+    cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    insp = inspect(engine)
+    tables = set(insp.get_table_names())
+
+    if tables and "alembic_version" not in tables:
+        # Legacy DB produced by create_all(); infer the stamp point from the
+        # schema we can see. Only two branch points matter in practice: pre-
+        # vs post-auth, since the auth migration is the first one that adds
+        # columns rather than creating new tables.
+        user_cols = {c["name"] for c in insp.get_columns("users")} if "users" in tables else set()
+        stamp_at = "l8f2a3b4c6d7" if "password_hash" in user_cols else "k7e1f2a3b4c5"
+        print(f"  [startup] stamping legacy DB at {stamp_at}")
+        command.stamp(cfg, stamp_at)
+
+    command.upgrade(cfg, "head")
+
+
 def _seed_volume_config():
     """On a fresh persistent volume (Railway/Render/Fly), copy the repo's
     config.json to CONFIG_PATH if that target doesn't exist yet. Keeps the UI's
@@ -61,8 +94,7 @@ def _seed_volume_config():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _seed_volume_config()
-    # Phase 1: create tables if missing (Alembic owns the schema in prod).
-    Base.metadata.create_all(bind=engine)
+    _migrate_schema()
     reaped = _reap_orphan_runs()
     if reaped:
         print(f"  [startup] reaped {reaped} orphan run(s)")
