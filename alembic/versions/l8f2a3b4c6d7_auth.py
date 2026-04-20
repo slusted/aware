@@ -20,14 +20,15 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Plain ADD COLUMN, not batch_alter_table: SQLite supports ADD COLUMN
-    # natively, and batch mode's table-rewrite path fails in production when
-    # there are live FKs (auth_sessions.user_id, documents.uploaded_by,
-    # signal_views.user_id, saved_filters.owner_id) pointing at users — the
-    # rewrite rolls back silently and the container crash-loops.
-    op.add_column("users", sa.Column("password_hash", sa.String(length=255), nullable=True))
-    op.add_column("users", sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()))
-    op.add_column("users", sa.Column("last_login_at", sa.DateTime(), nullable=True))
+    # Raw ALTER TABLE instead of op.add_column: env.py sets
+    # render_as_batch=True globally, which forces even plain add_column calls
+    # into batch mode (new table → copy → drop → rename). The rewrite was
+    # silently failing in production — the container crash-looped on every
+    # restart. op.execute goes straight to SQLite, bypassing alembic's DDL
+    # rewriter, and SQLite supports ADD COLUMN natively.
+    op.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)")
+    op.execute("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
+    op.execute("ALTER TABLE users ADD COLUMN last_login_at DATETIME")
 
     op.create_table(
         "auth_sessions",
