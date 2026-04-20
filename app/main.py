@@ -63,41 +63,79 @@ def _reset_db_if_requested():
 
 
 def _migrate_schema():
-    """Bootstrap schema at startup.
+    """Bootstrap schema at startup, with self-healing for stale-version DBs.
 
     History: running the alembic chain against the Railway SQLite volume
     was crash-looping silently inside every batch_alter_table migration,
-    and digging layer by layer wasn't converging. The fundamental fix is
-    to stop running the chain on fresh DBs at all — Base.metadata.create_all()
-    builds the entire current schema from models.py in one step, no batch
-    mode, nothing to fail. We still stamp alembic at head so any future
-    migration authored against a real prod DB has the right baseline.
+    and digging layer by layer wasn't converging.
 
-    Existing DBs with an alembic_version row follow the normal upgrade
-    path. The RESET_DB_ONCE escape hatch (above) is how we shift a
-    wedged volume DB onto the create_all track.
+    The fix: if the DB is at the latest head, noop. If it's behind (stale
+    schema, the case that kept wedging us at 5a4568830d8c) *and* nothing
+    of value lives there yet, wipe and rebuild from models.py via
+    Base.metadata.create_all() in one step — no chain, no batch mode, no
+    room to fail. Guarded by an emptiness check so this can't clobber a
+    real DB later: it only auto-wipes when users, findings, competitors,
+    and runs are all empty.
     """
     from alembic import command
     from alembic.config import Config
-    from sqlalchemy import inspect
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import inspect, text
 
     cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+    script = ScriptDirectory.from_config(cfg)
+    head_rev = script.get_current_head()
+
     insp = inspect(engine)
     tables = set(insp.get_table_names())
 
+    current_rev: str | None = None
     if "alembic_version" in tables:
-        print("  [startup] existing alembic_version → running upgrade head", flush=True)
-        command.upgrade(cfg, "head")
+        with engine.connect() as conn:
+            row = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
+            current_rev = row[0] if row else None
+
+    if current_rev == head_rev:
+        print(f"  [startup] DB already at head ({head_rev})", flush=True)
         return
 
-    # No alembic_version: fresh DB (after RESET_DB_ONCE) or legacy
-    # create_all-seeded DB. In either case, create_all is safe — it only
-    # creates missing tables, never alters existing ones, and then we
-    # stamp head so future migrations line up.
-    print(f"  [startup] bootstrapping schema (tables seen: {len(tables)})", flush=True)
+    if current_rev is None:
+        # Fresh DB (or legacy create_all DB with no alembic_version). Build
+        # the schema from models.py and stamp head.
+        print(f"  [startup] fresh DB → create_all + stamp {head_rev}", flush=True)
+        Base.metadata.create_all(bind=engine)
+        command.stamp(cfg, head_rev)
+        return
+
+    # Behind head. Check whether anything of value is in the DB — if yes,
+    # bail loudly so a human can decide. If no, self-heal: wipe and rebuild.
+    row_count = 0
+    for t in ("users", "findings", "competitors", "runs"):
+        if t in tables:
+            with engine.connect() as conn:
+                r = conn.execute(text(f"SELECT COUNT(*) FROM {t}")).fetchone()
+                row_count += int(r[0] or 0)
+    if row_count > 0:
+        raise RuntimeError(
+            f"DB at revision {current_rev}, codebase head is {head_rev}, "
+            f"and {row_count} rows exist across users/findings/competitors/runs. "
+            "Refusing to auto-wipe. Run the alembic chain manually or set "
+            "RESET_DB_ONCE=1 if the data is disposable."
+        )
+
+    data_dir = os.environ.get("DATA_DIR", "data")
+    db_path = Path(data_dir) / "app.db"
+    print(
+        f"  [startup] DB at stale revision {current_rev} (head is {head_rev}), "
+        "all user-facing tables empty → wiping and rebuilding",
+        flush=True,
+    )
+    engine.dispose()
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        Path(str(db_path) + suffix).unlink(missing_ok=True)
     Base.metadata.create_all(bind=engine)
-    command.stamp(cfg, "head")
-    print("  [startup] create_all + stamp head complete", flush=True)
+    command.stamp(cfg, head_rev)
+    print(f"  [startup] wiped + create_all + stamp {head_rev} complete", flush=True)
 
 
 def _seed_volume_config():
