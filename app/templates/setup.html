@@ -1,0 +1,30 @@
+{% extends "auth_base.html" %}
+{% block title %}Set up · Competitor Watch{% endblock %}
+{% block content %}
+<h1 class="auth-title">Create the first admin</h1>
+<p class="auth-sub">This screen is only shown before any account exists. Once you submit this form, further users are added from the admin area.</p>
+
+{% if error %}
+<div class="auth-error">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/setup" class="auth-form">
+  <label>
+    <span>Email</span>
+    <input type="email" name="email" value="{{ email or '' }}" required autofocus autocomplete="username">
+  </label>
+  <label>
+    <span>Name</span>
+    <input type="text" name="name" value="{{ name or '' }}" required>
+  </label>
+  <label>
+    <span>Password</span>
+    <input type="password" name="password" required minlength="8" autocomplete="new-password">
+  </label>
+  <label>
+    <span>Confirm password</span>
+    <input type="password" name="password_confirm" required minlength="8" autocomplete="new-password">
+  </label>
+  <button type="submit" class="btn primary">Create account</button>
+</form>
+{% endblock %}

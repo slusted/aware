@@ -10,12 +10,31 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(32), default="admin")  # admin, analyst, viewer
+    # Bcrypt hash. NULL = legacy/stub user that cannot log in (e.g. the
+    # pre-auth admin@local row that FKs point at). Real users always have one.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Saved filter to auto-apply when /stream loads with no query params.
     # ON DELETE SET NULL so removing the underlying filter doesn't strand a stale id.
     default_filter_id: Mapped[int | None] = mapped_column(
         ForeignKey("saved_filters.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AuthSession(Base):
+    """Server-side session. The cookie carries only the opaque token; all state
+    lives here so sessions are revocable (delete the row = immediate logout).
+    token is the primary key so the cookie lookup is a single indexed hit."""
+    __tablename__ = "auth_sessions"
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class Competitor(Base):

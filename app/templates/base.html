@@ -59,6 +59,12 @@
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h12v10H2z"/><path d="M5 6h6M5 9h4"/></svg>
         Manage skills
       </a>
+      {% if user and user.role == 'admin' %}
+      <a href="/admin/users" class="nav-item {% if path.startswith('/admin/users') %}active{% endif %}">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="2.5"/><path d="M3 14c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5"/></svg>
+        Users
+      </a>
+      {% endif %}
     </div>
 
     <div class="spacer"></div>
@@ -80,6 +86,9 @@
           <div style="font-size:11px">{{ user.email }}</div>
         </div>
       </div>
+      <form method="post" action="/logout" class="logout-form">
+        <button type="submit" class="logout-btn">Sign out</button>
+      </form>
       {% endif %}
     </div>
   </aside>

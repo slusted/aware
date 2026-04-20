@@ -1,9 +1,13 @@
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+
+from .auth import AuthenticationRequired
 
 try:
     from dotenv import load_dotenv
@@ -18,7 +22,7 @@ from datetime import datetime
 from .db import Base, SessionLocal, engine
 from . import scheduler, skills as skills_module, ui, usage, search_providers
 from .models import Run, RunEvent
-from .routes import status, competitors, runs, findings, reports, usage as usage_routes, skills as skills_routes, context as context_routes, providers as providers_routes, env_keys as env_keys_routes, filters as filters_routes
+from .routes import status, competitors, runs, findings, reports, usage as usage_routes, skills as skills_routes, context as context_routes, providers as providers_routes, env_keys as env_keys_routes, filters as filters_routes, auth as auth_routes, users as users_routes
 
 
 def _reap_orphan_runs() -> int:
@@ -90,8 +94,30 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+@app.exception_handler(AuthenticationRequired)
+async def _auth_required(request: Request, exc: AuthenticationRequired):
+    """Turn 'no valid session' into the right shape for each caller:
+    - HTMX: 200 + HX-Redirect header so htmx swaps a full navigation
+    - JSON clients / API routes: 401 JSON
+    - Browser page loads: 303 redirect to /login?next=<path>
+    """
+    path = request.url.path or "/"
+    if request.headers.get("hx-request", "").lower() == "true":
+        resp = Response(status_code=200)
+        resp.headers["HX-Redirect"] = "/login"
+        return resp
+    accept = request.headers.get("accept", "")
+    if path.startswith("/api/") or "application/json" in accept:
+        return JSONResponse({"detail": exc.detail}, status_code=401)
+    qs = f"?{request.url.query}" if request.url.query else ""
+    nxt = f"{path}{qs}" if path != "/login" else "/"
+    return RedirectResponse(f"/login?next={quote(nxt, safe='/')}", status_code=303)
+
+
+app.include_router(auth_routes.router)
 app.include_router(status.router)
 app.include_router(competitors.router)
+app.include_router(users_routes.router)
 app.include_router(runs.router)
 app.include_router(findings.router)
 app.include_router(reports.router)

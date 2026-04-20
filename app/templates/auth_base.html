@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}Competitor Watch{% endblock %}</title>
+  <link rel="preconnect" href="https://rsms.me/">
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+  <link rel="stylesheet" href="/static/style.css?v=brief-meta-1">
+</head>
+<body>
+<div class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="dot"></span>
+      <span>Competitor Watch</span>
+    </div>
+    {% block content %}{% endblock %}
+  </div>
+</div>
+</body>
+</html>
