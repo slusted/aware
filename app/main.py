@@ -107,22 +107,40 @@ def _migrate_schema():
         command.stamp(cfg, head_rev)
         return
 
-    # Behind head. Check whether anything of value is in the DB — if yes,
-    # bail loudly so a human can decide. If no, self-heal: wipe and rebuild.
+    # Behind head. Count real data so we know whether wipe-and-rebuild is
+    # safe as a last-resort fallback.
     row_count = 0
     for t in ("users", "findings", "competitors", "runs"):
         if t in tables:
             with engine.connect() as conn:
                 r = conn.execute(text(f"SELECT COUNT(*) FROM {t}")).fetchone()
                 row_count += int(r[0] or 0)
-    if row_count > 0:
-        raise RuntimeError(
-            f"DB at revision {current_rev}, codebase head is {head_rev}, "
-            f"and {row_count} rows exist across users/findings/competitors/runs. "
-            "Refusing to auto-wipe. Run the alembic chain manually or set "
-            "RESET_DB_ONCE=1 if the data is disposable."
-        )
 
+    if row_count > 0:
+        # Data exists. Wipe is off the table. Try the alembic chain — many
+        # migrations (CREATE TABLE, add-column without batch_alter_table)
+        # apply cleanly against a live DB. Only bail when the chain itself
+        # fails, which is the batch_alter_table crash-loop scenario that
+        # originally motivated this guard.
+        print(
+            f"  [startup] DB at {current_rev}, head is {head_rev}, "
+            f"{row_count} rows present — running alembic upgrade",
+            flush=True,
+        )
+        try:
+            command.upgrade(cfg, head_rev)
+        except Exception as e:
+            raise RuntimeError(
+                f"Alembic upgrade from {current_rev} to {head_rev} failed: {e}. "
+                "The DB has real data so auto-wipe is refused. Inspect the "
+                "migration manually via `railway run alembic upgrade head`, or "
+                "set RESET_DB_ONCE=1 if the data is disposable."
+            ) from e
+        print(f"  [startup] upgrade complete, now at {head_rev}", flush=True)
+        return
+
+    # Stale + empty — the chain has historically crash-looped in this
+    # combination, so skip it entirely and rebuild from models.py.
     data_dir = os.environ.get("DATA_DIR", "data")
     db_path = Path(data_dir) / "app.db"
     print(
