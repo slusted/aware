@@ -158,9 +158,8 @@ def competitors_index(request: Request, db: Session = Depends(get_db), user=Depe
             .scalar() or 0
         )
         summaries.append({"c": c, "latest": latest, "recent_findings": recent_findings})
-        d = _competitor_logo_domain(c)
-        if d:
-            logos[c.id] = f"https://logos-api.apistemic.com/domain:{d}?fallback=monogram"
+        if c.homepage_domain:
+            logos[c.id] = f"https://logos-api.apistemic.com/domain:{c.homepage_domain}?fallback=monogram"
     return templates.TemplateResponse(request, "competitors_index.html", {
         "user": user, "items": summaries, "logos": logos,
     })
