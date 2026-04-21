@@ -44,6 +44,8 @@ def _to_json(c: Competitor) -> dict:
         "careers_domains": list(c.careers_domains or []),
         "newsroom_domains": list(c.newsroom_domains or []),
     }
+    if c.homepage_domain:
+        entry["homepage_domain"] = c.homepage_domain
     if c.category:
         entry["category"] = c.category
     if c.source and c.source != "manual":

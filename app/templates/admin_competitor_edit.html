@@ -64,6 +64,21 @@
   </div>
 
   <div class="field">
+    <label class="label">
+      Homepage domain
+      <span class="hint">apex only, e.g. "linkedin.com" — not "www." or "careers.". Used for the logo on each finding card.</span>
+    </label>
+    <div style="display:flex; gap:10px; align-items:center">
+      <img id="logo-preview" alt="" width="32" height="32"
+           style="border-radius:4px; background:var(--bg-raised, #f3f4f6); object-fit:contain; flex-shrink:0;"
+           src="{% if c and c.homepage_domain %}/logos/{{ c.homepage_domain }}.webp?v={{ c.id }}{% else %}{% endif %}">
+      <input name="homepage_domain" id="homepage-domain-input"
+             value="{{ c.homepage_domain if c and c.homepage_domain else '' }}"
+             placeholder="e.g. linkedin.com" style="flex:1">
+    </div>
+  </div>
+
+  <div class="field">
     <label class="label">Threat angle <span class="hint">why they matter</span></label>
     <textarea name="threat_angle" rows="2">{{ c.threat_angle if c and c.threat_angle else '' }}</textarea>
   </div>
@@ -135,6 +150,29 @@
   var id    = {{ c.id if c else 'null' }};
   function parseLines(s){ return (s||'').split('\n').map(x=>x.trim()).filter(Boolean); }
   function parseCsv(s){ return (s||'').split(',').map(x=>x.trim()).filter(Boolean); }
+
+  // Live logo preview — hits Apistemic directly while editing so the operator
+  // can see what the cached image will look like before they save. After save,
+  // the server fetches once and the stream renders from /logos/{domain}.webp.
+  var domainInput = document.getElementById('homepage-domain-input');
+  var logoImg = document.getElementById('logo-preview');
+  var DOMAIN_RE = /^[a-z0-9][a-z0-9.-]*$/;
+  function refreshLogoPreview() {
+    if (!domainInput || !logoImg) return;
+    var d = (domainInput.value || '').trim().toLowerCase();
+    if (d && DOMAIN_RE.test(d)) {
+      logoImg.src = 'https://logos-api.apistemic.com/domain:' + encodeURIComponent(d) + '?fallback=monogram';
+    } else {
+      logoImg.removeAttribute('src');
+    }
+  }
+  if (domainInput) {
+    var _logoT;
+    domainInput.addEventListener('input', function () {
+      clearTimeout(_logoT);
+      _logoT = setTimeout(refreshLogoPreview, 300);
+    });
+  }
 
   var autofillBtn = document.getElementById('autofill-btn');
   if (autofillBtn) {
@@ -248,6 +286,7 @@
           setLines('textarea[name=subreddits]', d.subreddits);
           setLines('textarea[name=careers_domains]', d.careers_domains);
           setLines('textarea[name=newsroom_domains]', d.newsroom_domains);
+          setVal('input[name=homepage_domain]', d.homepage_domain);
           setVal('input[name=app_store_id]', d.app_store_id);
           setVal('input[name=play_package]', d.play_package);
           setVal('input[name=trends_keyword]', d.trends_keyword);
@@ -279,6 +318,7 @@
       subreddits:              'textarea[name=subreddits]',
       careers_domains:         'textarea[name=careers_domains]',
       newsroom_domains:        'textarea[name=newsroom_domains]',
+      homepage_domain:         'input[name=homepage_domain]',
       app_store_id:            'input[name=app_store_id]',
       play_package:            'input[name=play_package]',
       trends_keyword:          'input[name=trends_keyword]',
@@ -430,6 +470,7 @@
       subreddits: parseLines(data.get('subreddits')),
       careers_domains: parseLines(data.get('careers_domains')),
       newsroom_domains: parseLines(data.get('newsroom_domains')),
+      homepage_domain: (data.get('homepage_domain') || '').trim().toLowerCase() || null,
       app_store_id: (data.get('app_store_id') || '').trim() || null,
       play_package: (data.get('play_package') || '').trim() || null,
       trends_keyword: (data.get('trends_keyword') || '').trim() || null,
