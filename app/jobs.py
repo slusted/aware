@@ -1041,6 +1041,48 @@ def run_discovery_job():
         current_run_id.reset(token)
 
 
+def rebuild_user_preferences_job(user_id: int) -> None:
+    """Wrapper around app.ranker.rollup.rebuild_user_preferences for use
+    by APScheduler. Opens its own session — schedulers run detached
+    from any request context.
+
+    Errors are logged but not raised: a crash inside one user's rollup
+    shouldn't stop the scheduler or subsequent runs. The rollup can
+    always be re-triggered on the user's next explicit signal or the
+    next nightly sweep.
+    """
+    from .ranker.rollup import rebuild_user_preferences
+    db = SessionLocal()
+    try:
+        summary = rebuild_user_preferences(db, user_id)
+        print(
+            f"  [rollup] user={user_id} events={summary['events_considered']} "
+            f"keys={summary['keys_written']} event_count_30d={summary['event_count_30d']}",
+            flush=True,
+        )
+    except Exception as e:
+        print(f"  [rollup] user={user_id} failed: {e}", flush=True)
+    finally:
+        db.close()
+
+
+def nightly_rebuild_preferences_job() -> None:
+    """Iterate active users and rebuild each one's preference vector.
+    Single-threaded (SQLite is single-writer; parallelism would just
+    serialize at the DB layer). Budget per spec 02: ≤5min for 100 users.
+    """
+    from .models import User
+    db = SessionLocal()
+    try:
+        user_ids = [uid for (uid,) in db.query(User.id).filter(User.is_active == True).all()]  # noqa: E712
+    finally:
+        db.close()
+    print(f"  [rollup] nightly sweep: {len(user_ids)} users", flush=True)
+    for uid in user_ids:
+        rebuild_user_preferences_job(uid)
+    print("  [rollup] nightly sweep done", flush=True)
+
+
 def prune_signal_events(retention_days: int = 180) -> int:
     """Nightly maintenance: delete UserSignalEvent rows older than the
     retention window. Part of the ranker's signal log
