@@ -10,6 +10,10 @@
       <span class="mat-bar" style="width: {{ (f.materiality * 100)|int }}%"></span>
     </span>
     {% endif %}
+    {% set logo_src = logos.get(f.competitor) if logos else None %}
+    {% if logo_src %}
+      <img class="competitor-logo" src="{{ logo_src }}" alt="" loading="lazy" width="18" height="18">
+    {% endif %}
     <span class="competitor">{{ f.competitor }}</span>
     <span class="source muted">{{ f.source }}</span>
     {% if f.published_at %}
