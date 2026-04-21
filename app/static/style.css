@@ -740,6 +740,26 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
 .signal-card.state-pinned { border-color: rgba(224,165,0,0.35); background: rgba(224,165,0,0.04); }
 .signal-card.state-snoozed { opacity: 0.55; }
 
+/* "New / unread" indicator. Absence of a SignalView row → state-new class
+   on the server render; signals.js demotes to state-seen once the card has
+   been visible for 500ms. The dot fades via opacity so the transition is
+   visible. */
+.signal-card.state-new { border-left: 2px solid var(--accent); }
+.signal-card .new-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 6px;
+  vertical-align: middle;
+  transition: opacity 0.3s ease;
+}
+.signal-card.state-seen .new-dot,
+.signal-card.state-pinned .new-dot,
+.signal-card.state-dismissed .new-dot,
+.signal-card.state-snoozed .new-dot { opacity: 0; }
+
 /* Default: wrapper is transparent so desktop renders unchanged. */
 .signal-card-inner { display: contents; }
 

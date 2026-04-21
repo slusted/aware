@@ -3,6 +3,7 @@
 <article id="card-{{ f.id }}" data-finding-id="{{ f.id }}" class="signal-card {% if state %}state-{{ state }}{% else %}state-new{% endif %}">
   <div class="signal-card-inner">
   <header class="signal-card-head">
+    <span class="new-dot" aria-label="Unread" title="New — not yet viewed"></span>
     <span class="badge type-{{ f.signal_type or 'other' }}">{{ f.signal_type or 'unclassified' }}</span>
     {% if f.materiality is not none %}
     <span class="materiality" title="materiality {{ '%.1f' % f.materiality }}">

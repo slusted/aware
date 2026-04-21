@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..db import SessionLocal
 from ..deps import get_db, get_current_user
-from ..models import Finding, User, UserSignalEvent
+from ..models import Finding, SignalView, User, UserSignalEvent
 from ..ranker import config as ranker_config
 from ..ranker.events import EventValidationError, validate_event
 from ..scheduler import schedule_incremental_rebuild
@@ -112,6 +112,42 @@ def _validate_or_400(payload: SignalEventIn) -> None:
         raise HTTPException(400, str(e)) from e
 
 
+def _mark_seen_if_new(
+    db: Session, user_id: int, finding_ids: set[int], now: datetime
+) -> None:
+    """Insert SignalView(state='seen') for any (user, finding) pair that
+    doesn't already have a row. Never overwrites — pinned/dismissed/snoozed
+    take precedence over a passive view. Absence of a row is the "new/unread"
+    marker used by the stream UI.
+
+    Called after a batch of `view` events is accepted so read-state tracks
+    what the user has actually scrolled past for ≥500ms.
+    """
+    if not finding_ids:
+        return
+    existing = {
+        row[0]
+        for row in db.query(SignalView.finding_id)
+        .filter(
+            SignalView.user_id == user_id,
+            SignalView.finding_id.in_(finding_ids),
+        )
+        .all()
+    }
+    to_create = finding_ids - existing
+    if not to_create:
+        return
+    db.add_all(
+        SignalView(
+            user_id=user_id,
+            finding_id=fid,
+            state="seen",
+            updated_at=now,
+        )
+        for fid in to_create
+    )
+
+
 def _check_findings_exist(db: Session, finding_ids: set[int]) -> None:
     """Raise 404 if any finding_id in the set doesn't exist. Single query
     regardless of batch size — keeps the batch endpoint cheap."""
@@ -162,6 +198,8 @@ def post_event(
             ts=now,
         )
     )
+    if payload.event_type == "view" and payload.finding_id is not None:
+        _mark_seen_if_new(db, user.id, {payload.finding_id}, now)
     db.commit()
 
     # Explicit high-intent events (ratings, chat prefs) trigger an
@@ -233,11 +271,13 @@ def post_events_batch(
     seen_view_pairs: set[int] = set()
 
     to_insert: list[UserSignalEvent] = []
+    newly_viewed: set[int] = set()
     for ev in events:
         if ev.event_type == "view" and ev.finding_id is not None:
             if ev.finding_id in recent_views or ev.finding_id in seen_view_pairs:
                 continue
             seen_view_pairs.add(ev.finding_id)
+            newly_viewed.add(ev.finding_id)
         to_insert.append(
             UserSignalEvent(
                 user_id=user.id,
@@ -252,6 +292,7 @@ def post_events_batch(
 
     if to_insert:
         db.add_all(to_insert)
+        _mark_seen_if_new(db, user.id, newly_viewed, now)
         db.commit()
 
     # Same incremental-rebuild trigger as the single-event endpoint: if

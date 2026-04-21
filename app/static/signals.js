@@ -41,6 +41,20 @@
     }
   }
 
+  // Optimistic read-state flip: the moment we emit `view`, demote the card
+  // from `state-new` to `state-seen` in the DOM so the "NEW" indicator fades
+  // without a server round-trip. The batch endpoint writes the SignalView row
+  // within FLUSH_INTERVAL_MS; if the POST fails the card reverts on reload —
+  // a read-state flicker is cheaper than blocking the UI on telemetry.
+  function markCardSeen(findingId) {
+    const card = document.getElementById('card-' + findingId);
+    if (!card) return;
+    if (card.classList.contains('state-new')) {
+      card.classList.remove('state-new');
+      card.classList.add('state-seen');
+    }
+  }
+
   function flush() {
     if (queue.length === 0) return;
     // Drain up to MAX_BATCH; anything over stays for the next flush.
@@ -106,6 +120,7 @@
             s.emitted = true;
             s.viewTs = performance.now();
             enqueue({ event_type: 'view', source: 'stream', finding_id: fid });
+            markCardSeen(fid);
           }, VIEW_DWELL_MIN_MS);
         }
       } else {
