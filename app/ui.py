@@ -591,6 +591,10 @@ def _parse_stream_filters(params: dict) -> dict:
         since_days = int(params.get("since_days") or 0) or None
     except ValueError:
         since_days = None
+    try:
+        window = max(0, int(params.get("window") or 0))
+    except ValueError:
+        window = 0
     # `downweight_stale` defaults on: pushes findings with published_at older
     # than a year to the bottom of the order (still shown). The template
     # emits a hidden "0" in front of the checkbox so form submissions always
@@ -615,11 +619,27 @@ def _parse_stream_filters(params: dict) -> dict:
         "since_days": since_days,
         "include_dismissed": (params.get("include_dismissed") or "") == "1",
         "downweight_stale": downweight_stale,
+        "window": window,
     }
 
 
-def _stream_query(db, user, filters, *, limit=50, offset=0):
-    """Build + run the stream query. Returns (findings, view_by_finding_id)."""
+# Stream paging: recall within a 30-day window and rank within it. When the
+# user exhausts a window, the "load previous 30 days" button shifts them to
+# the next older window. The `Since` dropdown, when set, is an explicit scope
+# and overrides windowing (no paging).
+STREAM_WINDOW_DAYS = 30
+# Safety cap — one window of findings shouldn't realistically exceed this.
+# Bounds memory if someone runs the app without filters on a large DB.
+STREAM_SAFETY_CAP = 500
+
+
+def _stream_query(db, user, filters):
+    """Build + run the stream query.
+
+    Returns (findings, view_by_finding_id, has_more). `has_more` is True when
+    windowing is active and there's at least one Finding older than the
+    current window — i.e., clicking "load more" would reach real data.
+    """
     from sqlalchemy import and_, or_, case
     q = db.query(Finding)
     if filters["competitor"]:
@@ -628,9 +648,29 @@ def _stream_query(db, user, filters, *, limit=50, offset=0):
         q = q.filter(Finding.signal_type.in_(filters["signal_types"]))
     if filters["min_materiality"] is not None:
         q = q.filter(Finding.materiality >= filters["min_materiality"])
+
+    now = datetime.utcnow()
+    has_more = False
     if filters["since_days"]:
-        cutoff = datetime.utcnow() - timedelta(days=filters["since_days"])
+        # Explicit date scope — no windowing, no paging.
+        cutoff = now - timedelta(days=filters["since_days"])
         q = q.filter(Finding.created_at >= cutoff)
+    else:
+        window = filters.get("window", 0)
+        window_upper = now - timedelta(days=window * STREAM_WINDOW_DAYS)
+        window_lower = now - timedelta(days=(window + 1) * STREAM_WINDOW_DAYS)
+        q = q.filter(Finding.created_at >= window_lower,
+                     Finding.created_at < window_upper)
+        # Cheap check — does *any* row exist older than this window? Ignores
+        # other filters (competitor/types/etc.); false positives just mean a
+        # user sees an empty older window, which is self-explanatory.
+        has_more = (
+            db.query(Finding.id)
+            .filter(Finding.created_at < window_lower)
+            .limit(1)
+            .first()
+            is not None
+        )
 
     # View-state filters: always exclude snoozed-active rows; exclude
     # dismissed unless the user explicitly asked to see them.
@@ -640,7 +680,6 @@ def _stream_query(db, user, filters, *, limit=50, offset=0):
     )
     if not filters["include_dismissed"]:
         q = q.filter(or_(SignalView.state.is_(None), SignalView.state != "dismissed"))
-    now = datetime.utcnow()
     q = q.filter(or_(
         SignalView.state.is_(None),
         SignalView.state != "snoozed",
@@ -653,7 +692,7 @@ def _stream_query(db, user, filters, *, limit=50, offset=0):
         # fresh so we don't penalise signals where the source didn't expose a
         # date (many careers / VoC hits). Sorted 0-before-1 pushes stale rows
         # to the bottom while keeping created_at as the within-group order.
-        one_year_ago = datetime.utcnow() - timedelta(days=365)
+        one_year_ago = now - timedelta(days=365)
         stale_flag = case(
             (and_(Finding.published_at.isnot(None), Finding.published_at < one_year_ago), 1),
             else_=0,
@@ -662,7 +701,7 @@ def _stream_query(db, user, filters, *, limit=50, offset=0):
     else:
         q = q.order_by(Finding.created_at.desc())
 
-    findings = q.offset(offset).limit(limit).all()
+    findings = q.limit(STREAM_SAFETY_CAP).all()
     views: dict[int, SignalView] = {}
     if findings:
         ids = [f.id for f in findings]
@@ -671,7 +710,7 @@ def _stream_query(db, user, filters, *, limit=50, offset=0):
             SignalView.finding_id.in_(ids),
         ).all():
             views[v.finding_id] = v
-    return findings, views
+    return findings, views, has_more
 
 
 @router.get("/stream", response_class=HTMLResponse)
@@ -691,7 +730,7 @@ def stream_page(
         active_filter_id = user.default_filter_id if default_sf else None
     else:
         filters = _parse_stream_filters(request.query_params)
-    findings, views = _stream_query(db, user, filters)
+    findings, views, has_more = _stream_query(db, user, filters)
     competitors = [c.name for c in db.query(Competitor).filter(Competitor.active == True).order_by(Competitor.name).all()]
     # Saved filters (own + team-shared) for the dropdown.
     from sqlalchemy import or_ as _or
@@ -715,6 +754,7 @@ def stream_page(
         "filters": filters,
         "findings": findings,
         "views": views,
+        "has_more": has_more,
         "competitors": competitors,
         "signal_types": SIGNAL_TYPES,
         "saved_filters": saved,
@@ -730,7 +770,7 @@ def partial_stream_list(
     user=Depends(get_current_user),
 ):
     filters = _parse_stream_filters(request.query_params)
-    findings, views = _stream_query(db, user, filters)
+    findings, views, has_more = _stream_query(db, user, filters)
     background_tasks.add_task(
         emit_shown_events,
         user.id,
@@ -739,6 +779,8 @@ def partial_stream_list(
     return templates.TemplateResponse(request, "_stream_list.html", {
         "findings": findings,
         "views": views,
+        "filters": filters,
+        "has_more": has_more,
     })
 
 
