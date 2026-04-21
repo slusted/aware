@@ -1,6 +1,17 @@
-{# One finding card. Rendered standalone (via stream_view POST) and inside _stream_list.html. #}
+{# One finding card. Rendered standalone (via stream_view POST) and inside _stream_list.html.
+
+   Flags (all optional, default to current stream behavior):
+   - show_rating      (bool, default True)  — render the 👍 / 👎 buttons.
+   - show_competitor  (bool, default True)  — render the competitor name in the head.
+   - expandable       (bool, default False) — render expand caret + hidden detail panel
+                                              with provenance + full content.
+#}
+{% set show_rating = show_rating if show_rating is defined else True %}
+{% set show_competitor = show_competitor if show_competitor is defined else True %}
+{% set expandable = expandable if expandable is defined else False %}
+{% set view = view if view is defined else None %}
 {% set state = view.state if view else None %}
-<article id="card-{{ f.id }}" data-finding-id="{{ f.id }}" class="signal-card {% if state %}state-{{ state }}{% else %}state-new{% endif %}">
+<article id="card-{{ f.id }}" data-finding-id="{{ f.id }}"{% if expandable %} data-expandable="true"{% endif %} class="signal-card {% if state %}state-{{ state }}{% else %}state-new{% endif %}">
   <div class="signal-card-inner">
   <header class="signal-card-head">
     <span class="new-dot" aria-label="Unread" title="New — not yet viewed"></span>
@@ -10,11 +21,13 @@
       <span class="mat-bar" style="width: {{ (f.materiality * 100)|int }}%"></span>
     </span>
     {% endif %}
+    {% if show_competitor %}
     {% set logo_src = logos.get(f.competitor) if logos else None %}
     {% if logo_src %}
       <img class="competitor-logo" src="{{ logo_src }}" alt="" loading="lazy" width="18" height="18">
     {% endif %}
     <span class="competitor">{{ f.competitor }}</span>
+    {% endif %}
     <span class="source muted">{{ f.source }}</span>
     {% if f.published_at %}
       <span class="time muted" title="When the page itself says it was published">
@@ -25,6 +38,7 @@
       scraped {{ f.created_at.strftime('%b %d, %H:%M') }}
     </span>
 
+    {% if show_rating %}
     {# Ratings feed the ranker's preference log directly
        (docs/ranker/01-signal-log.md). Pin / snooze / dismiss as buttons
        are gone — mobile swipe-left/right still dual-writes pin/dismiss
@@ -35,6 +49,15 @@
       <button type="button" class="btn-mini rating-btn" data-rating="rate_up" title="Useful">👍</button>
       <button type="button" class="btn-mini rating-btn" data-rating="rate_down" title="Not useful">👎</button>
     </span>
+    {% endif %}
+    {% if expandable %}
+    <span class="card-actions expand-actions">
+      <button type="button" class="btn-mini expand-toggle"
+              aria-expanded="false"
+              aria-controls="card-{{ f.id }}-expanded"
+              title="Show details">›</button>
+    </span>
+    {% endif %}
   </header>
 
   <div class="signal-card-body">
@@ -51,6 +74,22 @@
       <p class="signal-snippet">{{ (f.content[:280] + '…') if f.content|length > 280 else f.content }}</p>
     {% endif %}
   </div>
+
+  {% if expandable %}
+  <div id="card-{{ f.id }}-expanded" class="signal-card-expanded" hidden>
+    <div class="provenance">
+      <span><strong>URL:</strong> {% if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener" class="mono">{{ f.url[:90] }}</a>{% else %}—{% endif %}</span>
+      <span><strong>Topic:</strong> {{ f.topic or '—' }}</span>
+      <span><strong>Provider:</strong> {{ f.search_provider or '—' }}</span>
+      <span><strong>Score:</strong> {% if f.score is not none %}{{ '%.2f'|format(f.score) }}{% else %}—{% endif %}</span>
+      <span><strong>Matched keyword:</strong> {{ f.matched_keyword or '—' }}</span>
+      <span><strong>Hash:</strong> <span class="mono">{{ f.hash[:12] }}</span></span>
+      <span><strong>Run:</strong> {% if f.run_id %}<a href="/runs/{{ f.run_id }}">#{{ f.run_id }}</a>{% else %}—{% endif %}</span>
+      <span><strong>Length:</strong> {{ (f.content or '')|length }} chars</span>
+    </div>
+    <pre>{{ f.content or '(no content stored — this finding arrived as snippet-only)' }}</pre>
+  </div>
+  {% endif %}
 
   {% if state == 'snoozed' and view and view.snoozed_until %}
     <footer class="signal-card-foot muted">Snoozed until {{ view.snoozed_until.strftime('%b %d') }}</footer>

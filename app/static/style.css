@@ -871,6 +871,53 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
   font-size: 11px;
 }
 
+/* Expand toggle (read-only card surfaces, e.g. competitor profile). */
+.signal-card-head .expand-actions { margin-left: auto; }
+.signal-card-head .expand-toggle {
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 6px;
+  transition: transform 0.15s ease;
+}
+.signal-card-head .expand-toggle[aria-expanded="true"] {
+  color: var(--text);
+  transform: rotate(90deg);
+}
+/* When both rating + expand actions render, expand sits to the right of ratings. */
+.signal-card-head .rating-actions + .expand-actions { margin-left: 4px; }
+
+.signal-card-expanded {
+  border-top: 1px solid var(--border);
+  margin-top: 10px;
+  padding-top: 10px;
+}
+.signal-card-expanded .provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.signal-card-expanded .provenance strong {
+  font-weight: 500;
+  color: var(--text-dim);
+}
+.signal-card-expanded .provenance .mono { font-size: 11px; }
+.signal-card-expanded pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
 /* Signal-type badges: one class per type. Color-code so the eye picks
    patterns out of the stream before reading the title. */
 .badge {
