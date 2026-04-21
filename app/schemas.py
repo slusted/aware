@@ -24,6 +24,7 @@ class CompetitorOut(ORM):
     trends_keyword: str | None = None
     min_relevance_score: float | None = None
     social_score_multiplier: float | None = None
+    positioning_pages: list[str] = []
 
 
 class CompetitorIn(BaseModel):
@@ -40,6 +41,7 @@ class CompetitorIn(BaseModel):
     trends_keyword: str | None = None
     min_relevance_score: float | None = None
     social_score_multiplier: float | None = None
+    positioning_pages: list[str] = []
 
 
 class RunOut(ORM):

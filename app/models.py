@@ -66,6 +66,10 @@ class Competitor(Base):
     # unrelated noise that the default threshold still lets junk through.
     min_relevance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     social_score_multiplier: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Positioning-extractor input override. Empty = auto-probe {homepage,
+    # /pricing, /plans, /product, /features}. When set, replaces the
+    # auto-probe list entirely (no merge).
+    positioning_pages: Mapped[list] = mapped_column(JSON, default=list)
 
 
 class CompetitorMetric(Base):
@@ -193,6 +197,43 @@ class CompetitorReport(Base):
     source_summary: Mapped[str | None] = mapped_column(Text, nullable=True)  # what was fed in
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class PositioningSnapshot(Base):
+    """One extraction of a competitor's marketing-page positioning.
+    Append-only: latest per competitor_id is the 'current' view, older rows
+    are history surfaced as a collapsible list on the Positioning tab.
+
+    Not tied to a scan Run — positioning extraction has its own monthly
+    cadence and manual refresh button.
+    """
+    __tablename__ = "positioning_snapshots"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    competitor_id: Mapped[int] = mapped_column(ForeignKey("competitors.id"), index=True)
+    # Structured pillars rendered as cards on the tab. Shape:
+    #   [{"name": str, "weight": 1..5, "quote": str, "source_url": str}]
+    pillars: Mapped[list] = mapped_column(JSON, default=list)
+    # Narrative markdown with sections: Current positioning / What changed
+    # since {date} / Evidence. Rendered via marked.js in the tab.
+    # Empty string when the narrative LLM call failed but pillars succeeded.
+    body_md: Mapped[str] = mapped_column(Text, default="")
+    # URLs actually fetched that came back non-empty.
+    source_urls: Mapped[list] = mapped_column(JSON, default=list)
+    # SHA-256 of the concatenated fetched text. Matches prior snapshot =
+    # pages unchanged = short-circuit, no LLM call, no new row.
+    source_hash: Mapped[str] = mapped_column(String(64), index=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, index=True
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_positioning_snapshots_competitor_created",
+            "competitor_id",
+            text("created_at DESC"),
+        ),
+    )
 
 
 class Skill(Base):

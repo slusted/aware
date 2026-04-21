@@ -1122,6 +1122,44 @@ def prune_signal_events(retention_days: int = 180) -> int:
         db.close()
 
 
+def run_positioning_refresh_job():
+    """Monthly sweep: extract positioning pillars for every active competitor.
+
+    Unlike the scan/momentum jobs, this doesn't open a Run — positioning
+    extraction is an out-of-band signal pipeline that fails soft per
+    competitor. Logging is via print() into the scheduler's stdout.
+    Sleeps 60s between competitors to stay gentle on the LLM + scrapers.
+    """
+    import time
+    from .models import Competitor
+    from .signals.positioning import extract_positioning
+
+    db = SessionLocal()
+    try:
+        active = (
+            db.query(Competitor)
+            .filter(Competitor.active == True)
+            .order_by(Competitor.name)
+            .all()
+        )
+        print(
+            f"  [positioning_refresh] sweeping {len(active)} active competitors",
+            flush=True,
+        )
+        for i, c in enumerate(active):
+            try:
+                extract_positioning(c, db)
+            except Exception as e:
+                print(
+                    f"  [positioning_refresh] {c.name}: {type(e).__name__}: {e}",
+                    flush=True,
+                )
+            if i < len(active) - 1:
+                time.sleep(60)
+    finally:
+        db.close()
+
+
 def run_momentum_job(country: str = "au", triggered_by: str = "schedule"):
     """Collect daily momentum signals (Google Trends, iOS rank, Play installs/
     rating/reviews) for every active competitor. Emits events into the live log

@@ -2,12 +2,12 @@ from datetime import datetime
 import json, os
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, get_current_user, require_role
-from ..models import Competitor, CompetitorReport, Run
+from ..models import Competitor, CompetitorReport, PositioningSnapshot, Run
 from ..schemas import CompetitorOut, CompetitorIn
 from ..config_sync import sync_db_to_config
 from .. import logos as logos_cache
@@ -136,6 +136,7 @@ def create_competitor(
         trends_keyword=payload.trends_keyword,
         min_relevance_score=payload.min_relevance_score,
         social_score_multiplier=payload.social_score_multiplier,
+        positioning_pages=payload.positioning_pages or [],
         source="manual",
         active=True,
     )
@@ -176,6 +177,7 @@ def update_competitor(
     c.trends_keyword = payload.trends_keyword
     c.min_relevance_score = payload.min_relevance_score
     c.social_score_multiplier = payload.social_score_multiplier
+    c.positioning_pages = payload.positioning_pages or []
     db.commit()
     db.refresh(c)
     sync_db_to_config(db)
@@ -288,6 +290,36 @@ def trigger_competitor_scan(
     from ..jobs import run_competitor_scan_job
     bg.add_task(run_competitor_scan_job, competitor_id, "manual", days)
     return {"queued": True, "competitor_id": competitor_id, "kind": "competitor_scan", "days": days}
+
+
+@router.post("/{competitor_id}/positioning/refresh")
+def refresh_positioning(
+    competitor_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin", "analyst")),
+):
+    """Fetch marketing pages + rerun the positioning pipeline synchronously.
+    Expect ~30s. Redirects to the Positioning tab on success or failure;
+    the tab renders a muted error line if the snapshot couldn't be written."""
+    c = db.get(Competitor, competitor_id)
+    if not c:
+        raise HTTPException(404)
+    from ..signals.positioning import extract_positioning
+    try:
+        extract_positioning(c, db)
+    except Exception as e:
+        # Swallow: the tab will still render whatever the last snapshot was
+        # (or the empty state). We surface the error via ?err=… so the
+        # template can show it without a flash-message subsystem.
+        import urllib.parse
+        msg = urllib.parse.quote(f"{type(e).__name__}: {e}"[:200])
+        return RedirectResponse(
+            f"/competitors/{competitor_id}?positioning_err={msg}#positioning",
+            status_code=303,
+        )
+    return RedirectResponse(
+        f"/competitors/{competitor_id}#positioning", status_code=303
+    )
 
 
 @router.get("/{competitor_id}/reports")

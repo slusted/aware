@@ -13,7 +13,7 @@ from sqlalchemy import func
 from sqlalchemy import func as _func
 
 from .deps import get_db, get_current_user
-from .models import Run, Finding, Competitor, CompetitorReport, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter
+from .models import Run, Finding, Competitor, CompetitorReport, PositioningSnapshot, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter
 from . import scheduler
 from .routes.signal_events import emit_shown_events
 
@@ -266,10 +266,30 @@ def competitor_profile(competitor_id: int, request: Request, db: Session = Depen
             "spark": spark,
         })
 
+    # ── Positioning snapshots (append-only; latest = current view) ──
+    positioning = (
+        db.query(PositioningSnapshot)
+        .filter(PositioningSnapshot.competitor_id == c.id)
+        .order_by(PositioningSnapshot.created_at.desc())
+        .first()
+    )
+    positioning_history = (
+        db.query(PositioningSnapshot)
+        .filter(PositioningSnapshot.competitor_id == c.id)
+        .order_by(PositioningSnapshot.created_at.desc())
+        .offset(1)
+        .limit(10)
+        .all()
+    )
+    positioning_err = request.query_params.get("positioning_err")
+
     return templates.TemplateResponse(request, "competitor_profile.html", {
         "user": user, "c": c, "latest": latest, "history": history,
         "findings": findings, "provider_breakdown": provider_breakdown,
         "momentum": momentum,
+        "positioning": positioning,
+        "positioning_history": positioning_history,
+        "positioning_err": positioning_err,
     })
 
 
