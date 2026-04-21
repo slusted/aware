@@ -1,11 +1,33 @@
-{# Stream list partial — reloaded when filters change. #}
-{% if not findings %}
-  <div class="stream-empty muted">
-    No signals match these filters. Try loosening materiality, widening the date range, or picking fewer signal types.
-  </div>
-{% else %}
+{# Stream list partial — reloaded on filter change (innerHTML swap of
+   #stream-list) and on "load previous 30 days" (outerHTML swap of the
+   button). In both cases the same partial renders: the window's cards
+   plus — if older data exists — a button that fetches the next window. #}
+{% set window = filters.window if filters else 0 %}
+
+{% if findings %}
   {% for f in findings %}
     {% set view = views.get(f.id) %}
     {% include "_stream_card.html" %}
   {% endfor %}
+{% elif window == 0 and not has_more %}
+  <div class="stream-empty muted">
+    No signals match these filters. Try loosening materiality, widening the date range, or picking fewer signal types.
+  </div>
+{% else %}
+  <div class="stream-empty muted">
+    No signals in this 30-day window{% if has_more %} — try stepping back further{% endif %}.
+  </div>
+{% endif %}
+
+{% if has_more %}
+  <button type="button"
+          class="btn-ghost stream-load-more"
+          hx-get="/partials/stream_list"
+          hx-include="#stream-filters"
+          hx-vals='{"window": {{ window + 1 }}}'
+          hx-target="this"
+          hx-swap="outerHTML">
+    Load previous 30 days
+    <span class="muted" style="margin-left:6px">(days {{ (window + 1) * 30 }}–{{ (window + 2) * 30 }} ago)</span>
+  </button>
 {% endif %}
