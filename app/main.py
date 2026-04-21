@@ -158,6 +158,16 @@ async def lifespan(app: FastAPI):
     _seed_volume_config()
     _reset_db_if_requested()
     _migrate_schema()
+    from .seed import seed_competitors
+    _db = SessionLocal()
+    try:
+        added, reactivated = seed_competitors(_db)
+        if added or reactivated:
+            print(f"  [startup] seed_competitors: +{added} new, {reactivated} reactivated", flush=True)
+    except Exception as _e:
+        print(f"  [startup] seed_competitors failed: {_e}", flush=True)
+    finally:
+        _db.close()
     reaped = _reap_orphan_runs()
     if reaped:
         print(f"  [startup] reaped {reaped} orphan run(s)")
