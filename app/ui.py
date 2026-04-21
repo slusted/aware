@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -36,7 +36,14 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 router = APIRouter(include_in_schema=False)
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/")
+def root_to_stream():
+    # Stream is the default landing surface; the dashboard is an admin view
+    # now reachable at /dashboard (and still linked from the sidebar).
+    return RedirectResponse("/stream", status_code=303)
+
+
+@router.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
     last_run = db.query(Run).order_by(Run.started_at.desc()).first()
     recent_runs = db.query(Run).order_by(Run.started_at.desc()).limit(10).all()

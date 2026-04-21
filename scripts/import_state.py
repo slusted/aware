@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT))
 
 from app.db import Base, SessionLocal, engine
 from app.models import User, Competitor, Report, Skill, Finding
+from app.seed import seed_competitors
 
 
 def _config() -> dict:
@@ -41,23 +42,9 @@ def import_users(db, cfg):
 
 
 def import_competitors(db, cfg):
-    for c in cfg.get("competitors", []):
-        name = c["name"]
-        existing = db.query(Competitor).filter(Competitor.name == name).first()
-        if existing:
-            continue
-        db.add(Competitor(
-            name=name,
-            category=c.get("category"),
-            source=c.get("_source", "manual"),
-            discovered_date=c.get("_discovered_date"),
-            threat_angle=c.get("_threat_angle"),
-            keywords=c.get("keywords", []),
-            subreddits=c.get("subreddits", []),
-            careers_domains=c.get("careers_domains", []),
-            newsroom_domains=c.get("newsroom_domains", []),
-            active=True,
-        ))
+    # Delegates to the shared helper so the release-phase import and the
+    # app-lifespan seed behave identically (idempotent insert + reactivate).
+    seed_competitors(db)
 
 
 def import_reports(db):
