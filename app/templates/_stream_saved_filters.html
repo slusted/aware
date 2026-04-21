@@ -24,6 +24,16 @@
                 aria-pressed="{{ 'true' if is_default else 'false' }}">
           {% if is_default %}★{% else %}☆{% endif %}
         </button>
+        <button type="button"
+                class="saved-filter-delete"
+                hx-post="/partials/stream_delete_filter/{{ sf.id }}"
+                hx-target="#saved-filters-slot"
+                hx-swap="innerHTML"
+                hx-confirm="Delete filter '{{ sf.name }}'?"
+                title="Delete this saved filter"
+                aria-label="Delete filter">
+          ✕
+        </button>
       </span>
     {% endfor %}
   {% endif %}

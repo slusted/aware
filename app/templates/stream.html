@@ -29,10 +29,13 @@
     <div class="filter-row">
       <label class="filter-label">Signal type</label>
       <div class="chip-group">
+        {# Empty filter means "no type restriction" — show every type.
+           Render all chips checked in that case so the UI matches the
+           result set; user narrows by unchecking. #}
         {% for value, label in signal_types %}
           <label class="chip">
             <input type="checkbox" name="signal_types" value="{{ value }}"
-                   {% if value in filters.signal_types %}checked{% endif %}>
+                   {% if not filters.signal_types or value in filters.signal_types %}checked{% endif %}>
             <span class="chip-body type-{{ value }}">{{ label }}</span>
           </label>
         {% endfor %}

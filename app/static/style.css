@@ -592,6 +592,31 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
   flex-wrap: wrap;
 }
 
+.saved-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.saved-filter-name { padding: 2px 4px; }
+.saved-filter-default,
+.saved-filter-delete {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1;
+}
+.saved-filter-default:hover,
+.saved-filter-delete:hover {
+  color: var(--text);
+  background: var(--bg-raised);
+}
+.saved-filter-default.is-default { color: var(--warn); }
+.saved-filter-delete:hover { color: var(--err); }
+
 /* Collapse the filter form behind a toggle — the stream is the answer,
    not the filter UI. Saved-filter picker stays visible so preset
    switching is one click away. */
