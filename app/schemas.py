@@ -86,6 +86,22 @@ class SignalViewIn(BaseModel):
     snoozed_until: datetime | None = None
 
 
+class SignalEventIn(BaseModel):
+    """One user-signal event submission. Taxonomy validation happens in the
+    route via app.ranker.events.validate_event — keeping the pydantic shape
+    permissive lets us return a clean 400 with the exact reason instead of
+    a noisy pydantic error envelope."""
+    event_type: str
+    source: str
+    finding_id: int | None = None
+    value: float | None = None
+    meta: dict = {}
+
+
+class SignalEventBatchIn(BaseModel):
+    events: list[SignalEventIn]
+
+
 class SavedFilterOut(ORM):
     id: int
     owner_id: int | None

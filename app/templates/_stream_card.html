@@ -1,6 +1,6 @@
 {# One finding card. Rendered standalone (via stream_view POST) and inside _stream_list.html. #}
 {% set state = view.state if view else None %}
-<article id="card-{{ f.id }}" class="signal-card {% if state %}state-{{ state }}{% else %}state-new{% endif %}">
+<article id="card-{{ f.id }}" data-finding-id="{{ f.id }}" class="signal-card {% if state %}state-{{ state }}{% else %}state-new{% endif %}">
   <div class="signal-card-inner">
   <header class="signal-card-head">
     <span class="badge type-{{ f.signal_type or 'other' }}">{{ f.signal_type or 'unclassified' }}</span>
@@ -20,18 +20,15 @@
       scraped {{ f.created_at.strftime('%b %d, %H:%M') }}
     </span>
 
-    <span class="card-actions">
-      {% if state == 'pinned' %}
-        <button class="btn-mini active" title="Unpin" hx-post="/partials/stream_view/{{ f.id }}" hx-vals='{"state":"seen"}' hx-target="#card-{{ f.id }}" hx-swap="outerHTML">★</button>
-      {% else %}
-        <button class="btn-mini" title="Pin" hx-post="/partials/stream_view/{{ f.id }}" hx-vals='{"state":"pinned"}' hx-target="#card-{{ f.id }}" hx-swap="outerHTML">☆</button>
-      {% endif %}
-      <button class="btn-mini" title="Snooze 7d" hx-post="/partials/stream_view/{{ f.id }}" hx-vals='{"state":"snoozed"}' hx-target="#card-{{ f.id }}" hx-swap="outerHTML">⏰</button>
-      {% if state == 'dismissed' %}
-        <button class="btn-mini active" title="Un-dismiss" hx-post="/partials/stream_view/{{ f.id }}" hx-vals='{"state":"seen"}' hx-target="#card-{{ f.id }}" hx-swap="outerHTML">↺</button>
-      {% else %}
-        <button class="btn-mini" title="Dismiss" hx-post="/partials/stream_view/{{ f.id }}" hx-vals='{"state":"dismissed"}' hx-target="#card-{{ f.id }}" hx-swap="outerHTML">✕</button>
-      {% endif %}
+    {# Ratings feed the ranker's preference log directly
+       (docs/ranker/01-signal-log.md). Pin / snooze / dismiss as buttons
+       are gone — mobile swipe-left/right still dual-writes pin/dismiss
+       via the same backend. more_like_this / less_like_this remain in
+       the event taxonomy for a future reason-tagged flow, but the UI
+       only exposes thumbs for now. #}
+    <span class="card-actions rating-actions">
+      <button type="button" class="btn-mini rating-btn" data-rating="rate_up" title="Useful">👍</button>
+      <button type="button" class="btn-mini rating-btn" data-rating="rate_down" title="Not useful">👎</button>
     </span>
   </header>
 

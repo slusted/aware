@@ -10,7 +10,7 @@ import traceback
 from datetime import datetime
 
 from .db import SessionLocal
-from .models import Run, RunEvent, Finding, Report
+from .models import Run, RunEvent, Finding, Report, UserSignalEvent
 from .usage import current_run_id
 
 
@@ -1039,6 +1039,45 @@ def run_discovery_job():
         _finish_run(db, run, "error", str(e))
     finally:
         current_run_id.reset(token)
+
+
+def prune_signal_events(retention_days: int = 180) -> int:
+    """Nightly maintenance: delete UserSignalEvent rows older than the
+    retention window. Part of the ranker's signal log
+    (docs/ranker/01-signal-log.md).
+
+    Rationale: the preference rollup (spec 02) uses a 30-day decay
+    half-life, so events older than 180d contribute <1% to any score.
+    Keeping them just bloats the table. The rollup outputs in
+    user_preferences_vector are forever; the raw event log is a
+    re-derivable cache.
+
+    Not wrapped in a Run — this is plain maintenance, no user-facing
+    pipeline. Returns count deleted. Safe to call with retention_days=0
+    to purge everything (don't).
+    """
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(days=retention_days)
+    db = SessionLocal()
+    try:
+        deleted = (
+            db.query(UserSignalEvent)
+            .filter(UserSignalEvent.ts < cutoff)
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        print(
+            f"  [prune_signal_events] deleted {deleted} rows older than "
+            f"{retention_days} days (cutoff {cutoff.isoformat()})",
+            flush=True,
+        )
+        return deleted
+    except Exception as e:
+        db.rollback()
+        print(f"  [prune_signal_events] failed: {e}", flush=True)
+        return 0
+    finally:
+        db.close()
 
 
 def run_momentum_job(country: str = "au", triggered_by: str = "schedule"):

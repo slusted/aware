@@ -935,6 +935,21 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
 .btn-mini:hover { background: var(--bg-raised); color: var(--text); }
 .btn-mini.active { color: var(--warn); border-color: rgba(224,165,0,0.3); }
 
+/* Rating buttons — ranker preference signals. Active means "clicked this
+   session"; the server-side event log is the durable state, so this is
+   purely transient feedback. */
+.rating-actions { gap: 4px !important; }
+.rating-btn[data-rating="rate_up"].active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.rating-btn[data-rating="rate_down"].active {
+  color: var(--text-muted);
+  border-color: color-mix(in srgb, var(--text-muted) 30%, transparent);
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
+}
+
 /* ---------- Auth pages (login / setup) ---------- */
 
 .auth-shell {

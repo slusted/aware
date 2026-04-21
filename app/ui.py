@@ -4,7 +4,7 @@ When React lands later, this module is deleted; the JSON API is unchanged.
 import os
 from pathlib import Path
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -15,6 +15,7 @@ from sqlalchemy import func as _func
 from .deps import get_db, get_current_user
 from .models import Run, Finding, Competitor, CompetitorReport, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter
 from . import scheduler
+from .routes.signal_events import emit_shown_events
 
 
 # Signal-stream taxonomy, surfaced in the stream filter bar. Order here
@@ -676,15 +677,18 @@ def _stream_query(db, user, filters, *, limit=50, offset=0):
 @router.get("/stream", response_class=HTMLResponse)
 def stream_page(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
     # Auto-apply the user's default filter only when the URL is bare —
     # any query param (even an empty submission from the form) means the
     # user is steering and should override the default.
+    active_filter_id: int | None = None
     if not request.query_params and user.default_filter_id:
         default_sf = db.get(SavedFilter, user.default_filter_id)
         filters = _parse_stream_filters(default_sf.spec) if default_sf else _parse_stream_filters({})
+        active_filter_id = user.default_filter_id if default_sf else None
     else:
         filters = _parse_stream_filters(request.query_params)
     findings, views = _stream_query(db, user, filters)
@@ -696,6 +700,15 @@ def stream_page(
         .filter(_or(SavedFilter.owner_id == user.id, SavedFilter.owner_id.is_(None)))
         .order_by(SavedFilter.created_at.desc())
         .all()
+    )
+    # Fire-and-forget: log `shown` events after the response ships so the
+    # page render never waits on the write. The task opens its own DB
+    # session because Depends(get_db) closes this one at request end.
+    background_tasks.add_task(
+        emit_shown_events,
+        user.id,
+        [f.id for f in findings],
+        filter_id=active_filter_id,
     )
     return templates.TemplateResponse(request, "stream.html", {
         "user": user,
@@ -712,11 +725,17 @@ def stream_page(
 @router.get("/partials/stream_list", response_class=HTMLResponse)
 def partial_stream_list(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
     filters = _parse_stream_filters(request.query_params)
     findings, views = _stream_query(db, user, filters)
+    background_tasks.add_task(
+        emit_shown_events,
+        user.id,
+        [f.id for f in findings],
+    )
     return templates.TemplateResponse(request, "_stream_list.html", {
         "findings": findings,
         "views": views,

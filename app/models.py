@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, Integer, Float, DateTime, Text, JSON, ForeignKey, Boolean, UniqueConstraint
+from sqlalchemy import String, Integer, Float, DateTime, Text, JSON, ForeignKey, Boolean, UniqueConstraint, Index, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
@@ -244,6 +244,53 @@ class SignalView(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "finding_id", name="uq_signal_views_user_finding"),
+    )
+
+
+class UserSignalEvent(Base):
+    """Append-only log of per-user interactions with findings. Source of
+    truth for the ranker's preference rollup (docs/ranker/01-signal-log.md).
+
+    Separate from SignalView, which tracks current pin/dismiss/snooze state
+    for the read-state UI. Pin/dismiss/snooze writes dual-write into both
+    tables in the same transaction — this log is additive, SignalView is
+    the materialized current state.
+
+    Rows are immutable: never UPDATE, never DELETE except via the nightly
+    retention prune (>180 days).
+    """
+    __tablename__ = "user_signal_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    # Nullable for non-finding events (chat_pref_update). ON DELETE SET NULL
+    # so removing a finding doesn't wipe the behavioural history the rollup
+    # depends on.
+    finding_id: Mapped[int | None] = mapped_column(
+        ForeignKey("findings.id", ondelete="SET NULL"), nullable=True
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Raw event-specific magnitude (e.g. dwell_ms). Never a precomputed
+    # weight — weight mapping lives in the rollup.
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        # Recent events for one user — rollup + debug UI. ts DESC so "latest
+        # first" scans walk the index forward; matches the alembic migration.
+        Index("ix_user_signal_events_user_ts", "user_id", text("ts DESC")),
+        # Per-type slices for weight accounting in the rollup.
+        Index(
+            "ix_user_signal_events_user_type_ts",
+            "user_id",
+            "event_type",
+            text("ts DESC"),
+        ),
+        # Reverse lookup for "which users reacted to this finding".
+        Index("ix_user_signal_events_finding", "finding_id"),
     )
 
 
