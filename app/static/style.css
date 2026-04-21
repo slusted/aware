@@ -760,8 +760,18 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
 .signal-card.state-dismissed .new-dot,
 .signal-card.state-snoozed .new-dot { opacity: 0; }
 
-/* Default: wrapper is transparent so desktop renders unchanged. */
-.signal-card-inner { display: contents; }
+/* Card layout: logo column on the left, content column on the right. The
+   min-width:0 on the content column lets long titles / snippets truncate
+   instead of pushing the logo off-screen. */
+.signal-card-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.signal-card-content {
+  flex: 1;
+  min-width: 0;
+}
 
 /* Mobile: wrapper becomes a translatable layer that reveals dismiss/star hints. */
 @media (max-width: 820px) {
@@ -772,7 +782,9 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
     touch-action: pan-y;
   }
   .signal-card-inner {
-    display: block;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
     background: var(--bg-subtle);
     padding: 12px 14px;
     border-radius: inherit;
@@ -823,14 +835,19 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
   margin-bottom: 8px;
 }
 
-.signal-card-head .competitor-logo {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
+.signal-card .competitor-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
   object-fit: contain;
-  background: var(--surface-alt, #f3f4f6);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
   flex-shrink: 0;
+  display: block;
 }
+/* Placeholder reserves the column width when a competitor has no cached
+   logo, so titles stay vertically aligned across the stream. */
+.signal-card .competitor-logo-placeholder { background: transparent; border-color: transparent; }
 .signal-card-head .competitor { font-weight: 500; color: var(--text); white-space: nowrap; }
 .signal-card-head .source {
   font-size: 11px;
