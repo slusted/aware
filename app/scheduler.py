@@ -34,6 +34,7 @@ def start():
     # the analyst context. Wraps around midnight if scan_hour is 0.
     momentum_hour = (scan_hour - 1) % 24
     momentum_country = cfg.get("momentum_country", "au")
+    signal_retention_days = int(cfg.get("signal_event_retention_days", 180))
 
     sched = AsyncIOScheduler(timezone=os.environ.get("TZ", "UTC"))
 
@@ -57,6 +58,18 @@ def start():
         replace_existing=True,
         misfire_grace_time=3600,
         kwargs={"country": momentum_country},
+    )
+    # Nightly prune of the ranker signal log (docs/ranker/01-signal-log.md).
+    # 02:00 is a quiet hour across timezones; the delete is small (~1 day's
+    # worth beyond the retention window per run), so no off-peak gymnastics
+    # needed beyond that.
+    sched.add_job(
+        jobs.prune_signal_events,
+        CronTrigger(hour=2, minute=0),
+        id="prune_signal_events",
+        replace_existing=True,
+        misfire_grace_time=3600,
+        kwargs={"retention_days": signal_retention_days},
     )
 
     sched.start()
