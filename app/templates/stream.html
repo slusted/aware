@@ -147,4 +147,83 @@
 })();
 </script>
 
+{# Mobile swipe: left = dismiss, right = pin (material insight). Hits the same
+   per-user SignalView endpoint the action buttons use, so judgments stay local. #}
+<script>
+(() => {
+  const list = document.getElementById('stream-list');
+  if (!list) return;
+  const mq = window.matchMedia('(max-width: 820px)');
+  const COMMIT_PX = 80;
+  const HORIZ_LOCK = 10;
+  const VERT_CANCEL = 10;
+
+  let active = null;
+
+  const reset = (card) => {
+    card.classList.remove('is-swiping');
+    card.style.setProperty('--swipe-dx', '0px');
+    card.style.setProperty('--swipe-left-opacity', 0);
+    card.style.setProperty('--swipe-right-opacity', 0);
+  };
+
+  list.addEventListener('touchstart', (e) => {
+    if (!mq.matches || e.touches.length !== 1) return;
+    const card = e.target.closest('.signal-card');
+    if (!card) return;
+    // Let taps on action buttons fall through unchanged.
+    if (e.target.closest('.card-actions')) return;
+    const t = e.touches[0];
+    active = { card, startX: t.clientX, startY: t.clientY, dx: 0, locked: null };
+  }, { passive: true });
+
+  list.addEventListener('touchmove', (e) => {
+    if (!active) return;
+    const t = e.touches[0];
+    const dx = t.clientX - active.startX;
+    const dy = t.clientY - active.startY;
+    if (active.locked === null) {
+      if (Math.abs(dy) > VERT_CANCEL && Math.abs(dy) > Math.abs(dx)) {
+        // Vertical scroll wins — abandon the swipe so the page can scroll.
+        active = null;
+        return;
+      }
+      if (Math.abs(dx) > HORIZ_LOCK) {
+        active.locked = 'h';
+        active.card.classList.add('is-swiping');
+      }
+    }
+    if (active.locked === 'h') {
+      e.preventDefault();
+      active.dx = dx;
+      active.card.style.setProperty('--swipe-dx', dx + 'px');
+      active.card.style.setProperty('--swipe-left-opacity', Math.min(1, Math.max(0, -dx / COMMIT_PX)));
+      active.card.style.setProperty('--swipe-right-opacity', Math.min(1, Math.max(0, dx / COMMIT_PX)));
+    }
+  }, { passive: false });
+
+  const end = () => {
+    if (!active) return;
+    const { card, dx, locked } = active;
+    active = null;
+    reset(card);
+    if (locked !== 'h' || Math.abs(dx) < COMMIT_PX) return;
+    const id = card.id.replace('card-', '');
+    const state = dx > 0 ? 'pinned' : 'dismissed';
+    if (window.htmx) {
+      htmx.ajax('POST', '/partials/stream_view/' + id, {
+        target: '#card-' + id,
+        swap: 'outerHTML',
+        values: { state: state }
+      });
+    }
+  };
+
+  list.addEventListener('touchend', end);
+  list.addEventListener('touchcancel', () => {
+    if (active) { reset(active.card); active = null; }
+  });
+})();
+</script>
+
 {% endblock %}
