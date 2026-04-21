@@ -740,6 +740,60 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
 .signal-card.state-pinned { border-color: rgba(224,165,0,0.35); background: rgba(224,165,0,0.04); }
 .signal-card.state-snoozed { opacity: 0.55; }
 
+/* Default: wrapper is transparent so desktop renders unchanged. */
+.signal-card-inner { display: contents; }
+
+/* Mobile: wrapper becomes a translatable layer that reveals dismiss/star hints. */
+@media (max-width: 820px) {
+  .signal-card {
+    position: relative;
+    overflow: hidden;
+    padding: 0;
+    touch-action: pan-y;
+  }
+  .signal-card-inner {
+    display: block;
+    background: var(--bg-subtle);
+    padding: 12px 14px;
+    border-radius: inherit;
+    transform: translateX(var(--swipe-dx, 0px));
+    will-change: transform;
+    position: relative;
+    z-index: 1;
+  }
+  .signal-card.state-pinned .signal-card-inner { background: rgba(224,165,0,0.04); }
+  .signal-card:not(.is-swiping) .signal-card-inner {
+    transition: transform 0.2s ease;
+  }
+  .signal-card::before,
+  .signal-card::after {
+    position: absolute;
+    top: 0; bottom: 0;
+    display: flex;
+    align-items: center;
+    padding: 0 18px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .signal-card::before {
+    content: "Dismiss ✕";
+    left: 0; right: 50%;
+    background: #b23a48;
+    justify-content: flex-start;
+    opacity: var(--swipe-left-opacity, 0);
+  }
+  .signal-card::after {
+    content: "★ Insight";
+    left: 50%; right: 0;
+    background: #c9963a;
+    justify-content: flex-end;
+    opacity: var(--swipe-right-opacity, 0);
+  }
+}
+
 .signal-card-head {
   display: flex;
   align-items: center;

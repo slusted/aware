@@ -1,6 +1,7 @@
 {# One finding card. Rendered standalone (via stream_view POST) and inside _stream_list.html. #}
 {% set state = view.state if view else None %}
 <article id="card-{{ f.id }}" class="signal-card {% if state %}state-{{ state }}{% else %}state-new{% endif %}">
+  <div class="signal-card-inner">
   <header class="signal-card-head">
     <span class="badge type-{{ f.signal_type or 'other' }}">{{ f.signal_type or 'unclassified' }}</span>
     {% if f.materiality is not none %}
@@ -52,4 +53,5 @@
   {% if state == 'snoozed' and view and view.snoozed_until %}
     <footer class="signal-card-foot muted">Snoozed until {{ view.snoozed_until.strftime('%b %d') }}</footer>
   {% endif %}
+  </div>
 </article>
