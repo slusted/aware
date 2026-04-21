@@ -218,30 +218,81 @@ def get_page_date(url: str) -> Optional[str]:
 # public JSON mirror at {url}.json — no auth needed. We flatten post body +
 # comment tree into text. This avoids burning paid-scraper credits on Reddit
 # URLs that wouldn't extract well anyway.
+#
+# Two-tier fetch: urllib direct first (free, works on dev machines), then
+# ZenRows with premium_proxy on the .json URL as fallback. Railway's shared
+# egress gets 429/403 from Reddit, but residential IPs via ZenRows get clean
+# 200s with the full comment tree. We deliberately skip js_render for this
+# path — Reddit's JSON API returns plain JSON, so JS rendering would just
+# waste credits (25 vs ~10 without it).
 _REDDIT_COMMENTS_RE = re.compile(r"reddit\.com/r/[^/]+/comments/", re.IGNORECASE)
+_ZENROWS_REDDIT_JSON_CREDITS = 10  # premium_proxy only, no js_render
 
 
-def _try_reddit_json(url: str, timeout: int = 15) -> Optional[str]:
-    if not _REDDIT_COMMENTS_RE.search(url or ""):
-        return None
-
+def _reddit_json_url(url: str) -> str:
     clean = url.split("?", 1)[0].split("#", 1)[0].rstrip("/")
-    json_url = clean + ".json"
+    return clean + ".json"
+
+
+def _fetch_reddit_json_direct(url: str, timeout: int = 15) -> Optional[object]:
+    """Hit Reddit's .json endpoint via urllib. Works from most dev machines,
+    often 429/403s from shared cloud egress. Returns parsed JSON or None."""
+    json_url = _reddit_json_url(url)
     headers = {
         # Reddit rate-limits generic browser UAs hard but accepts descriptive
         # bot UAs per their API etiquette docs.
         "User-Agent": "competitor-watch/1.0 (research bot)",
         "Accept": "application/json",
     }
-
     try:
         req = urllib.request.Request(json_url, headers=headers)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read(_HTTP_READ_CAP).decode("utf-8", errors="ignore"))
+            return json.loads(resp.read(_HTTP_READ_CAP).decode("utf-8", errors="ignore"))
     except Exception as e:
-        print(f"[reddit-json] error on {url}: {e}")
+        print(f"[reddit-json] direct error on {url}: {e}")
         return None
 
+
+def _fetch_reddit_json_via_zenrows(url: str, timeout: int = 60) -> Optional[object]:
+    """Fallback: route the .json URL through ZenRows with a residential IP.
+    Bypasses Reddit's datacenter-IP block. No js_render — JSON endpoint
+    returns plain JSON, so we save ~15 credits per call vs the HTML path."""
+    key = os.environ.get("ZENROWS_API_KEY", "")
+    if not key:
+        return None
+    params = {
+        "apikey":        key,
+        "url":           _reddit_json_url(url),
+        "premium_proxy": "true",
+        "proxy_country": "us",
+    }
+    z_url = "https://api.zenrows.com/v1/?" + urllib.parse.urlencode(params)
+    try:
+        req = urllib.request.Request(z_url, headers={"User-Agent": "competitor-watch/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read(_HTTP_READ_CAP).decode("utf-8", errors="ignore")
+    except Exception as e:
+        print(f"[reddit-json] zenrows error on {url}: {e}")
+        _record_zenrows_usage(success=False, credits=0)
+        return None
+
+    _record_zenrows_usage(success=True, credits=_ZENROWS_REDDIT_JSON_CREDITS)
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as e:
+        print(f"[reddit-json] zenrows returned non-JSON for {url}: {e}")
+        return None
+
+
+def _try_reddit_json(url: str) -> Optional[str]:
+    if not _REDDIT_COMMENTS_RE.search(url or ""):
+        return None
+
+    data = _fetch_reddit_json_direct(url)
+    if not isinstance(data, list) or len(data) < 2:
+        # Direct path failed or got an error envelope. Fall back to ZenRows
+        # on the same .json URL — residential IP usually gets a clean 200.
+        data = _fetch_reddit_json_via_zenrows(url)
     if not isinstance(data, list) or len(data) < 2:
         return None
 
