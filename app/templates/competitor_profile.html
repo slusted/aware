@@ -46,6 +46,16 @@
   {% endif %}
 </div>
 
+<nav class="tabs" role="tablist" aria-label="Competitor views">
+  <button role="tab" class="tab active" data-tab="review" id="tabbtn-review"
+          aria-selected="true" aria-controls="tab-review">Review</button>
+  <button role="tab" class="tab" data-tab="momentum" id="tabbtn-momentum"
+          aria-selected="false" aria-controls="tab-momentum">Momentum</button>
+  <button role="tab" class="tab" data-tab="findings" id="tabbtn-findings"
+          aria-selected="false" aria-controls="tab-findings">Findings</button>
+</nav>
+
+<section class="tab-panel" id="tab-review" role="tabpanel" aria-labelledby="tabbtn-review">
 <div class="panel">
   <div class="panel-header">
     <h2>Current strategy review</h2>
@@ -66,6 +76,30 @@
   </div>
 </div>
 
+{% if history %}
+<div class="panel">
+  <div class="panel-header"><h2>Prior reviews</h2></div>
+  <table>
+    <thead><tr><th>Date</th><th>Model</th><th>Inputs</th><th></th></tr></thead>
+    <tbody>
+    {% for r in history %}
+      <tr>
+        <td class="muted">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="muted">{{ r.model or '' }}</td>
+        <td class="muted">{{ r.source_summary or '' }}</td>
+        <td style="text-align:right"><a href="#" onclick="showPrior({{ r.id }}); return false">view</a></td>
+      </tr>
+      <tr id="prior-{{ r.id }}" style="display:none">
+        <td colspan="4" style="background:var(--bg)"><div class="markdown" style="padding:10px 4px">{{ r.body_md|safe }}</div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+</section>
+
+<section class="tab-panel" id="tab-momentum" role="tabpanel" aria-labelledby="tabbtn-momentum" hidden>
 {% if momentum %}
 <div class="panel">
   <div class="panel-header">
@@ -152,29 +186,9 @@
   </div>
 </div>
 {% endif %}
+</section>
 
-{% if history %}
-<div class="panel">
-  <div class="panel-header"><h2>Prior reviews</h2></div>
-  <table>
-    <thead><tr><th>Date</th><th>Model</th><th>Inputs</th><th></th></tr></thead>
-    <tbody>
-    {% for r in history %}
-      <tr>
-        <td class="muted">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-        <td class="muted">{{ r.model or '' }}</td>
-        <td class="muted">{{ r.source_summary or '' }}</td>
-        <td style="text-align:right"><a href="#" onclick="showPrior({{ r.id }}); return false">view</a></td>
-      </tr>
-      <tr id="prior-{{ r.id }}" style="display:none">
-        <td colspan="4" style="background:var(--bg)"><div class="markdown" style="padding:10px 4px">{{ r.body_md|safe }}</div></td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
+<section class="tab-panel" id="tab-findings" role="tabpanel" aria-labelledby="tabbtn-findings" hidden>
 <div class="panel">
   <div class="panel-header">
     <h2>Recent findings</h2>
@@ -204,6 +218,42 @@
     {% endif %}
   </div>
 </div>
+</section>
+
+<script>
+  (function initTabs() {
+    var TABS = ['review', 'momentum', 'findings'];
+    var buttons = document.querySelectorAll('.tabs .tab');
+    var panels  = document.querySelectorAll('.tab-panel');
+
+    function show(name) {
+      if (TABS.indexOf(name) === -1) name = 'review';
+      buttons.forEach(function (b) {
+        var active = b.dataset.tab === name;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        if (p.id === 'tab-' + name) p.removeAttribute('hidden');
+        else p.setAttribute('hidden', '');
+      });
+    }
+
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        var name = b.dataset.tab;
+        show(name);
+        history.replaceState(null, '', '#' + name);
+      });
+    });
+
+    window.addEventListener('hashchange', function () {
+      show((location.hash || '').replace('#', ''));
+    });
+
+    show((location.hash || '').replace('#', ''));
+  })();
+</script>
 
 <script>
   // Expand toggle for any [data-expandable] card. Reveals the
