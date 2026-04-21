@@ -85,6 +85,26 @@ def start():
         replace_existing=True,
         misfire_grace_time=3600,
     )
+    # Monthly positioning-pillar refresh (spec 03). Runs on the 1st of
+    # each month at 02:00 — well clear of the daily scan / momentum
+    # windows. Configurable via POSITIONING_REFRESH_CRON in the form
+    # "minute hour day_of_month". Sleeps 60s between competitors, so a
+    # 20-competitor sweep takes ~20 minutes.
+    pos_cron = os.environ.get("POSITIONING_REFRESH_CRON", "0 2 1")
+    try:
+        pmin, phour, pdom = pos_cron.split()
+        sched.add_job(
+            jobs.run_positioning_refresh_job,
+            CronTrigger(minute=pmin, hour=phour, day=pdom),
+            id="positioning_refresh",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+    except ValueError:
+        print(
+            f"[scheduler] invalid POSITIONING_REFRESH_CRON={pos_cron!r}; "
+            "expected 'min hour dom'. Skipping positioning job."
+        )
 
     sched.start()
     _scheduler = sched

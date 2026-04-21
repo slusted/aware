@@ -41,6 +41,14 @@ KNOWN_SKILLS: dict[str, tuple[str, str]] = {
         "customer_brief.md",
         "Drives the customer brief — synthesized view of what customers want and how they're shifting.",
     ),
+    "positioning_extract": (
+        "positioning_extract.md",
+        "Structured extraction of positioning pillars from a competitor's own marketing pages. Call 1 of the positioning pipeline.",
+    ),
+    "positioning_narrative": (
+        "positioning_narrative.md",
+        "Narrative synthesis of current positioning and diff vs. the prior snapshot. Call 2 of the positioning pipeline.",
+    ),
 }
 
 

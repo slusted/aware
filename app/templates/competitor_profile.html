@@ -51,6 +51,8 @@
           aria-selected="true" aria-controls="tab-review">Review</button>
   <button role="tab" class="tab" data-tab="momentum" id="tabbtn-momentum"
           aria-selected="false" aria-controls="tab-momentum">Momentum</button>
+  <button role="tab" class="tab" data-tab="positioning" id="tabbtn-positioning"
+          aria-selected="false" aria-controls="tab-positioning">Positioning</button>
   <button role="tab" class="tab" data-tab="findings" id="tabbtn-findings"
           aria-selected="false" aria-controls="tab-findings">Findings</button>
 </nav>
@@ -188,6 +190,88 @@
 {% endif %}
 </section>
 
+<section class="tab-panel" id="tab-positioning" role="tabpanel" aria-labelledby="tabbtn-positioning" hidden>
+{% if positioning_err %}
+  <p class="error" style="color:var(--err); margin:0 0 12px">Refresh failed: {{ positioning_err }}</p>
+{% endif %}
+{% if positioning %}
+<div class="panel">
+  <div class="panel-header">
+    <h2>Current positioning</h2>
+    <span class="muted" style="font-size:11px">
+      {{ positioning.created_at.strftime('%Y-%m-%d') }}
+      · {{ positioning.pillars|length }} pillar{{ 's' if positioning.pillars|length != 1 else '' }}
+      · {{ positioning.source_urls|length }} page{{ 's' if positioning.source_urls|length != 1 else '' }}
+    </span>
+    <form method="post" action="/api/competitors/{{ c.id }}/positioning/refresh" style="margin-left:auto">
+      <button type="submit" class="btn-ghost" title="Refetch marketing pages + re-run pillar extraction. ~30s.">Refresh positioning</button>
+    </form>
+  </div>
+  <div class="panel-body">
+    {% include "_positioning_pillars.html" %}
+    {% if positioning.body_md %}
+      <div id="positioning-body" class="markdown" style="margin-top:16px"></div>
+      <script id="positioning-src" type="text/plain">{{ positioning.body_md }}</script>
+    {% else %}
+      <p class="muted" style="margin:16px 0 0">Narrative unavailable — click <strong>Refresh positioning</strong> to retry.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if positioning_history %}
+<div class="panel">
+  <div class="panel-header"><h2>Prior snapshots</h2></div>
+  <table>
+    <thead><tr><th>Date</th><th>Pillars</th><th>Pages</th><th></th></tr></thead>
+    <tbody>
+    {% for s in positioning_history %}
+      <tr>
+        <td class="muted">{{ s.created_at.strftime('%Y-%m-%d') }}</td>
+        <td class="muted">{{ s.pillars|length }}</td>
+        <td class="muted">{{ s.source_urls|length }}</td>
+        <td style="text-align:right"><a href="#" onclick="showPriorPositioning({{ s.id }}); return false">view</a></td>
+      </tr>
+      <tr id="prior-pos-{{ s.id }}" style="display:none">
+        <td colspan="4" style="background:var(--bg)">
+          <div style="padding:10px 4px">
+            <div style="margin-bottom:10px">
+              {% for p in s.pillars %}
+                <span class="pill" style="margin-right:6px" title='{{ p.quote }}'>{{ p.name }} · {{ p.weight }}/5</span>
+              {% endfor %}
+            </div>
+            <div class="markdown">{{ s.body_md|safe }}</div>
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% else %}
+<div class="panel">
+  <div class="panel-header"><h2>Positioning</h2></div>
+  <div class="panel-body">
+    <p class="muted" style="margin-top:0">No positioning snapshot yet.</p>
+    {% if c.homepage_domain or c.positioning_pages %}
+      <form method="post" action="/api/competitors/{{ c.id }}/positioning/refresh">
+        <button type="submit" class="btn">Capture first snapshot</button>
+      </form>
+      <p class="muted" style="font-size:12px; margin-bottom:0">
+        Fetches the homepage{% if not c.positioning_pages %} + /pricing + /plans + /product + /features{% endif %} and extracts positioning pillars. ~30 seconds.
+      </p>
+    {% else %}
+      <p class="muted" style="margin-bottom:0">
+        Set a <code>homepage_domain</code> on the
+        <a href="/admin/competitors/{{ c.id }}/edit">edit page</a> before capturing a snapshot.
+      </p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+</section>
+
 <section class="tab-panel" id="tab-findings" role="tabpanel" aria-labelledby="tabbtn-findings" hidden>
 <div class="panel">
   <div class="panel-header">
@@ -222,7 +306,7 @@
 
 <script>
   (function initTabs() {
-    var TABS = ['review', 'momentum', 'findings'];
+    var TABS = ['review', 'momentum', 'positioning', 'findings'];
     var buttons = document.querySelectorAll('.tabs .tab');
     var panels  = document.querySelectorAll('.tab-panel');
 
@@ -282,8 +366,21 @@
     }
   })();
 
+  (function renderPositioning() {
+    var src = document.getElementById('positioning-src');
+    var out = document.getElementById('positioning-body');
+    if (src && out && window.marked) {
+      out.innerHTML = window.marked.parse(src.textContent);
+    }
+  })();
+
   function showPrior(id) {
     var row = document.getElementById('prior-' + id);
+    if (row) row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+  }
+
+  function showPriorPositioning(id) {
+    var row = document.getElementById('prior-pos-' + id);
     if (row) row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
   }
 

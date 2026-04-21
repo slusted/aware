@@ -141,6 +141,19 @@
            value="{{ '%.1f'|format(c.social_score_multiplier) if c and c.social_score_multiplier is not none else '' }}"
            placeholder="blank = use global default (1.5)">
   </div>
+
+  <h3 style="margin-top:30px; margin-bottom:4px">Positioning extractor</h3>
+  <p class="hint" style="margin-bottom:16px">
+    The monthly positioning pass fetches these URLs, extracts pillars, and writes a snapshot on the <a href="/competitors/{{ c.id if c else '' }}#positioning">Positioning tab</a>. Leave blank to auto-probe the homepage, /pricing, /plans, /product, and /features.
+  </p>
+  <div class="field">
+    <label class="label">
+      Positioning pages
+      <span class="hint">Full URLs, one per line. When set, replaces the auto-probe list (no merge).</span>
+    </label>
+    <textarea name="positioning_pages" rows="3" class="mono"
+              placeholder="https://example.com/&#10;https://example.com/pricing">{{ '\n'.join(c.positioning_pages or []) if c else '' }}</textarea>
+  </div>
 </form>
 
 <script>
@@ -476,6 +489,7 @@
       trends_keyword: (data.get('trends_keyword') || '').trim() || null,
       min_relevance_score: (function(){ var v=(data.get('min_relevance_score')||'').trim(); return v ? parseFloat(v) : null; })(),
       social_score_multiplier: (function(){ var v=(data.get('social_score_multiplier')||'').trim(); return v ? parseFloat(v) : null; })(),
+      positioning_pages: parseLines(data.get('positioning_pages')),
     };
     var url = isEdit ? '/api/competitors/' + id : '/api/competitors';
     var method = isEdit ? 'PUT' : 'POST';

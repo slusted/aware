@@ -1,0 +1,21 @@
+{# Pillar-card grid rendered from a PositioningSnapshot.pillars JSON list.
+   Kept standalone so the future /positioning landscape page can include
+   it per-competitor without duplicating markup. #}
+{% if positioning and positioning.pillars %}
+<div class="pillar-grid">
+  {% for p in positioning.pillars %}
+    <div class="pillar-card">
+      <div class="pillar-head">
+        <span class="pillar-name">{{ p.name }}</span>
+        <span class="pillar-weight" aria-label="Prominence {{ p.weight }} of 5">
+          {% for i in range(5) %}<span class="dot {% if i < p.weight %}on{% else %}off{% endif %}"></span>{% endfor %}
+        </span>
+      </div>
+      {% if p.quote %}<blockquote class="pillar-quote">{{ p.quote }}</blockquote>{% endif %}
+      {% if p.source_url %}
+        <a class="pillar-source" href="{{ p.source_url }}" target="_blank" rel="noopener">source ↗</a>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
