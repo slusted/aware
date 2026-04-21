@@ -15,6 +15,7 @@ from sqlalchemy import func as _func
 from .deps import get_db, get_current_user
 from .models import Run, Finding, Competitor, CompetitorReport, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter
 from . import scheduler
+from .ranker.present import present as _present_clusters, lead_findings as _lead_findings
 from .routes.signal_events import emit_shown_events
 
 
@@ -792,6 +793,15 @@ def _stream_query(db, user, filters):
         q = q.order_by(Finding.created_at.desc())
 
     findings = q.limit(STREAM_SAFETY_CAP).all()
+
+    # Cluster near-duplicates and apply MMR diversity to the top slots
+    # (docs/ranker/06-cluster-diversity.md). Pure post-processing — DB
+    # query shape is untouched. `lead_findings()` stamps `_cluster_size`
+    # on each returned Finding so the template can render the "+N more"
+    # chip without restructuring.
+    cards = _present_clusters(findings, now=now)
+    findings = _lead_findings(cards)
+
     views: dict[int, SignalView] = {}
     if findings:
         ids = [f.id for f in findings]

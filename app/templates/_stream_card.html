@@ -34,6 +34,15 @@
     <span class="competitor">{{ f.competitor }}</span>
     {% endif %}
     <span class="source muted">{{ f.source }}</span>
+    {# Clustered siblings: spec 06 collapses near-duplicate findings
+       into one card. `_cluster_size` is a runtime attribute stamped on
+       the lead Finding by app/ranker/present.lead_findings(). #}
+    {% set cluster_size = f._cluster_size if f._cluster_size is defined else 1 %}
+    {% if cluster_size > 1 %}
+      <span class="cluster-chip" title="{{ cluster_size - 1 }} additional source{{ 's' if cluster_size - 1 != 1 else '' }} covered this same event">
+        +{{ cluster_size - 1 }} more source{{ 's' if cluster_size - 1 != 1 else '' }}
+      </span>
+    {% endif %}
     {% if f.published_at %}
       <span class="time muted" title="When the page itself says it was published">
         published {{ f.published_at.strftime('%b %d, %Y') }}
