@@ -190,62 +190,34 @@
       </span>
     {% endif %}
   </div>
-  <table>
-    <thead><tr>
-      <th></th>
-      <th>When</th>
-      <th>Source</th>
-      <th>Provider</th>
-      <th>Score</th>
-      <th>Published</th>
-      <th>Title</th>
-    </tr></thead>
-    <tbody>
-    {% for f in findings %}
-      <tr class="finding-row" data-fid="{{ f.id }}" style="cursor:pointer">
-        <td style="width:24px; text-align:center; color:var(--text-muted)">
-          <span class="caret">›</span>
-        </td>
-        <td class="muted">{{ f.created_at.strftime('%Y-%m-%d') }}</td>
-        <td class="muted">{{ f.source }}</td>
-        <td class="muted">{{ f.search_provider or '—' }}</td>
-        <td class="muted">{% if f.score is not none %}{{ '%.2f'|format(f.score) }}{% else %}—{% endif %}</td>
-        <td class="muted">{% if f.published_at %}{{ f.published_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}</td>
-        <td>
-          {% if f.url %}<a href="{{ f.url }}" target="_blank" onclick="event.stopPropagation()">{{ f.title or (f.content or '')[:120] }}</a>
-          {% else %}{{ f.title or (f.content or '')[:120] }}{% endif %}
-        </td>
-      </tr>
-      <tr id="finding-{{ f.id }}-detail" style="display:none; background:var(--bg)">
-        <td colspan="7" style="padding:14px 20px">
-          <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:10px; font-size:11px" class="muted">
-            <span><strong>URL:</strong> {% if f.url %}<a href="{{ f.url }}" target="_blank" class="mono" style="font-size:11px">{{ f.url[:90] }}</a>{% else %}—{% endif %}</span>
-            <span><strong>Topic:</strong> {{ f.topic or '—' }}</span>
-            <span><strong>Hash:</strong> <span class="mono">{{ f.hash[:12] }}</span></span>
-            <span><strong>Run:</strong> {% if f.run_id %}<a href="/runs/{{ f.run_id }}">#{{ f.run_id }}</a>{% else %}—{% endif %}</span>
-            <span><strong>Length:</strong> {{ (f.content or '')|length }} chars</span>
-          </div>
-          <pre style="margin:0; white-space:pre-wrap; word-break:break-word; max-height:400px; overflow:auto; font-size:12px; line-height:1.5">{{ f.content or '(no content stored — this finding arrived as snippet-only)' }}</pre>
-        </td>
-      </tr>
+  <div class="panel-body">
+    {% if findings %}
+      <div class="stream-list">
+        {% for f in findings %}
+          {% with show_rating=False, show_competitor=False, expandable=True %}
+            {% include "_stream_card.html" %}
+          {% endwith %}
+        {% endfor %}
+      </div>
     {% else %}
-      <tr><td colspan="7" class="muted">No findings on record.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
+      <p class="muted" style="margin:0">No findings on record.</p>
+    {% endif %}
+  </div>
 </div>
 
 <script>
-  // Toggle the per-finding detail row (URL, topic, full stored content).
-  document.querySelectorAll('.finding-row').forEach(function (row) {
-    row.addEventListener('click', function () {
-      var fid = row.dataset.fid;
-      var detail = document.getElementById('finding-' + fid + '-detail');
-      if (!detail) return;
-      var open = detail.style.display !== 'none';
-      detail.style.display = open ? 'none' : 'table-row';
-      var caret = row.querySelector('.caret');
-      if (caret) caret.textContent = open ? '›' : '⌄';
+  // Expand toggle for any [data-expandable] card. Reveals the
+  // .signal-card-expanded panel with provenance + full content.
+  document.querySelectorAll('.signal-card[data-expandable] .expand-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      var panelId = btn.getAttribute('aria-controls');
+      var panel = panelId && document.getElementById(panelId);
+      if (!panel) return;
+      var open = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+      if (open) panel.setAttribute('hidden', '');
+      else panel.removeAttribute('hidden');
     });
   });
 </script>
