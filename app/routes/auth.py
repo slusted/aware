@@ -44,13 +44,16 @@ def _cookie_kwargs(request: Request) -> dict:
     )
 
 
+_DEFAULT_POST_LOGIN = "/stream"
+
+
 def _safe_next(raw: str | None) -> str:
-    """Only honour same-site redirects. Anything odd → /."""
-    if not raw or not raw.startswith("/") or raw.startswith("//"):
-        return "/"
+    """Only honour same-site redirects. Anything odd → default landing."""
+    if not raw or raw == "/" or not raw.startswith("/") or raw.startswith("//"):
+        return _DEFAULT_POST_LOGIN
     # Avoid bouncing back to auth pages.
     if raw.startswith(("/login", "/logout", "/setup")):
-        return "/"
+        return _DEFAULT_POST_LOGIN
     return raw
 
 
@@ -177,6 +180,6 @@ def setup_submit(
         user_agent=request.headers.get("user-agent"),
         ip=(request.client.host if request.client else None),
     )
-    resp = RedirectResponse("/", status_code=303)
+    resp = RedirectResponse(_DEFAULT_POST_LOGIN, status_code=303)
     resp.set_cookie(value=sess.token, **_cookie_kwargs(request))
     return resp

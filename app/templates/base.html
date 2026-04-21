@@ -2,27 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Competitor Watch{% endblock %}</title>
   <link rel="preconnect" href="https://rsms.me/">
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
-  <link rel="stylesheet" href="/static/style.css?v=brief-meta-1">
+  <link rel="stylesheet" href="/static/style.css?v=responsive-2">
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head>
 <body>
 <div class="app">
 
   <aside class="sidebar">
+    <input type="checkbox" id="mobile-nav-toggle" class="mobile-nav-toggle" aria-hidden="true">
     <div class="brand">
       <span class="dot"></span>
       <span>Competitor Watch</span>
+      <label for="mobile-nav-toggle" class="mobile-nav-btn" aria-label="Toggle menu">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
+      </label>
     </div>
 
     <div class="nav-section">
       {% set path = request.url.path %}
-      <a href="/" class="nav-item {% if path == '/' %}active{% endif %}">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
-        Dashboard
-      </a>
       <a href="/stream" class="nav-item {% if path.startswith('/stream') %}active{% endif %}">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12M2 8h12M2 12h8"/></svg>
         Stream
@@ -43,14 +44,18 @@
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 13V9l3-4 3 3 3-2 3 3v4"/><path d="M2 13h12"/></svg>
         Market
       </a>
-      <a href="/runs" class="nav-item {% if path.startswith('/runs') or path == '/runs' %}active{% endif %}">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2"/></svg>
-        Runs
-      </a>
     </div>
 
     <div class="nav-section">
       <div class="label">Admin</div>
+      <a href="/" class="nav-item {% if path == '/' %}active{% endif %}">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+        Dashboard
+      </a>
+      <a href="/runs" class="nav-item {% if path.startswith('/runs') or path == '/runs' %}active{% endif %}">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2"/></svg>
+        Runs
+      </a>
       <a href="/admin/competitors" class="nav-item {% if path.startswith('/admin/competitors') %}active{% endif %}">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h10v10H3z"/><path d="M3 6h10M6 3v10"/></svg>
         Manage watchlist
