@@ -59,9 +59,19 @@ One row per user. Holds the LLM-editable taste doc and rollup metadata.
 
 ## Event → weight mapping
 
-Each event contributes a **base weight** to every structured dimension its finding touches (competitor, signal_type, source, topic, matched_keyword). One pin on an Indeed `new_hire` finding sourced from `tavily` with keyword `"hiring spree"` and topic `"talent"` produces +base to all five `(dimension, key)` pairs.
+Each event contributes a **base weight** to every structured dimension its finding touches — the five dimensions below. One pin on an Indeed `new_hire` finding with `source="news"`, keyword `"hiring spree"`, topic `"talent"` produces +base to all five `(dimension, key)` pairs.
 
-Starting values. Document-controlled — retune over time. `schema_version` bumps on change.
+Dimensions pulled from the finding:
+
+| dimension       | field on `Finding`            | example keys                       |
+| --------------- | ----------------------------- | ---------------------------------- |
+| `competitor`    | `competitor`                  | `Indeed`, `LinkedIn`               |
+| `signal_type`   | `signal_type`                 | `new_hire`, `product_launch`       |
+| `source`        | `source`                      | `news`, `careers`, `voc_mention`   |
+| `topic`         | `topic`                       | freeform LLM output                |
+| `keyword`       | `matched_keyword`             | the configured keyword that hit    |
+
+Starting values. Document-controlled — retune over time against real data. `schema_version` bumps on change.
 
 | event_type          | base weight | notes                                                 |
 | ------------------- | ----------- | ----------------------------------------------------- |
@@ -76,14 +86,12 @@ Starting values. Document-controlled — retune over time. `schema_version` bump
 | `dismiss`           | −0.70       |                                                       |
 | `undismiss`         | +0.30       | Net is slightly negative, same logic.                 |
 | `snooze`            | −0.10       | Weak negative; user said "not now", not "never".      |
-| `rate_up`           | +1.00       |                                                       |
-| `rate_down`         | −1.00       |                                                       |
-| `more_like_this`    | +1.20       | Plus a `+0.50` bonus to any `meta.reason_tags`.       |
-| `less_like_this`    | −1.20       | Plus a `−0.50` penalty to any `meta.reason_tags`.     |
+| `rate_up`           | +1.00       | The primary positive explicit signal. When a reason-tagged UI lands later, the same event carries `meta.reason_tags` and adds a bonus to those tags. |
+| `rate_down`         | −1.00       | Symmetric to `rate_up`.                               |
 | `onboarding_seed`   | +0.50       | Synthetic seed. Applied only to dimensions in `meta.topics` / `meta.competitors`. |
 | `chat_pref_update`  | 0           | Does not touch the vector. Updates `taste_doc` only; may emit synthetic `rate_up`/`rate_down` events alongside if chat expresses vector-level prefs. |
 
-**`reason_tags` bonus.** `more_like_this` / `less_like_this` can carry `meta.reason_tags` (array of strings, controlled vocabulary: signal types, competitor names, topics). Each tag gets the bonus/penalty in *addition* to the base contribution to the finding's native dimensions.
+`more_like_this` / `less_like_this` stay in the event taxonomy (spec 01) but carry **no weight in v1** — we deliberately don't fire them from the current UI. When a reason-tagged interaction lands later, thumbs are likely to absorb that role rather than being distinct events, but leaving them in the taxonomy keeps the door open without requiring another migration.
 
 ## Decay
 
@@ -122,7 +130,6 @@ Algorithm per user:
    - Compute `decayed = base_weight * exp(-ln(2) * age_days / 30)`.
    - Load the finding's dimensions (`competitor`, `signal_type`, `source`, `topic`, `matched_keyword`). Skip nulls.
    - For each `(dimension, key)`: add `decayed` to `raw_sum`, increment `evidence_count`, increment `positive_count` or `negative_count` per sign, update `last_event_at` if newer.
-   - Handle `reason_tags` bonus by mapping each tag to its implied dimension (see tag → dimension routing below) and adding the bonus.
 4. Open a transaction:
    - `DELETE FROM user_preferences_vector WHERE user_id = ?`.
    - `INSERT` one row per non-empty `(dimension, key)` with `weight = tanh(raw_sum)`.
@@ -131,20 +138,10 @@ Algorithm per user:
 
 Per-user idempotent. Concurrent rebuilds for the same user must serialize — take a `SELECT ... FOR UPDATE` on the profile row (or in SQLite, rely on the single-writer model; document the assumption).
 
-### `reason_tags` → dimension routing
-
-| tag form                | routed to dimension  |
-| ----------------------- | -------------------- |
-| known signal_type value | `signal_type`        |
-| known competitor name   | `competitor`         |
-| anything else           | `topic`              |
-
-Resolution order is strict (signal_type > competitor > topic) to avoid ambiguity. Unknown tags land in `topic`.
-
 ### Scheduling
 
 - **Nightly batch:** registered in `app/jobs.py` as `nightly_rebuild_preferences`. Runs at 02:00 local. Loops over active users, calls `rebuild_user_preferences(user_id)` for each. Single-threaded (SQLite).
-- **Incremental trigger:** explicit high-intent events (`rate_up`, `rate_down`, `more_like_this`, `less_like_this`, `chat_pref_update`) enqueue an immediate single-user rebuild. Debounced — if a rebuild is already scheduled for this user in the next 60s, coalesce.
+- **Incremental trigger:** explicit high-intent events (`rate_up`, `rate_down`, `chat_pref_update`) enqueue an immediate single-user rebuild. Debounced — if a rebuild is already scheduled for this user in the next 60s, coalesce.
 - **Schema-version bump:** sets `cold_start = true` and `last_computed_at = NULL` on every profile; next access triggers a rebuild. Acceptable nightly-job lag; no need for a blocking full sweep.
 
 ## On-demand recompute

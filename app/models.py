@@ -294,6 +294,60 @@ class UserSignalEvent(Base):
     )
 
 
+class UserPreferenceVector(Base):
+    """Sparse per-user preference weights across structured dimensions.
+    Rebuilt by the ranker's preference rollup (docs/ranker/02-preference-
+    rollup.md); the ranker (spec 03) reads from here.
+
+    Truncate-and-rewrite per user on each rollup — never incrementally
+    updated. Dropping this table is safe: next rollup rebuilds it from
+    user_signal_events.
+    """
+    __tablename__ = "user_preferences_vector"
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    dimension: Mapped[str] = mapped_column(String(32), primary_key=True)
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    # Ranker reads this directly. tanh-squashed raw_sum, always in [-1, +1].
+    weight: Mapped[float] = mapped_column(Float, nullable=False)
+    # Unsquashed decayed sum. Kept so the tanh squash can be retuned later
+    # without rereading the event log.
+    raw_sum: Mapped[float] = mapped_column(Float, nullable=False)
+    evidence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    positive_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    negative_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_event_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_user_preferences_vector_user_dim", "user_id", "dimension"),
+        # "top interests" queries — top N by weight per user. DESC so the
+        # common case ("strongest preferences first") walks the index
+        # forward; matches the alembic migration.
+        Index("ix_user_preferences_vector_user_weight", "user_id", text("weight DESC")),
+    )
+
+
+class UserPreferenceProfile(Base):
+    """One row per user. Holds the LLM-editable taste_doc (written by
+    spec 04, untouched by the rollup) plus rollup metadata. Separate from
+    user_preferences_vector because the rollup truncates the vector on
+    every run — we don't want to also blow away the taste doc.
+    """
+    __tablename__ = "user_preference_profile"
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    taste_doc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cold_start: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    event_count_30d: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_computed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Bumped when the weight mapping changes in ways that invalidate
+    # cached vectors (config.py). Rollup compares stored vs. current and
+    # forces a rebuild when they differ.
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
 class SavedFilter(Base):
     """Named stream view. owner_id NULL = team-shared."""
     __tablename__ = "saved_filters"

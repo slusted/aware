@@ -22,7 +22,7 @@ from datetime import datetime
 from .db import Base, SessionLocal, engine
 from . import scheduler, skills as skills_module, ui, usage, search_providers
 from .models import Run, RunEvent
-from .routes import status, competitors, runs, findings, reports, usage as usage_routes, skills as skills_routes, context as context_routes, providers as providers_routes, env_keys as env_keys_routes, filters as filters_routes, auth as auth_routes, users as users_routes, signal_events as signal_events_routes
+from .routes import status, competitors, runs, findings, reports, usage as usage_routes, skills as skills_routes, context as context_routes, providers as providers_routes, env_keys as env_keys_routes, filters as filters_routes, auth as auth_routes, users as users_routes, signal_events as signal_events_routes, preferences as preferences_routes
 
 
 def _reap_orphan_runs() -> int:
@@ -244,6 +244,7 @@ app.include_router(users_routes.router)
 app.include_router(runs.router)
 app.include_router(findings.router)
 app.include_router(signal_events_routes.router)
+app.include_router(preferences_routes.router)
 app.include_router(reports.router)
 app.include_router(usage_routes.router)
 app.include_router(skills_routes.router)

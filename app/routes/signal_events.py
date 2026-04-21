@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session
 from ..db import SessionLocal
 from ..deps import get_db, get_current_user
 from ..models import Finding, User, UserSignalEvent
+from ..ranker import config as ranker_config
 from ..ranker.events import EventValidationError, validate_event
+from ..scheduler import schedule_incremental_rebuild
 from ..schemas import SignalEventBatchIn, SignalEventIn
 
 router = APIRouter(prefix="/api/signals", tags=["signal-events"])
@@ -161,6 +163,14 @@ def post_event(
         )
     )
     db.commit()
+
+    # Explicit high-intent events (ratings, chat prefs) trigger an
+    # incremental rollup so the ranker sees the signal within a minute
+    # instead of waiting for the nightly sweep. Debounced inside the
+    # scheduler helper — no-op if a rebuild is already pending.
+    if payload.event_type in ranker_config.INCREMENTAL_TRIGGER_TYPES:
+        schedule_incremental_rebuild(user.id)
+
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -243,5 +253,11 @@ def post_events_batch(
     if to_insert:
         db.add_all(to_insert)
         db.commit()
+
+    # Same incremental-rebuild trigger as the single-event endpoint: if
+    # any high-intent event made it through the batch, nudge the rollup.
+    # Once per batch is enough — the scheduler debounces by user.
+    if any(ev.event_type in ranker_config.INCREMENTAL_TRIGGER_TYPES for ev in events):
+        schedule_incremental_rebuild(user.id)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
