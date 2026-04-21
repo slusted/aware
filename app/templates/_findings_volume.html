@@ -1,0 +1,107 @@
+{# Stacked daily-volume bar chart fragment. Returned by /partials/findings-volume.
+   Swaps innerHTML of #findings-chart-slot. #}
+
+{# --- Control row: mode toggle + window toggle --- #}
+<div class="findings-chart-controls">
+  <div class="chip-group" role="tablist" aria-label="Chart grouping">
+    {% for m, label in [('type', 'By type'), ('competitor', 'By competitor')] %}
+      <button type="button" class="chip-btn {% if chart.mode == m %}active{% endif %}"
+              hx-get="/partials/findings-volume?mode={{ m }}&days={{ chart.days }}"
+              hx-target="#findings-chart-slot"
+              hx-swap="innerHTML"
+              aria-pressed="{{ 'true' if chart.mode == m else 'false' }}">
+        {{ label }}
+      </button>
+    {% endfor %}
+  </div>
+
+  <div class="chip-group" role="tablist" aria-label="Time window">
+    {% for d in [7, 30, 90] %}
+      <button type="button" class="chip-btn {% if chart.days == d %}active{% endif %}"
+              hx-get="/partials/findings-volume?mode={{ chart.mode }}&days={{ d }}"
+              hx-target="#findings-chart-slot"
+              hx-swap="innerHTML"
+              aria-pressed="{{ 'true' if chart.days == d else 'false' }}">
+        {{ d }}d
+      </button>
+    {% endfor %}
+  </div>
+</div>
+
+{% if chart.total_findings == 0 %}
+  <p class="muted" style="padding: 20px 4px 8px">
+    No findings in the last {{ chart.days }} days. Trigger a scan above.
+  </p>
+{% else %}
+  {# --- SVG chart --- #}
+  {% set LEFT_PAD = 30 %}
+  {% set TOP_PAD = 8 %}
+  {% set AXIS_PAD = 22 %}
+  {% set BAR_STEP = (400 / chart.days) | round(2) %}
+  {% set BAR_W = (BAR_STEP - 2) | round(2) %}
+  {% if BAR_W < 2 %}{% set BAR_W = 2 %}{% endif %}
+  {% set CHART_H = 180 %}
+  {% set PLOT_H = CHART_H - AXIS_PAD - TOP_PAD %}
+  {% set VB_W = LEFT_PAD + chart.days * BAR_STEP + 4 %}
+
+  {% set y_max = chart.y_max if chart.y_max > 0 else 1 %}
+  {% set label_every = 1 if chart.days <= 7 else (7 if chart.days <= 30 else 14) %}
+
+  <div class="findings-chart-svg-wrap">
+    <svg viewBox="0 0 {{ VB_W }} {{ CHART_H }}"
+         preserveAspectRatio="xMidYMid meet"
+         width="100%"
+         role="img"
+         aria-label="Daily findings volume, {{ chart.days }} days, grouped by {{ chart.mode }}">
+
+      {# Gridlines + y-axis labels at 0, mid, max. #}
+      {% for frac in [0, 0.5, 1.0] %}
+        {% set n = (y_max * frac) | round(0, 'common') | int %}
+        {% set y = TOP_PAD + PLOT_H - (frac * PLOT_H) %}
+        <line x1="{{ LEFT_PAD }}" y1="{{ y }}" x2="{{ VB_W - 2 }}" y2="{{ y }}"
+              stroke="var(--border)" stroke-width="0.5"
+              {% if frac != 0 %}stroke-dasharray="2 2"{% endif %} />
+        <text x="{{ LEFT_PAD - 4 }}" y="{{ y + 3 }}" text-anchor="end"
+              font-size="9" fill="var(--text-muted)">{{ n }}</text>
+      {% endfor %}
+
+      {# Bars. #}
+      {% for bar in chart.bars %}
+        {% set x = LEFT_PAD + loop.index0 * BAR_STEP %}
+        {% set y_cursor = namespace(v = TOP_PAD + PLOT_H) %}
+        {% for key, n in bar.parts %}
+          {% set h = (n / y_max) * PLOT_H %}
+          {% set y_cursor.v = y_cursor.v - h %}
+          <rect x="{{ x | round(2) }}" y="{{ y_cursor.v | round(2) }}"
+                width="{{ BAR_W }}" height="{{ h | round(2) }}"
+                fill="{{ segment_color[key] }}">
+            <title>{{ bar.bucket.strftime('%Y-%m-%d') }} · {{ key }}: {{ n }}</title>
+          </rect>
+        {% endfor %}
+
+        {# X-axis tick label every label_every days, plus the last day. #}
+        {% if loop.index0 % label_every == 0 or loop.last %}
+          <text x="{{ (x + BAR_W / 2) | round(2) }}" y="{{ CHART_H - 6 }}"
+                text-anchor="middle" font-size="9" fill="var(--text-muted)">
+            {{ '%d/%d' % (bar.bucket.month, bar.bucket.day) }}
+          </text>
+        {% endif %}
+      {% endfor %}
+    </svg>
+  </div>
+
+  <div class="muted" style="font-size: 10px; margin: -4px 4px 8px; text-align: right">
+    Dates in UTC · {{ chart.total_findings }} findings across {{ chart.days }} days
+  </div>
+
+  {# --- Legend --- #}
+  <div class="findings-chart-legend">
+    {% for seg in chart.segments %}
+      <span class="legend-item" {% if seg.detail %}title="{{ seg.detail }}"{% endif %}>
+        <span class="legend-swatch" style="background: {{ seg.color }}"></span>
+        <span class="legend-label">{{ seg.label }}</span>
+        <span class="legend-total muted">({{ seg.total }})</span>
+      </span>
+    {% endfor %}
+  </div>
+{% endif %}
