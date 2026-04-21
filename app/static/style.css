@@ -1061,6 +1061,24 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
   background: linear-gradient(90deg, var(--text-dim), var(--accent));
 }
 
+/* Cluster chip — "+N more sources" marker on the card head when the
+   presentation layer (docs/ranker/06-cluster-diversity.md) has
+   collapsed near-duplicate findings into a single card. */
+.cluster-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 7px;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
 .btn-mini {
   background: transparent;
   border: 1px solid transparent;

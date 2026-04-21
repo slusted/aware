@@ -123,3 +123,47 @@ FINDING_DIMENSIONS: tuple[tuple[str, str], ...] = (
     ("topic", "topic"),
     ("keyword", "matched_keyword"),
 )
+
+
+# ── Clustering & diversity (spec 06) ─────────────────────────────────
+# Post-ranker presentation layer. Collapses near-duplicate findings into
+# one card and forces diversity on the top slots via MMR.
+
+# Title-Jaccard threshold above which two same-(competitor, signal_type)
+# findings are treated as the same event. 0.4 ≈ "3 of 7 content words
+# overlap" — the knee between obvious dupes and merely related stories.
+CLUSTER_JACCARD_THRESHOLD: float = 0.4
+
+# Stopwords dropped before computing Jaccard. Kept intentionally tiny —
+# content verbs ("launches", "hires", "raises") ARE the story and must
+# stay in the token set.
+CLUSTER_STOPWORDS: frozenset[str] = frozenset({
+    "a", "an", "the", "of", "to", "in", "on", "at",
+    "and", "or", "for", "with", "by",
+    "is", "are", "was", "were", "its", "it",
+})
+
+# MMR is applied to the top N cluster-leads; everything below is
+# pure score-desc. 20 is one "screen" of attention; past that the user
+# is deliberately digging and diversity there just confuses ordering.
+MMR_WINDOW: int = 20
+
+# Relevance / diversity tradeoff. 0.7 leans relevance but penalizes
+# similarity enough that the top slots cover multiple competitors.
+MMR_LAMBDA: float = 0.7
+
+# Per-dimension similarity contribution. Sum clamped to [0, 1]. Same
+# competitor + same signal_type = 0.8 — a strong enough "duplicate feel"
+# pair that MMR will push the second one out of the adjacent slot.
+MMR_SIM_WEIGHTS: dict[str, float] = {
+    "competitor": 0.5,
+    "signal_type": 0.3,
+    "topic": 0.15,
+    "source": 0.05,
+}
+
+# Stand-in scorer (used until spec 03's real scorer is wired in). Pure
+# materiality + recency decay — preserves today's "new stuff first" feel
+# while letting a high-materiality older item hold its place.
+STANDIN_RECENCY_BOOST: float = 0.3
+STANDIN_RECENCY_HALFLIFE_DAYS: float = 7.0
