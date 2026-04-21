@@ -142,6 +142,7 @@ def competitors_index(request: Request, db: Session = Depends(get_db), user=Depe
     # latest CompetitorReport per competitor + finding count in last 30d
     since = datetime.utcnow() - timedelta(days=30)
     summaries = []
+    logos: dict[int, str] = {}
     for c in rows:
         latest = (
             db.query(CompetitorReport)
@@ -156,8 +157,11 @@ def competitors_index(request: Request, db: Session = Depends(get_db), user=Depe
             .scalar() or 0
         )
         summaries.append({"c": c, "latest": latest, "recent_findings": recent_findings})
+        d = _competitor_logo_domain(c)
+        if d:
+            logos[c.id] = f"https://logos-api.apistemic.com/domain:{d}?fallback=monogram"
     return templates.TemplateResponse(request, "competitors_index.html", {
-        "user": user, "items": summaries,
+        "user": user, "items": summaries, "logos": logos,
     })
 
 

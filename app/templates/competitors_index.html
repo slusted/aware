@@ -7,9 +7,15 @@
 {% block content %}
 <div class="card-grid">
 {% for item in items %}
+  {% set logo_src = logos.get(item.c.id) if logos else None %}
   <a href="/competitors/{{ item.c.id }}" class="card">
     <div class="row">
-      <div class="title">{{ item.c.name }}</div>
+      <div class="card-title-group">
+        {% if logo_src %}
+          <img class="card-logo" src="{{ logo_src }}" alt="" loading="lazy" width="24" height="24">
+        {% endif %}
+        <div class="title">{{ item.c.name }}</div>
+      </div>
       {% if item.c.category %}<span class="chip">{{ item.c.category }}</span>{% endif %}
     </div>
     <div class="meta">
