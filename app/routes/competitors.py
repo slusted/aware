@@ -10,6 +10,7 @@ from ..deps import get_db, get_current_user, require_role
 from ..models import Competitor, CompetitorReport, Run
 from ..schemas import CompetitorOut, CompetitorIn
 from ..config_sync import sync_db_to_config
+from .. import logos as logos_cache
 
 router = APIRouter(prefix="/api/competitors", tags=["competitors"])
 
@@ -58,6 +59,7 @@ def autofill_competitor_stream(
             "subreddits": c.subreddits or [],
             "careers_domains": c.careers_domains or [],
             "newsroom_domains": c.newsroom_domains or [],
+            "homepage_domain": c.homepage_domain,
             "app_store_id": c.app_store_id,
             "play_package": c.play_package,
             "trends_keyword": c.trends_keyword,
@@ -114,6 +116,7 @@ def get_competitor(competitor_id: int, db: Session = Depends(get_db), _=Depends(
 @router.post("", response_model=CompetitorOut, status_code=201)
 def create_competitor(
     payload: CompetitorIn,
+    bg: BackgroundTasks,
     db: Session = Depends(get_db),
     _=Depends(require_role("admin", "analyst")),
 ):
@@ -127,6 +130,7 @@ def create_competitor(
         subreddits=payload.subreddits,
         careers_domains=payload.careers_domains,
         newsroom_domains=payload.newsroom_domains,
+        homepage_domain=payload.homepage_domain,
         app_store_id=payload.app_store_id,
         play_package=payload.play_package,
         trends_keyword=payload.trends_keyword,
@@ -139,6 +143,8 @@ def create_competitor(
     db.commit()
     db.refresh(c)
     sync_db_to_config(db)
+    if payload.homepage_domain:
+        bg.add_task(logos_cache.fetch_and_store, payload.homepage_domain)
     return c
 
 
@@ -146,6 +152,7 @@ def create_competitor(
 def update_competitor(
     competitor_id: int,
     payload: CompetitorIn,
+    bg: BackgroundTasks,
     db: Session = Depends(get_db),
     _=Depends(require_role("admin", "analyst")),
 ):
@@ -155,6 +162,7 @@ def update_competitor(
     # Rename collision check
     if payload.name != c.name and db.query(Competitor).filter(Competitor.name == payload.name).first():
         raise HTTPException(409, f"competitor '{payload.name}' already exists")
+    prior_domain = c.homepage_domain
     c.name = payload.name
     c.category = payload.category
     c.threat_angle = payload.threat_angle
@@ -162,6 +170,7 @@ def update_competitor(
     c.subreddits = payload.subreddits
     c.careers_domains = payload.careers_domains
     c.newsroom_domains = payload.newsroom_domains
+    c.homepage_domain = payload.homepage_domain
     c.app_store_id = payload.app_store_id
     c.play_package = payload.play_package
     c.trends_keyword = payload.trends_keyword
@@ -170,6 +179,12 @@ def update_competitor(
     db.commit()
     db.refresh(c)
     sync_db_to_config(db)
+    # Re-fetch when the domain changed or we've never cached one yet.
+    if payload.homepage_domain and (
+        payload.homepage_domain != prior_domain
+        or not logos_cache.has_logo(payload.homepage_domain)
+    ):
+        bg.add_task(logos_cache.fetch_and_store, payload.homepage_domain)
     return c
 
 

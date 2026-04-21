@@ -13,6 +13,15 @@
 {% set state = view.state if view else None %}
 <article id="card-{{ f.id }}" data-finding-id="{{ f.id }}"{% if expandable %} data-expandable="true"{% endif %} class="signal-card {% if state %}state-{{ state }}{% else %}state-new{% endif %}">
   <div class="signal-card-inner">
+  {% if show_competitor %}
+    {% set logo_src = logos.get(f.competitor) if logos else None %}
+    {% if logo_src %}
+      <img class="competitor-logo" src="{{ logo_src }}" alt="" loading="lazy" width="40" height="40">
+    {% else %}
+      <span class="competitor-logo competitor-logo-placeholder" aria-hidden="true"></span>
+    {% endif %}
+  {% endif %}
+  <div class="signal-card-content">
   <header class="signal-card-head">
     <span class="new-dot" aria-label="Unread" title="New — not yet viewed"></span>
     <span class="badge type-{{ f.signal_type or 'other' }}">{{ f.signal_type or 'unclassified' }}</span>
@@ -22,10 +31,6 @@
     </span>
     {% endif %}
     {% if show_competitor %}
-    {% set logo_src = logos.get(f.competitor) if logos else None %}
-    {% if logo_src %}
-      <img class="competitor-logo" src="{{ logo_src }}" alt="" loading="lazy" width="18" height="18">
-    {% endif %}
     <span class="competitor">{{ f.competitor }}</span>
     {% endif %}
     <span class="source muted">{{ f.source }}</span>
@@ -94,5 +99,6 @@
   {% if state == 'snoozed' and view and view.snoozed_until %}
     <footer class="signal-card-foot muted">Snoozed until {{ view.snoozed_until.strftime('%b %d') }}</footer>
   {% endif %}
-  </div>
+  </div>{# /signal-card-content #}
+  </div>{# /signal-card-inner #}
 </article>
