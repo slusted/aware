@@ -434,11 +434,33 @@ def admin_usage(request: Request, db: Session = Depends(get_db), user=Depends(ge
 
 
 @router.get("/runs", response_class=HTMLResponse)
-def runs_index(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    rows = db.query(Run).order_by(Run.started_at.desc()).limit(100).all()
+def runs_index(
+    request: Request,
+    page: int = 1,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    page_size = 50
+    page = max(1, page)
+    total = db.query(func.count(Run.id)).scalar() or 0
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = min(page, total_pages)
+    rows = (
+        db.query(Run)
+        .order_by(Run.started_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     is_running = db.query(Run).filter(Run.status == "running").first() is not None
     return templates.TemplateResponse(request, "runs_index.html", {
-        "user": user, "runs": rows, "is_running": is_running,
+        "user": user,
+        "runs": rows,
+        "is_running": is_running,
+        "page": page,
+        "total_pages": total_pages,
+        "total": total,
+        "page_size": page_size,
     })
 
 

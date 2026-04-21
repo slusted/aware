@@ -27,5 +27,27 @@
     {% endfor %}
     </tbody>
   </table>
+  {% if total_pages > 1 %}
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-top:1px solid var(--border);">
+    <span class="muted" style="font-size:12px;">
+      {% set start = (page - 1) * page_size + 1 %}
+      {% set end = start + runs|length - 1 %}
+      {{ start }}–{{ end }} of {{ total }}
+    </span>
+    <div style="display:flex; gap:8px; align-items:center;">
+      {% if page > 1 %}
+        <a href="?page={{ page - 1 }}" class="btn btn-ghost">← Prev</a>
+      {% else %}
+        <span class="btn btn-ghost" style="opacity:0.4; pointer-events:none;">← Prev</span>
+      {% endif %}
+      <span class="muted" style="font-size:12px;">Page {{ page }} of {{ total_pages }}</span>
+      {% if page < total_pages %}
+        <a href="?page={{ page + 1 }}" class="btn btn-ghost">Next →</a>
+      {% else %}
+        <span class="btn btn-ghost" style="opacity:0.4; pointer-events:none;">Next →</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}
