@@ -49,6 +49,11 @@ class Competitor(Base):
     subreddits: Mapped[list] = mapped_column(JSON, default=list)
     careers_domains: Mapped[list] = mapped_column(JSON, default=list)
     newsroom_domains: Mapped[list] = mapped_column(JSON, default=list)
+    # Apex domain (e.g. "linkedin.com") used to look up the company logo via
+    # Apistemic and anywhere else we need a canonical company identifier. Kept
+    # explicit rather than derived from careers/newsroom_domains because those
+    # can legitimately point at a third-party host (e.g. boards.greenhouse.io).
+    homepage_domain: Mapped[str | None] = mapped_column(String(128), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -186,6 +186,25 @@ async def lifespan(app: FastAPI):
         print(f"  [startup] seed_competitors failed: {_e}", flush=True)
     finally:
         _db.close()
+
+    # Warm the logo cache in a background thread — any competitor with a
+    # homepage_domain but no on-disk file gets one fetch attempt. Boot
+    # proceeds immediately; failures are logged, not raised.
+    import threading
+    from . import logos as _logos
+
+    def _warm_logos():
+        _warm_db = SessionLocal()
+        try:
+            attempted, ok = _logos.refetch_missing(_warm_db)
+            if attempted:
+                print(f"  [startup] logos: fetched {ok}/{attempted} missing", flush=True)
+        except Exception as _e:
+            print(f"  [startup] logo warm failed: {_e}", flush=True)
+        finally:
+            _warm_db.close()
+
+    threading.Thread(target=_warm_logos, name="logo-warmup", daemon=True).start()
     reaped = _reap_orphan_runs()
     if reaped:
         print(f"  [startup] reaped {reaped} orphan run(s)")
@@ -259,3 +278,10 @@ app.include_router(ui.router)
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# Cached competitor logos live under DATA_DIR/logos so they survive deploys
+# on Railway's mounted volume. Ensure the dir exists before StaticFiles
+# resolves it (StaticFiles errors on a missing path).
+from . import logos as _logos_module
+_logos_module.LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/logos", StaticFiles(directory=str(_logos_module.LOGOS_DIR)), name="logos")

@@ -190,6 +190,9 @@ def _build_system_prompt(
         f"actually discuss this competitor\n"
         f"- careers_domains (list): domains hosting their job listings; empty if unknown\n"
         f"- newsroom_domains (list): newsroom.example.com / press.example.com; empty if none\n"
+        f"- homepage_domain: their canonical apex domain (e.g. 'linkedin.com', not "
+        f"'www.linkedin.com' or 'careers.linkedin.com'). Used for the company logo "
+        f"and as a stable identifier. Must be reachable — verify via fetch_url.\n"
         f"- app_store_id: numeric iOS App Store id (as a string); null if none\n"
         f"- play_package: Google Play package name like com.example.app; null if none\n"
         f"- trends_keyword: Google Trends keyword override, usually the brand name\n"
@@ -277,7 +280,7 @@ def _extract_json(text: str) -> dict | None:
 
 _LIST_FIELDS = {"keywords", "subreddits", "careers_domains", "newsroom_domains"}
 _SCALAR_FIELDS = {
-    "category", "threat_angle", "app_store_id", "play_package",
+    "category", "threat_angle", "homepage_domain", "app_store_id", "play_package",
     "trends_keyword", "min_relevance_score", "social_score_multiplier",
 }
 _ALL_FIELDS = _LIST_FIELDS | _SCALAR_FIELDS
@@ -377,6 +380,18 @@ def _normalize(payload: dict, name: str) -> dict:
 
     subreddits = [s.lstrip("r/").lstrip("/") for s in _as_list(payload.get("subreddits"))]
 
+    # homepage_domain: strip scheme + path if the model accidentally returns a
+    # URL. Keep dots and hyphens; reject anything else — the cache layer also
+    # validates, but catching garbage here gives the operator a clean form.
+    hd = _as_str_or_none(payload.get("homepage_domain"))
+    if hd:
+        if "//" in hd:
+            hd = hd.split("//", 1)[1]
+        hd = hd.split("/", 1)[0].lower()
+        import re as _re
+        if not _re.match(r"^[a-z0-9][a-z0-9.-]*$", hd):
+            hd = None
+
     return {
         "name": name,
         "category": category,
@@ -385,6 +400,7 @@ def _normalize(payload: dict, name: str) -> dict:
         "subreddits": subreddits,
         "careers_domains": _as_list(payload.get("careers_domains")),
         "newsroom_domains": _as_list(payload.get("newsroom_domains")),
+        "homepage_domain": hd,
         "app_store_id": _as_str_or_none(payload.get("app_store_id")),
         "play_package": _as_str_or_none(payload.get("play_package")),
         "trends_keyword": _as_str_or_none(payload.get("trends_keyword")),
