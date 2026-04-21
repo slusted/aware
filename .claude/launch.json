@@ -5,7 +5,11 @@
       "name": "competitor-watch",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8765"],
-      "port": 8765
+      "port": 8765,
+      "env": {
+        "DATA_DIR": "data",
+        "PYTHONIOENCODING": "utf-8"
+      }
     }
   ]
 }
