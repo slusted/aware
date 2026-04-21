@@ -839,3 +839,41 @@ async def partial_stream_toggle_default(
         "saved_filters": saved,
         "default_filter_id": user.default_filter_id,
     })
+
+
+@router.post("/partials/stream_delete_filter/{filter_id}", response_class=HTMLResponse)
+async def partial_stream_delete_filter(
+    filter_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Delete a saved filter and return the refreshed saved-filter list.
+
+    Permissions mirror the REST DELETE: users can delete their own private
+    filters; team filters (owner_id NULL) are admin-only so a single user
+    can't quietly remove a saved view everyone relies on."""
+    sf = db.get(SavedFilter, filter_id)
+    if not sf:
+        raise HTTPException(404, "filter not found")
+    if sf.owner_id is None and user.role != "admin":
+        raise HTTPException(403, "only admins can delete team filters")
+    if sf.owner_id and sf.owner_id != user.id:
+        raise HTTPException(403, "not your filter")
+    # Clear the user's default pointer if this was it — FK is SET NULL,
+    # but we commit the user side first for a clean audit trail.
+    if user.default_filter_id == filter_id:
+        user.default_filter_id = None
+    db.delete(sf)
+    db.commit()
+    from sqlalchemy import or_ as _or
+    saved = (
+        db.query(SavedFilter)
+        .filter(_or(SavedFilter.owner_id == user.id, SavedFilter.owner_id.is_(None)))
+        .order_by(SavedFilter.created_at.desc())
+        .all()
+    )
+    return templates.TemplateResponse(request, "_stream_saved_filters.html", {
+        "saved_filters": saved,
+        "default_filter_id": user.default_filter_id,
+    })
