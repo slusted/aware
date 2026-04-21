@@ -823,6 +823,14 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
   margin-bottom: 8px;
 }
 
+.signal-card-head .competitor-logo {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: contain;
+  background: var(--surface-alt, #f3f4f6);
+  flex-shrink: 0;
+}
 .signal-card-head .competitor { font-weight: 500; color: var(--text); white-space: nowrap; }
 .signal-card-head .source {
   font-size: 11px;

@@ -618,6 +618,55 @@ def _parse_stream_filters(params: dict) -> dict:
     }
 
 
+_LOGO_SUBDOMAIN_PREFIXES = (
+    "www.", "careers.", "jobs.", "blog.", "newsroom.", "news.",
+    "media.", "press.", "about.",
+)
+
+
+def _competitor_logo_domain(comp: Competitor) -> str | None:
+    """Pick a base hostname to feed Apistemic's logo API.
+
+    careers_domains / newsroom_domains store entries like
+    'adeccogroup.com/careers' or 'careers.linkedin.com'. We want the
+    apex, so strip schemes, paths, and obvious non-canonical subdomain
+    prefixes. Returns None when nothing usable is set.
+    """
+    for raw in (comp.careers_domains or []) + (comp.newsroom_domains or []):
+        if not raw:
+            continue
+        s = str(raw).strip()
+        if "//" in s:
+            s = s.split("//", 1)[1]
+        host = s.split("/", 1)[0].strip().lower()
+        for prefix in _LOGO_SUBDOMAIN_PREFIXES:
+            if host.startswith(prefix):
+                host = host[len(prefix):]
+                break
+        if host:
+            return host
+    return None
+
+
+def _build_logo_map(db, findings) -> dict[str, str]:
+    """Map competitor name → Apistemic logo URL for the findings on screen.
+
+    One query per render, not per card; skips competitors without a usable
+    domain so the template can fall through cleanly.
+    """
+    if not findings:
+        return {}
+    names = {f.competitor for f in findings if f.competitor}
+    if not names:
+        return {}
+    logos: dict[str, str] = {}
+    for c in db.query(Competitor).filter(Competitor.name.in_(names)).all():
+        d = _competitor_logo_domain(c)
+        if d:
+            logos[c.name] = f"https://logos-api.apistemic.com/domain:{d}?fallback=monogram"
+    return logos
+
+
 def _stream_query(db, user, filters, *, limit=50, offset=0):
     """Build + run the stream query. Returns (findings, view_by_finding_id)."""
     from sqlalchemy import and_, or_, case
@@ -719,6 +768,7 @@ def stream_page(
         "signal_types": SIGNAL_TYPES,
         "saved_filters": saved,
         "default_filter_id": user.default_filter_id,
+        "logos": _build_logo_map(db, findings),
     })
 
 
@@ -739,6 +789,7 @@ def partial_stream_list(
     return templates.TemplateResponse(request, "_stream_list.html", {
         "findings": findings,
         "views": views,
+        "logos": _build_logo_map(db, findings),
     })
 
 
@@ -792,6 +843,7 @@ async def partial_stream_view(
     return templates.TemplateResponse(request, "_stream_card.html", {
         "f": f,
         "view": v,
+        "logos": _build_logo_map(db, [f]),
     })
 
 
