@@ -737,12 +737,18 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
 }
 
 .signal-card-body .signal-title {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 500;
   color: var(--text);
   font-size: 14px;
   line-height: 1.4;
   text-decoration: none;
+  word-break: break-word;
 }
 .signal-card-body a.signal-title:hover { color: var(--accent-hover); }
 .signal-card-body .signal-snippet {

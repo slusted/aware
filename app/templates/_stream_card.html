@@ -10,13 +10,8 @@
     {% endif %}
     <span class="competitor">{{ f.competitor }}</span>
     <span class="source muted">{{ f.source }}</span>
-    {% if f.published_at %}
-      <span class="time muted" title="When the page itself says it was published">
-        published {{ f.published_at.strftime('%b %d, %Y') }}
-      </span>
-    {% endif %}
-    <span class="time muted" title="When this scan picked it up">
-      scraped {{ f.created_at.strftime('%b %d, %H:%M') }}
+    <span class="time muted" title="{% if f.published_at %}Published {{ f.published_at.strftime('%b %d, %Y') }} · {% endif %}Scraped {{ f.created_at.strftime('%b %d, %H:%M') }}">
+      {% if f.published_at %}pub {{ f.published_at.strftime('%b %d') }} · {% endif %}scr {{ f.created_at.strftime('%b %d') }}
     </span>
 
     <span class="card-actions">
@@ -25,7 +20,6 @@
       {% else %}
         <button class="btn-mini" title="Pin" hx-post="/partials/stream_view/{{ f.id }}" hx-vals='{"state":"pinned"}' hx-target="#card-{{ f.id }}" hx-swap="outerHTML">☆</button>
       {% endif %}
-      <button class="btn-mini" title="Snooze 7d" hx-post="/partials/stream_view/{{ f.id }}" hx-vals='{"state":"snoozed"}' hx-target="#card-{{ f.id }}" hx-swap="outerHTML">⏰</button>
       {% if state == 'dismissed' %}
         <button class="btn-mini active" title="Un-dismiss" hx-post="/partials/stream_view/{{ f.id }}" hx-vals='{"state":"seen"}' hx-target="#card-{{ f.id }}" hx-swap="outerHTML">↺</button>
       {% else %}
