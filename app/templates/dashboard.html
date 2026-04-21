@@ -30,6 +30,18 @@
 </div>
 
 <div class="panel">
+  <div class="panel-header"><h2>Findings volume</h2></div>
+  <div class="panel-body">
+    <div id="findings-chart-slot"
+         hx-get="/partials/findings-volume?mode=type&days=30"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+      <p class="muted" style="padding: 8px 4px">Loading chart…</p>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
   <div class="panel-header"><h2>Recent runs</h2></div>
   <table>
     <thead><tr><th>When</th><th>Kind</th><th>Status</th><th style="text-align:right">Findings</th><th>Trigger</th></tr></thead>

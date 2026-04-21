@@ -505,6 +505,48 @@ def partial_status_bar(request: Request, db: Session = Depends(get_db), _=Depend
     return HTMLResponse("")
 
 
+@router.get("/partials/findings-volume", response_class=HTMLResponse)
+def partial_findings_volume(
+    request: Request,
+    mode: str = "type",
+    days: int = 30,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Daily stacked-bar chart of established findings. Two groupings
+    (signal_type / competitor); three windows (7/30/90). HTMX swaps
+    #findings-chart-slot with this fragment."""
+    from .dashboard_chart import (
+        ALLOWED_DAYS,
+        SIGNAL_TYPE_COLORS,
+        build_findings_volume,
+        stable_color_for_competitor,
+        OTHER_LABEL,
+        OTHER_COLOR,
+    )
+    if mode not in ("type", "competitor"):
+        raise HTTPException(status_code=400, detail="mode must be 'type' or 'competitor'")
+    if days not in ALLOWED_DAYS:
+        raise HTTPException(status_code=400, detail=f"days must be one of {ALLOWED_DAYS}")
+
+    chart = build_findings_volume(db, mode, days)  # type: ignore[arg-type]
+
+    # Flat key→color map for the template — avoids Jinja branching per rect.
+    segment_color: dict[str, str] = {s.key: s.color for s in chart.segments}
+    # Fallbacks so a key appearing in bars but not in segments (shouldn't happen,
+    # but defensive) still renders.
+    if mode == "type":
+        for k, v in SIGNAL_TYPE_COLORS.items():
+            segment_color.setdefault(k, v)
+    else:
+        segment_color.setdefault(OTHER_LABEL, OTHER_COLOR)
+
+    return templates.TemplateResponse(request, "_findings_volume.html", {
+        "chart": chart,
+        "segment_color": segment_color,
+    })
+
+
 @router.get("/partials/status", response_class=HTMLResponse)
 def partial_status(request: Request, db: Session = Depends(get_db), _=Depends(get_current_user)):
     """HTMX polls this fragment every 10s to keep the dashboard header live."""
