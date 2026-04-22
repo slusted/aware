@@ -98,7 +98,7 @@ Set only the keys you actually use — missing optional providers fail quiet.
 
 ## Ongoing ops
 
-- **Rotating an API key** — either update the Railway env var (triggers redeploy) or use the in-app settings page (writes to `/data/.env`, no restart).
+- **Rotating an API key** — prefer the in-app settings page (writes to `/data/.env`, no restart). The volume's `.env` is authoritative on boot — it overrides dashboard Variables — so rotating only in the Railway dashboard won't take effect once a value exists in `/data/.env`. Dashboard Variables are only useful as a bootstrap for a fresh volume.
 - **Editing competitors / filters / providers** — use the UI; all writes persist to `/data/config.json`.
 - **Backups** — `app.db` lives at `/data/app.db`. Railway has volume snapshots on paid plans; otherwise periodically download via `railway run cat /data/app.db > backup.db`.
 - **Upgrading** — `git push`. Railway auto-redeploys. The release command runs migrations idempotently.

@@ -11,9 +11,13 @@ from .auth import AuthenticationRequired
 
 try:
     from dotenv import load_dotenv
-    # ENV_PATH lets us point at a .env on a persistent volume (Railway/Render/Fly),
-    # so UI-managed keys survive redeploys. Dashboard env vars still win.
-    load_dotenv(os.environ.get("ENV_PATH") or ".env")
+    # ENV_PATH points at a .env on a persistent volume (Railway/Render/Fly),
+    # so UI-managed keys survive redeploys. override=True is load-bearing:
+    # without it, a stale value in the Railway dashboard Variables tab wins
+    # over a newer value the user set via the Settings UI, and the UI change
+    # silently reverts on the next redeploy. The volume is the source of
+    # truth for keys the UI manages; dashboard vars are bootstrap-only.
+    load_dotenv(os.environ.get("ENV_PATH") or ".env", override=True)
 except ImportError:
     pass
 
