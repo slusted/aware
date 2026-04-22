@@ -129,6 +129,7 @@ def _build_system_prompt(
     existing_block = ""
     if existing:
         cleaned = {k: v for k, v in existing.items() if v not in (None, "", [])}
+        empty_fields = sorted(k for k, v in existing.items() if v in (None, "", []))
         if cleaned:
             existing_block = (
                 "\nThis competitor is ALREADY TRACKED. Here are the current "
@@ -138,6 +139,20 @@ def _build_system_prompt(
                 "a field only when you can clearly improve it. If a field "
                 "already looks good, return it unchanged.\n\n"
                 f"Current values:\n{json.dumps(cleaned, indent=2)}\n\n"
+            )
+        if empty_fields:
+            # Without this, an agent handed a mostly-empty record reads the
+            # "refine existing values" wording literally, finds nothing to
+            # refine, and returns an empty proposals list — which is exactly
+            # the wrong answer when the form is blank and needs populating.
+            existing_block += (
+                "Empty fields that should be populated if research supports a "
+                f"credible value: {', '.join(empty_fields)}.\n"
+                "For each of these, propose an 'add' (list fields) or "
+                "'replace' with old_value=null (scalar fields) whenever "
+                "search_web / fetch_url surfaces a good value. "
+                "min_relevance_score and social_score_multiplier should stay "
+                "null unless the competitor is clearly noisy.\n\n"
             )
     # Performance report is only present in edit-mode when the competitor
     # has findings history. Injected verbatim so the agent reasons over the
@@ -455,11 +470,24 @@ def autofill_stream(
             f"verified via search_web. Keep STRONG entries unchanged."
         )
     elif existing:
-        user_msg = (
-            f"Refine and extend the current field values for '{name}'. Only "
-            f"change fields where your research clearly improves them. Start "
-            f"by checking for recent news or product changes."
-        )
+        # When the record is mostly blank, frame the task as "populate" not
+        # "refine" — otherwise the agent concludes there is nothing to improve
+        # and returns an empty proposals array.
+        n_empty = sum(1 for v in existing.values() if v in (None, "", []))
+        if n_empty >= 6:
+            user_msg = (
+                f"The competitor record for '{name}' is mostly blank — "
+                f"populate the empty fields by researching the company and "
+                f"proposing add/replace entries. Any fields already filled "
+                f"should be kept or sharpened, not overwritten with worse "
+                f"values."
+            )
+        else:
+            user_msg = (
+                f"Refine and extend the current field values for '{name}'. "
+                f"Only change fields where your research clearly improves "
+                f"them. Start by checking for recent news or product changes."
+            )
     else:
         user_msg = (
             f"Research '{name}' and fill in every field for the new-competitor "
