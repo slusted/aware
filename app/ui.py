@@ -797,19 +797,25 @@ def _stream_query(db, user, filters):
         SignalView.snoozed_until < now,
     ))
 
+    # Effective date: the source's publish date if we captured one, else our
+    # fetch timestamp. Scrape-time can lag the real publish by years (SERP
+    # surfacing an old article, backfills), which otherwise makes stale
+    # content look brand-new in the stream.
+    effective_date = func.coalesce(Finding.published_at, Finding.created_at)
+
     if filters.get("downweight_stale"):
         # Stale = published over a year ago. NULL published_at is treated as
         # fresh so we don't penalise signals where the source didn't expose a
         # date (many careers / VoC hits). Sorted 0-before-1 pushes stale rows
-        # to the bottom while keeping created_at as the within-group order.
+        # to the bottom while keeping effective date as the within-group order.
         one_year_ago = now - timedelta(days=365)
         stale_flag = case(
             (and_(Finding.published_at.isnot(None), Finding.published_at < one_year_ago), 1),
             else_=0,
         )
-        q = q.order_by(stale_flag.asc(), Finding.created_at.desc())
+        q = q.order_by(stale_flag.asc(), effective_date.desc())
     else:
-        q = q.order_by(Finding.created_at.desc())
+        q = q.order_by(effective_date.desc())
 
     findings = q.limit(STREAM_SAFETY_CAP).all()
 
