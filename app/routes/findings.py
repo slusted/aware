@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, get_current_user
@@ -41,7 +41,9 @@ def list_findings(
         q = q.filter(Finding.materiality >= min_materiality)
     if since_days:
         cutoff = datetime.utcnow() - timedelta(days=since_days)
-        q = q.filter(Finding.created_at >= cutoff)
+        # Use the source's publish date when we have it; fall back to fetch
+        # time so legacy rows without published_at still pass the window.
+        q = q.filter(func.coalesce(Finding.published_at, Finding.created_at) >= cutoff)
 
     # View-state filters share an outer join on SignalView scoped to this user.
     if exclude_dismissed or exclude_snoozed:
@@ -68,7 +70,10 @@ def list_findings(
             )
 
     findings = (
-        q.order_by(Finding.created_at.desc()).offset(offset).limit(limit).all()
+        q.order_by(func.coalesce(Finding.published_at, Finding.created_at).desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
     )
 
     # Second query rather than threading the join into the SELECT: SQLAlchemy

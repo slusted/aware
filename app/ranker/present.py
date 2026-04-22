@@ -42,13 +42,21 @@ class ClusterCard:
 
 # ── Stand-in scorer ─────────────────────────────────────────────────
 
+def effective_date(finding: Finding) -> datetime | None:
+    """Prefer the source's publish date over our fetch timestamp.
+    Scrape-time can lag the real publish by years (SERP hits on old
+    articles, backfills), so anything time-sensitive — recency decay,
+    stream ordering, tie-breaks — must use the content's real age."""
+    return finding.published_at or finding.created_at
+
+
 def default_score(finding: Finding, *, now: datetime | None = None) -> float:
     """Materiality + recency-decay stand-in. Used until spec 03's real
     scorer is wired in. Deterministic; same input → same output."""
     now = now or datetime.utcnow()
     materiality = finding.materiality or 0.0
-    created = finding.created_at or now
-    age_days = max(0.0, (now - created).total_seconds() / 86400.0)
+    ref = effective_date(finding) or now
+    age_days = max(0.0, (now - ref).total_seconds() / 86400.0)
     recency = rcfg.STANDIN_RECENCY_BOOST * math.exp(
         -math.log(2.0) * age_days / rcfg.STANDIN_RECENCY_HALFLIFE_DAYS
     )
@@ -156,11 +164,11 @@ def cluster(
 
     cards: list[ClusterCard] = []
     for member_idxs in groups.values():
-        # Lead = highest score, tie-break on newest created_at.
+        # Lead = highest score, tie-break on newest effective date.
         member_idxs.sort(
             key=lambda i: (
                 -scores[i],
-                -(findings[i].created_at.timestamp() if findings[i].created_at else 0.0),
+                -(effective_date(findings[i]).timestamp() if effective_date(findings[i]) else 0.0),
             )
         )
         members = tuple(findings[i] for i in member_idxs)
@@ -170,7 +178,7 @@ def cluster(
     cards.sort(
         key=lambda c: (
             -c.score,
-            -(c.lead.created_at.timestamp() if c.lead.created_at else 0.0),
+            -(effective_date(c.lead).timestamp() if effective_date(c.lead) else 0.0),
         )
     )
     return cards
@@ -239,7 +247,7 @@ def diversify(
     remaining.sort(
         key=lambda c: (
             -c.score,
-            -(c.lead.created_at.timestamp() if c.lead.created_at else 0.0),
+            -(effective_date(c.lead).timestamp() if effective_date(c.lead) else 0.0),
         )
     )
     picked.append(remaining.pop(0))
