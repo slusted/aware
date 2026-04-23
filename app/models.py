@@ -49,6 +49,16 @@ class Competitor(Base):
     subreddits: Mapped[list] = mapped_column(JSON, default=list)
     careers_domains: Mapped[list] = mapped_column(JSON, default=list)
     newsroom_domains: Mapped[list] = mapped_column(JSON, default=list)
+    # Canonical ATS tenant URL prefixes for this competitor (scheme-stripped,
+    # no trailing slash). Examples:
+    #   "boards.greenhouse.io/adeccogroup"
+    #   "jobs.lever.co/ashby"
+    #   "adecco.myworkdayjobs.com/adecco_careers"
+    # Used by the hiring sweep to scope job searches to this competitor's own
+    # board on the ATS rather than the ATS root domain (which hosts every
+    # customer's jobs). Populated by app/adapters/ats/discovery.py on first
+    # scan when a careers page is available; operator can edit in admin UI.
+    ats_tenants: Mapped[list] = mapped_column(JSON, default=list)
     # Apex domain (e.g. "linkedin.com") used to look up the company logo via
     # Apistemic and anywhere else we need a canonical company identifier. Kept
     # explicit rather than derived from careers/newsroom_domains because those

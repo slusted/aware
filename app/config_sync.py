@@ -43,6 +43,7 @@ def _to_json(c: Competitor) -> dict:
         "subreddits": list(c.subreddits or []),
         "careers_domains": list(c.careers_domains or []),
         "newsroom_domains": list(c.newsroom_domains or []),
+        "ats_tenants": list(c.ats_tenants or []),
     }
     if c.homepage_domain:
         entry["homepage_domain"] = c.homepage_domain

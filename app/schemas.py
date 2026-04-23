@@ -16,6 +16,7 @@ class CompetitorOut(ORM):
     subreddits: list[str] = []
     careers_domains: list[str] = []
     newsroom_domains: list[str] = []
+    ats_tenants: list[str] = []
     homepage_domain: str | None = None
     active: bool
     last_activity_at: datetime | None
@@ -35,6 +36,7 @@ class CompetitorIn(BaseModel):
     subreddits: list[str] = []
     careers_domains: list[str] = []
     newsroom_domains: list[str] = []
+    ats_tenants: list[str] = []
     homepage_domain: str | None = None
     app_store_id: str | None = None
     play_package: str | None = None

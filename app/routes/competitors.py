@@ -130,6 +130,7 @@ def create_competitor(
         subreddits=payload.subreddits,
         careers_domains=payload.careers_domains,
         newsroom_domains=payload.newsroom_domains,
+        ats_tenants=payload.ats_tenants,
         homepage_domain=payload.homepage_domain,
         app_store_id=payload.app_store_id,
         play_package=payload.play_package,
@@ -171,6 +172,7 @@ def update_competitor(
     c.subreddits = payload.subreddits
     c.careers_domains = payload.careers_domains
     c.newsroom_domains = payload.newsroom_domains
+    c.ats_tenants = payload.ats_tenants
     c.homepage_domain = payload.homepage_domain
     c.app_store_id = payload.app_store_id
     c.play_package = payload.play_package

@@ -220,6 +220,53 @@ def _is_garbage_title(title: str) -> bool:
         return True
     return False
 
+
+def _url_under_any(url: str, prefixes: list[str]) -> bool:
+    """Return True if `url` lives under any of the host-or-host+path
+    prefixes in `prefixes`. Normalizes both sides before comparing so
+    scheme, trailing slashes, 'www.' and case don't cause false negatives.
+
+    Used to gate hiring-sweep results: even when include_domains gets
+    ignored by the provider, we only accept findings whose URL starts
+    with one of the configured careers/ATS prefixes."""
+    if not url or not prefixes:
+        return False
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower().lstrip(".")
+        if host.startswith("www."):
+            host = host[4:]
+        # Lowercase the path too — ATS/careers URLs are conventionally
+        # case-insensitive and storing/comparing in one case avoids a whole
+        # class of "Workday en-US vs en-us" false negatives.
+        path = (parsed.path or "").lower()
+        target = host + path
+    except Exception:
+        return False
+    for p in prefixes:
+        if not p:
+            continue
+        pn = p.strip().lower()
+        if "//" in pn:
+            pn = pn.split("//", 1)[1]
+        if pn.startswith("www."):
+            pn = pn[4:]
+        pn = pn.rstrip("/")
+        if not pn:
+            continue
+        # Prefix match against host+path, with a boundary check so
+        # "example.com/careers" doesn't accidentally match
+        # "example.com/careers-advice-blog".
+        if target == pn or target.startswith(pn + "/") or target.startswith(pn + "?"):
+            return True
+        # Tolerate bare-host prefixes (e.g. "boards.greenhouse.io") — only
+        # accept when the URL host matches exactly, otherwise a stored
+        # root like "greenhouse.io" would light up every ATS tenant.
+        if "/" not in pn and host == pn:
+            return True
+    return False
+
 # Patterns that indicate a result is a job listing, not competitive intelligence
 def scan_competitor(competitor: dict, topics: list[str], memory: dict) -> list[dict]:
     """Scan one competitor and return new findings, filtered and capped.
@@ -375,12 +422,33 @@ def scan_competitor(competitor: dict, topics: list[str], memory: dict) -> list[d
 
     # ── Search type 5: Strategic hiring signals ─────────────────────
     # What are they hiring for? This reveals product roadmap.
-    # Scoped explicitly to careers_domains so results are from THEIR sites —
-    # previously the query was domain-free and pulled job-board noise.
+    # Two scoped sweeps, both deliberately NOT using the company name in
+    # the query (names collide across ATS customers — "Acme Health" gets
+    # matched for "Acme Inc"). Scoping is the filter, not the name.
+    #
+    #   1. careers_domains  — THEIR own careers section (not a public job
+    #                         board, not a recruiter aggregator).
+    #   2. ats_tenants      — their specific tenant path on an ATS provider
+    #                         (e.g. boards.greenhouse.io/adeccogroup), which
+    #                         only hosts their own jobs. Replaces the old
+    #                         name + site:greenhouse.io OR site:lever.co
+    #                         fan-out, which caught ATS noise from every
+    #                         other customer.
+    #
+    # Results that slip past the scope get dropped in the post-filter
+    # (see _url_under_any) so even if a search provider returns a loose
+    # match we don't emit it as a hiring signal.
     careers_domains = competitor.get("careers_domains", [])
+    ats_tenants = competitor.get("ats_tenants", []) or []
+
+    # Union of allowed URL prefixes for the hiring sweep — every accepted
+    # finding must live under one of these. Keeps the `new_hire` signal
+    # type honest: if a URL doesn't start with a known competitor-owned
+    # prefix, it's not their hiring signal even if the result is topical.
+    hiring_scope = list(careers_domains) + list(ats_tenants)
 
     # Keep seed attribution on the keyword-driven sweep; ATS results use
-    # the company name so they stay unattributed (matched_keyword=None).
+    # None so they stay unattributed (matched_keyword=None on the row).
     hiring_results: list[tuple[str | None, dict]] = []
     if careers_domains:
         for seed in keyword_seeds:
@@ -393,25 +461,42 @@ def scan_competitor(competitor: dict, topics: list[str], memory: dict) -> list[d
             ):
                 hiring_results.append((seed, r))
 
-    # Also search Greenhouse/Lever boards which many use for ATS.
-    # Uses the company name (not keywords) — these boards list the parent org.
-    ats_results = search_tavily(
-        f"{name} site:greenhouse.io OR site:lever.co OR site:ashbyhq.com",
-        search_depth="basic",
-        max_results=3,
-        include_raw=True,
-    )
-    for r in ats_results:
-        hiring_results.append((None, r))
+    # Tenant-scoped ATS sweep. One search per tenant, keyword-free because
+    # the tenant URL already narrows results to this competitor only —
+    # adding the name would redundantly rank by text match and sometimes
+    # exclude a genuine posting that doesn't mention the company name in
+    # its body (common for listings that only say "our team").
+    for tenant in ats_tenants:
+        tenant_host = tenant.split("/", 1)[0]
+        # The query below is intentionally minimal — `site:<tenant>` gives
+        # the provider a path constraint in the textual query, and
+        # include_domains gives the host constraint in structured filters.
+        # Either alone is weaker: some indexes ignore site: on tenant paths,
+        # others don't honour include_domains on subpaths. Double-belting.
+        for r in search_tavily(
+            f"site:{tenant} (engineer OR AI OR ML OR product OR platform OR sales)",
+            search_depth="advanced",
+            max_results=4,
+            include_domains=[tenant_host],
+            include_raw=True,
+        ):
+            hiring_results.append((None, r))
 
     for seed, r in hiring_results:
         content = r["content"]
         title = r.get("title", "")
+        url = r.get("url", "")
         if not content or len(content) < 50:
             continue
         if _is_garbage_title(title) and len(content) < 200:
             continue
         if r.get("score", 0) < min_score:
+            continue
+        # Final gate: the URL MUST live under a configured careers domain
+        # or ATS tenant prefix. Catches provider drift (include_domains
+        # ignored, site: operator unsupported, a cached redirect that
+        # escaped our scope) before it turns into a junk new_hire signal.
+        if hiring_scope and not _url_under_any(url, hiring_scope):
             continue
         if is_new(content, memory):
             findings.append({
@@ -421,7 +506,7 @@ def scan_competitor(competitor: dict, topics: list[str], memory: dict) -> list[d
                 "content": content,
                 "snippet": r.get("snippet", ""),
                 "title": r.get("title", ""),
-                "url": r.get("url", ""),
+                "url": url,
                 "relevance": r.get("score", 0),
                 "search_provider": r.get("source_provider", "tavily"),
                 "published": r.get("published", ""),

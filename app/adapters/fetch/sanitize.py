@@ -15,10 +15,38 @@ import re
 # Domain policy
 
 EXCLUDE_DOMAINS = [
+    # Public job aggregators — they advertise every employer's jobs, so a
+    # competitor-name query against them is dominated by unrelated listings.
     "linkedin.com", "indeed.com", "glassdoor.com", "ziprecruiter.com",
     "totaljobs.com", "stepstone.de", "stepstone.com", "seek.com.au",
     "monster.com", "careerbuilder.com", "simplyhired.com",
     "salary.com", "payscale.com",
+    # Startup / tech-specific boards — same problem: the "competitor" name
+    # shows up as one tenant among thousands, which doesn't reflect their
+    # strategy, only the board's coverage.
+    "wellfound.com", "angel.co", "builtin.com", "builtinnyc.com",
+    "builtinla.com", "builtinchicago.org", "builtinboston.com",
+    "builtinaustin.com", "builtinsf.com", "builtincolorado.com",
+    "dice.com", "hired.com", "otta.com", "welcometothejungle.com",
+    "lensa.com", "flexjobs.com", "remoteok.com", "remote.co",
+    "weworkremotely.com",
+    # Recruitment agencies — they post client jobs, not their own hiring
+    # signals. Keeping them out protects the `new_hire` channel from
+    # "Robert Half is hiring a software engineer for <our competitor>"
+    # style noise, which reads as a competitor hire but isn't.
+    "roberthalf.com", "roberthalf.com.au", "roberthalf.co.uk",
+    "michaelpage.com", "pagepersonnel.com", "hays.com",
+    "randstad.com", "randstad.com.au", "randstad.co.uk",
+    "manpowergroup.com", "manpower.com",
+    "kellyservices.com", "kellyservices.com.au",
+    # Generic ATS root hosts — we now scope ATS queries to per-competitor
+    # tenant prefixes, so a result landing on the bare ATS root (which
+    # hosts every customer) is by definition noise for this competitor.
+    # Keep these last; override by adding the competitor's tenant to
+    # ats_tenants so the scoped sweep picks it up.
+    "greenhouse.io", "lever.co", "ashbyhq.com", "workable.com",
+    "smartrecruiters.com", "jobvite.com", "icims.com", "taleo.net",
+    "bamboohr.com", "rippling-ats.com",
 ]
 
 
