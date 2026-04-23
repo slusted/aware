@@ -14,6 +14,12 @@
     "recency_days_brief": 120
   },
   "search_providers": {
+    "brave": {
+      "enabled": true,
+      "scope": [
+        "news"
+      ]
+    },
     "tavily": {
       "enabled": true,
       "scope": [

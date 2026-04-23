@@ -12,7 +12,8 @@ from pathlib import Path
 MANAGED_KEYS: dict[str, str] = {
     "ANTHROPIC_API_KEY":   "Claude (analysis, per-competitor reviews, briefs)",
     "GEMINI_API_KEY":      "Gemini Deep Research (per-competitor on-demand deep dives)",
-    "TAVILY_API_KEY":      "Tavily (primary web search)",
+    "BRAVE_API_KEY":       "Brave Search (primary news provider — independent index, leads fan-out)",
+    "TAVILY_API_KEY":      "Tavily (page-content extraction; secondary in news fan-out)",
     "SERPER_API_KEY":      "Serper (Google News, optional)",
     "ZENROWS_API_KEY":     "ZenRows (primary paid scraper — premium proxy + JS render, used first for every URL)",
     "SCRAPINGBEE_API_KEY": "ScrapingBee (secondary paid proxy fallback for Cloudflare-protected pages)",
