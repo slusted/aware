@@ -179,15 +179,32 @@ def _extract_text(interaction: Any) -> str:
     """Pull markdown out of an Interaction object. Walks every plausible
     location the SDK might put the body — if any path yields non-empty
     text, return it. Returns '' when nothing matches (caller promotes
-    that to a diagnostic failure)."""
-    # 1. The originally-documented Interactions API shape: .output / .result
-    #    carry a text object or list of parts.
+    that to a diagnostic failure).
+
+    The Interactions API (confirmed from a live dump) puts text under
+    `interaction.outputs` as a list of blocks, some of which are text
+    (`{'text', 'type', 'annotations'}`) and some data/media
+    (`{'type', 'data', 'mime_type', 'uri'}`). Text-typed blocks are
+    concatenated in document order."""
+    # 1. outputs[*].text — the real path.
+    outputs = _outputs_of(interaction)
+    if outputs:
+        chunks: list[str] = []
+        for item in outputs:
+            if isinstance(item, dict):
+                t = item.get("text")
+            else:
+                t = getattr(item, "text", None)
+            if isinstance(t, str) and t.strip():
+                chunks.append(t)
+        if chunks:
+            return "\n\n".join(chunks).strip()
+    # 2. Legacy/variant shapes kept as fallback in case the SDK changes
+    #    or a different agent surface is ever swapped in.
     for attr in ("output", "result", "response"):
         t = _text_from(getattr(interaction, attr, None))
         if t:
             return t
-    # 2. generate_content-style: candidates[*].content.parts[*].text —
-    #    either directly on the interaction or nested under .response.
     for holder in (getattr(interaction, "response", None), interaction):
         cands = getattr(holder, "candidates", None) if holder is not None else None
         if not cands:
@@ -196,12 +213,28 @@ def _extract_text(interaction: Any) -> str:
             t = _text_from(getattr(cand, "content", None))
             if t:
                 return t
-    # 3. Shortcut attrs some SDK variants expose at the top level.
     for attr in ("text", "body", "markdown", "content"):
         v = getattr(interaction, attr, None)
         if isinstance(v, str) and v.strip():
             return v
     return ""
+
+
+def _outputs_of(interaction: Any) -> list:
+    """Return `interaction.outputs` as a list. Handles the attr form,
+    Pydantic model_dump fallback, and None. Used by both text and
+    source extraction."""
+    outputs = getattr(interaction, "outputs", None)
+    if outputs is None:
+        dump = getattr(interaction, "model_dump", None)
+        if callable(dump):
+            try:
+                outputs = dump().get("outputs")
+            except Exception:
+                outputs = None
+    if outputs is None:
+        return []
+    return list(outputs) if not isinstance(outputs, list) else outputs
 
 
 def _text_from(obj: Any) -> str:
@@ -237,58 +270,120 @@ def _text_from(obj: Any) -> str:
 
 
 def _extract_sources(interaction: Any) -> list[dict]:
-    """Normalize citations/grounding metadata into our schema.
+    """Normalize citations into our schema.
 
     Shape we return:
       [{"title": str, "url": str,
         "published_at": str | None, "snippet": str | None}]
-    """
-    raw: list = []
-    # 1. Direct citation-ish fields on the interaction.
-    for attr in ("citations", "sources", "grounding"):
-        val = getattr(interaction, attr, None)
-        if val:
-            raw = list(val) if isinstance(val, (list, tuple)) else [val]
-            break
-    # 2. generate_content-style grounding chunks under candidates.
-    if not raw:
-        for holder in (getattr(interaction, "response", None), interaction):
-            cands = getattr(holder, "candidates", None) if holder is not None else None
-            if not cands:
-                continue
-            for cand in cands:
-                gm = getattr(cand, "grounding_metadata", None)
-                if gm is None and isinstance(cand, dict):
-                    gm = cand.get("grounding_metadata")
-                chunks = getattr(gm, "grounding_chunks", None) if gm is not None else None
-                if chunks is None and isinstance(gm, dict):
-                    chunks = gm.get("grounding_chunks")
-                if chunks:
-                    raw.extend(chunks)
+
+    The Interactions API carries citations as `annotations` on each text
+    block in `interaction.outputs`. Data/media blocks (type != text)
+    sometimes carry a `uri` that also makes a useful source link. Legacy
+    `citations` / `grounding_metadata` paths are kept as fallback."""
     out: list[dict] = []
-    for item in raw or []:
-        # Grounding chunks wrap their payload under .web
-        web = getattr(item, "web", None) if not isinstance(item, dict) else item.get("web")
-        if web is not None:
-            item = web
-        if isinstance(item, dict):
-            url = item.get("url") or item.get("uri") or item.get("source") or ""
-            title = item.get("title") or item.get("name") or url
-            published = item.get("published_at") or item.get("published") or item.get("date")
-            snippet = item.get("snippet") or item.get("summary")
-        else:
-            url = getattr(item, "url", None) or getattr(item, "uri", None) or ""
-            title = getattr(item, "title", None) or getattr(item, "name", None) or url
-            published = getattr(item, "published_at", None) or getattr(item, "published", None)
-            snippet = getattr(item, "snippet", None) or getattr(item, "summary", None)
+    seen: set[str] = set()
+
+    def _push(url: str | None, title: str | None,
+              published: Any = None, snippet: Any = None) -> None:
         if not url:
-            continue
+            return
+        url = str(url)
+        if url in seen:
+            return
+        seen.add(url)
         out.append({
             "title": str(title or url)[:300],
-            "url": str(url),
+            "url": url,
             "published_at": str(published) if published else None,
             "snippet": str(snippet)[:400] if snippet else None,
         })
+
+    # 1. outputs[*].annotations — the real path.
+    for item in _outputs_of(interaction):
+        anns = (
+            item.get("annotations") if isinstance(item, dict)
+            else getattr(item, "annotations", None)
+        )
+        for a in anns or []:
+            if isinstance(a, dict):
+                # Common nested shape: {'web': {'uri', 'title'}} or
+                # {'url_citation': {'url', 'title'}}; unwrap before reading.
+                for wrap in ("web", "url_citation", "citation", "source"):
+                    if isinstance(a.get(wrap), dict):
+                        a = a[wrap]
+                        break
+                url = a.get("url") or a.get("uri") or a.get("source") or ""
+                title = a.get("title") or a.get("name") or url
+                published = (
+                    a.get("published_at") or a.get("published") or a.get("date")
+                )
+                snippet = a.get("snippet") or a.get("summary") or a.get("text")
+            else:
+                url = getattr(a, "url", None) or getattr(a, "uri", None) or ""
+                title = getattr(a, "title", None) or getattr(a, "name", None) or url
+                published = (
+                    getattr(a, "published_at", None) or getattr(a, "published", None)
+                )
+                snippet = getattr(a, "snippet", None) or getattr(a, "summary", None)
+            _push(url, title, published, snippet)
+        # Data/media blocks: include their uri as a source entry.
+        kind = (
+            item.get("type") if isinstance(item, dict) else getattr(item, "type", None)
+        )
+        if kind and str(kind).lower() != "text":
+            uri = (
+                item.get("uri") if isinstance(item, dict)
+                else getattr(item, "uri", None)
+            )
+            _push(uri, None)
+
+    # 2. Legacy top-level citation fields.
+    if not out:
+        raw: list = []
+        for attr in ("citations", "sources", "grounding"):
+            val = getattr(interaction, attr, None)
+            if val:
+                raw = list(val) if isinstance(val, (list, tuple)) else [val]
+                break
+        if not raw:
+            for holder in (getattr(interaction, "response", None), interaction):
+                cands = (
+                    getattr(holder, "candidates", None) if holder is not None else None
+                )
+                if not cands:
+                    continue
+                for cand in cands:
+                    gm = getattr(cand, "grounding_metadata", None)
+                    if gm is None and isinstance(cand, dict):
+                        gm = cand.get("grounding_metadata")
+                    chunks = (
+                        getattr(gm, "grounding_chunks", None) if gm is not None else None
+                    )
+                    if chunks is None and isinstance(gm, dict):
+                        chunks = gm.get("grounding_chunks")
+                    if chunks:
+                        raw.extend(chunks)
+        for item in raw:
+            web = (
+                getattr(item, "web", None) if not isinstance(item, dict)
+                else item.get("web")
+            )
+            if web is not None:
+                item = web
+            if isinstance(item, dict):
+                _push(
+                    item.get("url") or item.get("uri") or item.get("source"),
+                    item.get("title") or item.get("name"),
+                    item.get("published_at") or item.get("published") or item.get("date"),
+                    item.get("snippet") or item.get("summary"),
+                )
+            else:
+                _push(
+                    getattr(item, "url", None) or getattr(item, "uri", None),
+                    getattr(item, "title", None) or getattr(item, "name", None),
+                    getattr(item, "published_at", None) or getattr(item, "published", None),
+                    getattr(item, "snippet", None) or getattr(item, "summary", None),
+                )
     return out
 
 
@@ -302,7 +397,7 @@ _DEBUG_SKIP_ATTRS = frozenset({
 })
 
 
-def _debug_dump(obj: Any, depth: int = 0, max_depth: int = 3) -> str:
+def _debug_dump(obj: Any, depth: int = 0, max_depth: int = 4) -> str:
     """Best-effort introspection of whatever Gemini returned, formatted
     so the error field in the Research tab is readable. Only runs when
     extraction came up empty — the cost of the reflection doesn't matter
