@@ -148,10 +148,22 @@ def _normalize(interaction: Any) -> dict:
         )
 
     if status == "ready":
-        output = getattr(interaction, "output", None) or getattr(interaction, "result", None)
-        body_md = _extract_text(output)
+        body_md = _extract_text(interaction)
         sources = _extract_sources(interaction)
         cost_usd = _extract_cost(interaction)
+        # Gemini says the interaction completed but we couldn't pull any
+        # body or citations out of the response. This is almost always a
+        # shape-drift issue (the SDK moved the fields). Flip to failed
+        # with a diagnostic dump so the UI shows something actionable
+        # instead of a blank "Report body is empty." panel.
+        if not body_md and not sources:
+            status = "failed"
+            err = (
+                "Gemini returned a completed interaction but no body or "
+                "sources were extracted. The SDK response shape likely "
+                "drifted. Diagnostic dump (first few fields):\n"
+                + _debug_dump(interaction)
+            )
 
     return {
         "status": status,
@@ -163,34 +175,64 @@ def _normalize(interaction: Any) -> dict:
     }
 
 
-def _extract_text(output: Any) -> str:
-    """Pull markdown body out of the Interaction output. The SDK returns
-    either a single text block or a list of content parts; handle both."""
-    if output is None:
+def _extract_text(interaction: Any) -> str:
+    """Pull markdown out of an Interaction object. Walks every plausible
+    location the SDK might put the body — if any path yields non-empty
+    text, return it. Returns '' when nothing matches (caller promotes
+    that to a diagnostic failure)."""
+    # 1. The originally-documented Interactions API shape: .output / .result
+    #    carry a text object or list of parts.
+    for attr in ("output", "result", "response"):
+        t = _text_from(getattr(interaction, attr, None))
+        if t:
+            return t
+    # 2. generate_content-style: candidates[*].content.parts[*].text —
+    #    either directly on the interaction or nested under .response.
+    for holder in (getattr(interaction, "response", None), interaction):
+        cands = getattr(holder, "candidates", None) if holder is not None else None
+        if not cands:
+            continue
+        for cand in cands:
+            t = _text_from(getattr(cand, "content", None))
+            if t:
+                return t
+    # 3. Shortcut attrs some SDK variants expose at the top level.
+    for attr in ("text", "body", "markdown", "content"):
+        v = getattr(interaction, attr, None)
+        if isinstance(v, str) and v.strip():
+            return v
+    return ""
+
+
+def _text_from(obj: Any) -> str:
+    """Lower-level: extract text from a str / object-with-.text /
+    list-of-parts / dict. Shared by the candidate paths in
+    `_extract_text`."""
+    if obj is None:
         return ""
-    if isinstance(output, str):
-        return output
-    # Object with .text
-    text = getattr(output, "text", None)
-    if isinstance(text, str) and text:
-        return text
-    # List of parts, each with .text
-    parts = getattr(output, "parts", None) or (output if isinstance(output, list) else None)
+    if isinstance(obj, str):
+        return obj
+    t = getattr(obj, "text", None)
+    if isinstance(t, str) and t.strip():
+        return t
+    parts = getattr(obj, "parts", None) or (obj if isinstance(obj, list) else None)
     if parts:
         chunks: list[str] = []
         for p in parts:
-            t = getattr(p, "text", None)
-            if isinstance(t, str):
-                chunks.append(t)
+            pt = getattr(p, "text", None)
+            if isinstance(pt, str):
+                chunks.append(pt)
             elif isinstance(p, dict) and isinstance(p.get("text"), str):
                 chunks.append(p["text"])
         if chunks:
-            return "\n\n".join(chunks).strip()
-    # Dict fallback
-    if isinstance(output, dict):
+            joined = "\n\n".join(chunks).strip()
+            if joined:
+                return joined
+    if isinstance(obj, dict):
         for k in ("text", "markdown", "body_md", "content"):
-            if isinstance(output.get(k), str):
-                return output[k]
+            v = obj.get(k)
+            if isinstance(v, str) and v.strip():
+                return v
     return ""
 
 
@@ -201,14 +243,34 @@ def _extract_sources(interaction: Any) -> list[dict]:
       [{"title": str, "url": str,
         "published_at": str | None, "snippet": str | None}]
     """
-    raw = (
-        getattr(interaction, "citations", None)
-        or getattr(interaction, "sources", None)
-        or getattr(interaction, "grounding", None)
-        or []
-    )
+    raw: list = []
+    # 1. Direct citation-ish fields on the interaction.
+    for attr in ("citations", "sources", "grounding"):
+        val = getattr(interaction, attr, None)
+        if val:
+            raw = list(val) if isinstance(val, (list, tuple)) else [val]
+            break
+    # 2. generate_content-style grounding chunks under candidates.
+    if not raw:
+        for holder in (getattr(interaction, "response", None), interaction):
+            cands = getattr(holder, "candidates", None) if holder is not None else None
+            if not cands:
+                continue
+            for cand in cands:
+                gm = getattr(cand, "grounding_metadata", None)
+                if gm is None and isinstance(cand, dict):
+                    gm = cand.get("grounding_metadata")
+                chunks = getattr(gm, "grounding_chunks", None) if gm is not None else None
+                if chunks is None and isinstance(gm, dict):
+                    chunks = gm.get("grounding_chunks")
+                if chunks:
+                    raw.extend(chunks)
     out: list[dict] = []
     for item in raw or []:
+        # Grounding chunks wrap their payload under .web
+        web = getattr(item, "web", None) if not isinstance(item, dict) else item.get("web")
+        if web is not None:
+            item = web
         if isinstance(item, dict):
             url = item.get("url") or item.get("uri") or item.get("source") or ""
             title = item.get("title") or item.get("name") or url
@@ -228,6 +290,43 @@ def _extract_sources(interaction: Any) -> list[dict]:
             "snippet": str(snippet)[:400] if snippet else None,
         })
     return out
+
+
+def _debug_dump(obj: Any, depth: int = 0, max_depth: int = 3) -> str:
+    """Best-effort introspection of whatever Gemini returned, formatted
+    so the error field in the Research tab is readable. Only runs when
+    extraction came up empty — the cost of the reflection doesn't matter
+    at that point, and seeing the shape is what unblocks the fix."""
+    if depth > max_depth:
+        return "…"
+    if obj is None:
+        return "None"
+    if isinstance(obj, (str, int, float, bool)):
+        s = repr(obj)
+        return s[:200] + ("…" if len(s) > 200 else "")
+    if isinstance(obj, (list, tuple)):
+        if not obj:
+            return "[]"
+        inner = ", ".join(_debug_dump(x, depth + 1, max_depth) for x in list(obj)[:3])
+        more = f", … ({len(obj)} total)" if len(obj) > 3 else ""
+        return f"[{inner}{more}]"
+    if isinstance(obj, dict):
+        items = list(obj.items())[:10]
+        inner = ", ".join(
+            f"{k!r}: {_debug_dump(v, depth + 1, max_depth)}" for k, v in items
+        )
+        return "{" + inner + "}"
+    attrs = [a for a in dir(obj) if not a.startswith("_")]
+    lines = [f"<{type(obj).__name__}>"]
+    for a in attrs[:15]:
+        try:
+            v = getattr(obj, a)
+        except Exception:
+            continue
+        if callable(v):
+            continue
+        lines.append(f"  .{a} = {_debug_dump(v, depth + 1, max_depth)}")
+    return "\n".join(lines)
 
 
 def _extract_cost(interaction: Any) -> float | None:
