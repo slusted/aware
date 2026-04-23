@@ -88,6 +88,7 @@
     ('subreddits', 'Subreddits', 'one per line'),
     ('careers_domains', 'Careers domains', 'e.g. careers.example.com, one per line'),
     ('newsroom_domains', 'Newsroom domains', 'e.g. news.example.com, one per line'),
+    ('ats_tenants', 'ATS tenant URLs', 'canonical tenant prefix on their ATS — e.g. boards.greenhouse.io/acme or acme.myworkdayjobs.com/careers. Auto-discovered on first scan from the careers page; edit only to correct mistakes.'),
   ] %}
   {% for field, title, hint in lists %}
     <div class="field">
@@ -299,6 +300,7 @@
           setLines('textarea[name=subreddits]', d.subreddits);
           setLines('textarea[name=careers_domains]', d.careers_domains);
           setLines('textarea[name=newsroom_domains]', d.newsroom_domains);
+          setLines('textarea[name=ats_tenants]', d.ats_tenants);
           setVal('input[name=homepage_domain]', d.homepage_domain);
           setVal('input[name=app_store_id]', d.app_store_id);
           setVal('input[name=play_package]', d.play_package);
@@ -331,6 +333,7 @@
       subreddits:              'textarea[name=subreddits]',
       careers_domains:         'textarea[name=careers_domains]',
       newsroom_domains:        'textarea[name=newsroom_domains]',
+      ats_tenants:             'textarea[name=ats_tenants]',
       homepage_domain:         'input[name=homepage_domain]',
       app_store_id:            'input[name=app_store_id]',
       play_package:            'input[name=play_package]',
@@ -339,7 +342,7 @@
       social_score_multiplier: 'input[name=social_score_multiplier]',
     };
     // keywords is comma-separated in the textarea; all other list fields are newline-separated.
-    var LIST_FIELDS = ['keywords', 'subreddits', 'careers_domains', 'newsroom_domains'];
+    var LIST_FIELDS = ['keywords', 'subreddits', 'careers_domains', 'newsroom_domains', 'ats_tenants'];
     function listJoiner(field){ return field === 'keywords' ? ', ' : '\n'; }
     function listSplitter(field){
       return field === 'keywords'
@@ -483,6 +486,7 @@
       subreddits: parseLines(data.get('subreddits')),
       careers_domains: parseLines(data.get('careers_domains')),
       newsroom_domains: parseLines(data.get('newsroom_domains')),
+      ats_tenants: parseLines(data.get('ats_tenants')),
       homepage_domain: (data.get('homepage_domain') || '').trim().toLowerCase() || null,
       app_store_id: (data.get('app_store_id') || '').trim() || null,
       play_package: (data.get('play_package') || '').trim() || null,

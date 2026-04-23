@@ -1514,3 +1514,87 @@ button.chip-btn.active {
 .citation-date {
   font-size: 10px;
 }
+
+/* ── Deep-research pre-run settings form ─────────────────────────
+   The form the operator sees after clicking any "Run" button; lets
+   them review the brief + agent + server-side API settings before
+   the job is queued. Swapped into #research-status via HTMX. */
+.research-run-settings .field + .field { margin-top: 20px; }
+.research-run-settings textarea {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.radio-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+.radio-card {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm, 4px);
+  cursor: pointer;
+  background: var(--bg-subtle);
+  transition: border-color 0.15s, background 0.15s;
+}
+.radio-card:hover { border-color: var(--text-dim); }
+.radio-card input[type="radio"] { margin-top: 3px; }
+.radio-card:has(input:checked) {
+  border-color: var(--text);
+  background: var(--bg);
+}
+.radio-card-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.radio-card-title { font-weight: 600; font-size: 13px; }
+.radio-card-sub {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 11px;
+  word-break: break-all;
+}
+.radio-card-meta { font-size: 11px; }
+
+.kv-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.kv-table th,
+.kv-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.kv-table th {
+  font-weight: 500;
+  color: var(--text-dim);
+  width: 160px;
+  white-space: nowrap;
+}
+.kv-table tr:last-child th,
+.kv-table tr:last-child td { border-bottom: none; }
+
+.ok-dot,
+.err-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.ok-dot  { background: var(--ok); }
+.err-dot { background: var(--err); }
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}

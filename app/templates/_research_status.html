@@ -32,10 +32,13 @@
             research agent — autonomously plans, searches, reads, and
             returns a cited dossier. Takes 5–15 minutes.
           </p>
-          <form method="post" action="/api/competitors/{{ c.id }}/research/run"
-                onsubmit="return confirm('Start a Deep Research run for {{ c.name }}? This takes 5–15 minutes and uses Gemini API credits.');">
-            <button type="submit" class="btn">Run Deep Research</button>
-          </form>
+          <button type="button" class="btn"
+                  hx-get="/partials/research_run_form/{{ c.id }}"
+                  hx-target="#research-status"
+                  hx-swap="outerHTML"
+                  title="Review the brief and settings before the run starts.">
+            Run Deep Research…
+          </button>
         {% endif %}
       </div>
     </div>
@@ -77,9 +80,12 @@
           {{ r.error or 'Gemini reported a failure with no details.' }}
         </p>
         {% if _can_run %}
-          <form method="post" action="/api/competitors/{{ c.id }}/research/run">
-            <button type="submit" class="btn">Try again</button>
-          </form>
+          <button type="button" class="btn"
+                  hx-get="/partials/research_run_form/{{ c.id }}"
+                  hx-target="#research-status"
+                  hx-swap="outerHTML">
+            Try again…
+          </button>
         {% endif %}
       </div>
     </div>
@@ -89,9 +95,12 @@
       <div class="panel-header"><h2>Deep research · cancelled</h2></div>
       <div class="panel-body">
         {% if _can_run %}
-          <form method="post" action="/api/competitors/{{ c.id }}/research/run">
-            <button type="submit" class="btn">Run again</button>
-          </form>
+          <button type="button" class="btn"
+                  hx-get="/partials/research_run_form/{{ c.id }}"
+                  hx-target="#research-status"
+                  hx-swap="outerHTML">
+            Run again…
+          </button>
         {% endif %}
       </div>
     </div>

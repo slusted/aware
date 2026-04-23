@@ -50,6 +50,7 @@ def seed_competitors(db: Session) -> tuple[int, int]:
             subreddits=c.get("subreddits", []),
             careers_domains=c.get("careers_domains", []),
             newsroom_domains=c.get("newsroom_domains", []),
+            ats_tenants=c.get("ats_tenants", []),
             homepage_domain=c.get("homepage_domain"),
             active=True,
         ))

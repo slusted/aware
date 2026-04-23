@@ -333,6 +333,49 @@ def _compute_freshness(db, explicit: int | None) -> int:
     return max(1, min(gap_days + 1, 30))  # +1 buffer, cap at 30
 
 
+def _ensure_ats_tenants_discovered(comp_dict: dict) -> None:
+    """If this competitor has careers_domains but no ats_tenants yet,
+    crawl the careers page, regex out canonical ATS tenant prefixes
+    (Greenhouse/Lever/Ashby/Workday/etc.), persist them, and inject the
+    list back into `comp_dict` so the scanner that runs next sees them.
+
+    Mutates `comp_dict['ats_tenants']` in place. Silent on misses —
+    discovery failure is normal for competitors who self-host their
+    careers page with no ATS embed, and the scanner's hiring sweep
+    still works using careers_domains scope alone. No exception
+    propagation: the caller wraps this in a try/except so one bad
+    page never blocks the scan.
+    """
+    name = comp_dict.get("name")
+    careers_domains = comp_dict.get("careers_domains") or []
+    existing = comp_dict.get("ats_tenants") or []
+    if existing:
+        return  # already discovered (or hand-set) — don't re-crawl
+    if not careers_domains:
+        return  # nothing to crawl
+
+    from app.adapters.ats.discovery import discover_for_competitor
+    from app.fetcher import _fetch_raw_html
+    from .models import Competitor
+
+    tenants = discover_for_competitor(careers_domains, _fetch_raw_html)
+    if not tenants:
+        return
+
+    # Persist to DB so the next scan picks them up via config.json sync.
+    db = SessionLocal()
+    try:
+        c = db.query(Competitor).filter(Competitor.name == name).first()
+        if c and not (c.ats_tenants or []):
+            c.ats_tenants = tenants
+            db.commit()
+            print(f"[ats-discovery] {name}: {len(tenants)} tenant(s) -> {tenants}")
+    finally:
+        db.close()
+
+    comp_dict["ats_tenants"] = tenants
+
+
 def _scan_and_review_one(comp_dict: dict, topics: list, memory: dict,
                          company: str, industry: str, run_id: int) -> dict:
     """Run by a threadpool worker: scan ONE competitor, persist its findings,
@@ -353,8 +396,24 @@ def _scan_and_review_one(comp_dict: dict, topics: list, memory: dict,
         print(f"[scan] skipping {name} — run cancelled")
         return out
 
+    # 1a. Lazy ATS tenant discovery. Config.json only carries `ats_tenants`
+    # for competitors that have already been discovered once (the sync
+    # writes them back). For untouched rows we do a one-shot crawl of the
+    # configured careers pages, extract canonical tenant prefixes (e.g.
+    # boards.greenhouse.io/adeccogroup), and persist them so the scanner's
+    # hiring sweep can scope to THIS competitor's own board instead of the
+    # ATS root (which hosts every customer's jobs).
+    #
+    # Runs inside the worker so it parallelizes with the scan; failures are
+    # isolated — a bad HTML extraction just leaves ats_tenants empty and
+    # the sweep falls back to careers_domains-only scope.
     try:
-        # 1. Web search (blocks on Tavily HTTP; this is why we parallelize).
+        _ensure_ats_tenants_discovered(comp_dict)
+    except Exception as e:
+        print(f"[ats-discovery] ERROR for {name}: {e}")
+
+    try:
+        # 1b. Web search (blocks on Tavily HTTP; this is why we parallelize).
         print(f"[scan] {name}...")
         findings = _scanner_mod.scan_competitor(comp_dict, topics, memory)
         out["findings"] = findings
