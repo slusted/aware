@@ -292,33 +292,63 @@ def _extract_sources(interaction: Any) -> list[dict]:
     return out
 
 
+# Pydantic v2 and dataclass-ish internals we never want in the debug dump.
+_DEBUG_SKIP_ATTRS = frozenset({
+    "model_config", "model_computed_fields", "model_extra", "model_fields",
+    "model_fields_set", "model_post_init",
+    # datetime attrs that leak through dir() when a field is a datetime.
+    "day", "fold", "hour", "minute", "month", "second", "microsecond",
+    "tzinfo", "year", "min", "max", "resolution",
+})
+
+
 def _debug_dump(obj: Any, depth: int = 0, max_depth: int = 3) -> str:
     """Best-effort introspection of whatever Gemini returned, formatted
     so the error field in the Research tab is readable. Only runs when
     extraction came up empty — the cost of the reflection doesn't matter
-    at that point, and seeing the shape is what unblocks the fix."""
+    at that point, and seeing the shape is what unblocks the fix.
+
+    Prefers `model_dump()` for Pydantic v2 models so we see the real
+    declared fields (including `output`, `response`, `status`, etc.) with
+    their values, instead of a dir()-ordered alphabetical slice that cuts
+    off halfway through the object and bleeds Pydantic internals."""
     if depth > max_depth:
         return "…"
     if obj is None:
         return "None"
     if isinstance(obj, (str, int, float, bool)):
         s = repr(obj)
-        return s[:200] + ("…" if len(s) > 200 else "")
+        return s[:300] + ("…" if len(s) > 300 else "")
     if isinstance(obj, (list, tuple)):
         if not obj:
             return "[]"
-        inner = ", ".join(_debug_dump(x, depth + 1, max_depth) for x in list(obj)[:3])
-        more = f", … ({len(obj)} total)" if len(obj) > 3 else ""
+        inner = ", ".join(_debug_dump(x, depth + 1, max_depth) for x in list(obj)[:4])
+        more = f", … ({len(obj)} total)" if len(obj) > 4 else ""
         return f"[{inner}{more}]"
     if isinstance(obj, dict):
-        items = list(obj.items())[:10]
+        items = list(obj.items())[:20]
         inner = ", ".join(
             f"{k!r}: {_debug_dump(v, depth + 1, max_depth)}" for k, v in items
         )
-        return "{" + inner + "}"
-    attrs = [a for a in dir(obj) if not a.startswith("_")]
+        more = f", … ({len(obj)} keys total)" if len(obj) > 20 else ""
+        return "{" + inner + more + "}"
+    # Pydantic v2: dump to dict so we see declared fields with values.
+    dump = getattr(obj, "model_dump", None)
+    if callable(dump):
+        try:
+            data = dump()
+        except Exception:
+            data = None
+        if isinstance(data, dict):
+            return f"<{type(obj).__name__}> {_debug_dump(data, depth + 1, max_depth)}"
+    # Fallback: walk dir(), but skip Pydantic/datetime noise so the real
+    # fields show up within the attr cap.
+    attrs = [
+        a for a in dir(obj)
+        if not a.startswith("_") and a not in _DEBUG_SKIP_ATTRS
+    ]
     lines = [f"<{type(obj).__name__}>"]
-    for a in attrs[:15]:
+    for a in attrs[:30]:
         try:
             v = getattr(obj, a)
         except Exception:
