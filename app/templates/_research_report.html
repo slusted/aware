@@ -1,0 +1,64 @@
+{# One deep-research report, rendered fully: header + markdown body +
+   citation chips. Consumed by both the Research tab (latest) and by the
+   status partial when the poll terminates. Expects in scope:
+     r           — DeepResearchReport row
+     can_run     — bool, whether the user can trigger a new run
+     show_run_button — bool, whether to render the "Run new" action #}
+{% set _duration_s = (r.finished_at - r.started_at).total_seconds() if r.finished_at and r.started_at else 0 %}
+{% set _minutes = (_duration_s / 60)|round(1) if _duration_s else 0 %}
+
+<div class="panel">
+  <div class="panel-header">
+    <h2>Deep research</h2>
+    <span class="muted" style="font-size:11px">
+      {{ r.started_at.strftime('%Y-%m-%d %H:%M') }}
+      · agent: {{ r.agent }}
+      {% if r.model %} · {{ r.model }}{% endif %}
+      {% if _minutes %} · {{ _minutes }} min{% endif %}
+      {% if r.cost_usd is not none %} · ${{ '%.2f'|format(r.cost_usd) }}{% endif %}
+      · {{ r.sources|length }} source{{ 's' if r.sources|length != 1 else '' }}
+    </span>
+    {% if show_run_button and can_run %}
+      <form method="post" action="/api/competitors/{{ r.competitor_id }}/research/run"
+            onsubmit="return confirm('Run a fresh Deep Research dossier? This takes 5–15 minutes and uses Gemini API credits.');"
+            style="margin-left:auto">
+        <button type="submit" class="btn-ghost" title="Kick off a new Deep Research run. ~5–15 min.">Run new research</button>
+      </form>
+    {% endif %}
+  </div>
+  <div class="panel-body">
+    {% if r.body_md %}
+      <div id="research-body-{{ r.id }}" class="markdown research-body"></div>
+      <script id="research-src-{{ r.id }}" type="text/plain">{{ r.body_md }}</script>
+    {% else %}
+      <p class="muted" style="margin:0">Report body is empty.</p>
+    {% endif %}
+
+    {% if r.sources %}
+      <div class="research-sources">
+        <div class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px">
+          Sources ({{ r.sources|length }})
+        </div>
+        <div class="citation-grid">
+        {% for s in r.sources %}
+          <a class="citation-chip" href="{{ s.url }}" target="_blank" rel="noopener"
+             title="{{ s.snippet or s.url }}">
+            <span class="citation-title">{{ s.title or s.url }}</span>
+            {% if s.published_at %}<span class="citation-date muted">{{ s.published_at }}</span>{% endif %}
+          </a>
+        {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  (function renderResearchBody_{{ r.id }}() {
+    var src = document.getElementById('research-src-{{ r.id }}');
+    var out = document.getElementById('research-body-{{ r.id }}');
+    if (src && out && window.marked) {
+      out.innerHTML = window.marked.parse(src.textContent);
+    }
+  })();
+</script>

@@ -1454,3 +1454,63 @@ button.chip-btn.active {
   margin-top: 4px;
   text-align: right;
 }
+
+/* ── Deep Research tab ───────────────────────────────────────────── */
+.research-status-queued .panel-header h2,
+.research-status-running .panel-header h2 {
+  color: var(--text);
+}
+.research-status-failed .panel-header h2 {
+  color: var(--err);
+}
+.research-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: research-spin 0.9s linear infinite;
+  margin-top: 6px;
+}
+@keyframes research-spin {
+  to { transform: rotate(360deg); }
+}
+.research-body {
+  max-width: 780px;
+}
+.research-sources {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.citation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.citation-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm, 4px);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 12px;
+  line-height: 1.3;
+  transition: border-color 0.15s, background 0.15s;
+}
+.citation-chip:hover {
+  border-color: var(--border-strong, var(--text-dim));
+  background: var(--bg-subtle);
+}
+.citation-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.citation-date {
+  font-size: 10px;
+}

@@ -11,6 +11,7 @@ from pathlib import Path
 # Keys the UI is allowed to manage. Anything else is rejected at the route.
 MANAGED_KEYS: dict[str, str] = {
     "ANTHROPIC_API_KEY":   "Claude (analysis, per-competitor reviews, briefs)",
+    "GEMINI_API_KEY":      "Gemini Deep Research (per-competitor on-demand deep dives)",
     "TAVILY_API_KEY":      "Tavily (primary web search)",
     "SERPER_API_KEY":      "Serper (Google News, optional)",
     "ZENROWS_API_KEY":     "ZenRows (primary paid scraper — premium proxy + JS render, used first for every URL)",
@@ -113,6 +114,10 @@ def _refresh_module_captures(name: str, value: str) -> None:
             deepen._client = anthropic.Anthropic()
             _sig_sum._client = None
             _sig_llm._client = None
+        elif name == "GEMINI_API_KEY":
+            # Null the adapter's cached client so the next call re-reads the env.
+            from .adapters import gemini_research as _gem
+            _gem._client = None
         # SERPER_API_KEY is read at call time by SerperProvider — nothing cached.
     except Exception as e:
         print(f"[env_keys] refresh failed for {name}: {e}")

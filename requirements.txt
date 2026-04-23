@@ -1,4 +1,6 @@
 anthropic>=0.90.0
+# Gemini — used by the Deep Research adapter (Interactions API).
+google-genai>=1.20.0
 pdfplumber>=0.10.0
 pypdf>=4.0.0
 python-dotenv>=1.0.0

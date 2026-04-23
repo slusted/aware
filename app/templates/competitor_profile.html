@@ -55,6 +55,8 @@
           aria-selected="false" aria-controls="tab-positioning">Positioning</button>
   <button role="tab" class="tab" data-tab="findings" id="tabbtn-findings"
           aria-selected="false" aria-controls="tab-findings">Findings</button>
+  <button role="tab" class="tab" data-tab="research" id="tabbtn-research"
+          aria-selected="false" aria-controls="tab-research">Research</button>
 </nav>
 
 <section class="tab-panel" id="tab-review" role="tabpanel" aria-labelledby="tabbtn-review">
@@ -272,6 +274,51 @@
 {% endif %}
 </section>
 
+<section class="tab-panel" id="tab-research" role="tabpanel" aria-labelledby="tabbtn-research" hidden>
+  {# Status card renders the whole active surface — empty state, running,
+     failed, or the full report when ready. HTMX swaps this in place on
+     poll, so the container below is intentionally minimal. #}
+  {% with c=c, r=research_latest, poll=(research_in_flight is not none),
+          gemini_key_set=research_gemini_key_set %}
+    {% include "_research_status.html" %}
+  {% endwith %}
+
+  {% if research_history %}
+  <div class="panel">
+    <div class="panel-header"><h2>Prior research</h2></div>
+    <table>
+      <thead><tr><th>Started</th><th>Agent</th><th>Status</th><th>Sources</th><th></th></tr></thead>
+      <tbody>
+      {% for pr in research_history %}
+        <tr>
+          <td class="muted">{{ pr.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td class="muted">{{ pr.agent }}</td>
+          <td class="muted">{{ pr.status }}</td>
+          <td class="muted">{{ pr.sources|length }}</td>
+          <td style="text-align:right">
+            {% if pr.status == 'ready' %}
+              <a href="#" onclick="showPriorResearch({{ pr.id }}); return false">view</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% if pr.status == 'ready' %}
+        <tr id="prior-research-{{ pr.id }}" style="display:none">
+          <td colspan="5" style="background:var(--bg)">
+            <div style="padding:10px 4px">
+              {% with r=pr, can_run=False, show_run_button=False %}
+                {% include "_research_report.html" %}
+              {% endwith %}
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
 <section class="tab-panel" id="tab-findings" role="tabpanel" aria-labelledby="tabbtn-findings" hidden>
 <div class="panel">
   <div class="panel-header">
@@ -306,7 +353,7 @@
 
 <script>
   (function initTabs() {
-    var TABS = ['review', 'momentum', 'positioning', 'findings'];
+    var TABS = ['review', 'momentum', 'positioning', 'findings', 'research'];
     var buttons = document.querySelectorAll('.tabs .tab');
     var panels  = document.querySelectorAll('.tab-panel');
 
@@ -381,6 +428,11 @@
 
   function showPriorPositioning(id) {
     var row = document.getElementById('prior-pos-' + id);
+    if (row) row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+  }
+
+  function showPriorResearch(id) {
+    var row = document.getElementById('prior-research-' + id);
     if (row) row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
   }
 

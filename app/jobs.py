@@ -7,10 +7,10 @@ import os
 import sys
 import threading
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .db import SessionLocal
-from .models import Run, RunEvent, Finding, Report, UserSignalEvent
+from .models import Run, RunEvent, Finding, Report, UserSignalEvent, DeepResearchReport
 from .usage import current_run_id
 
 
@@ -1156,6 +1156,287 @@ def run_positioning_refresh_job():
                 )
             if i < len(active) - 1:
                 time.sleep(60)
+    finally:
+        db.close()
+
+
+DEEP_RESEARCH_TIMEOUT_S = int(os.environ.get("DEEP_RESEARCH_TIMEOUT_S", str(30 * 60)))
+DEEP_RESEARCH_MAX_CONCURRENT = int(os.environ.get("DEEP_RESEARCH_MAX_CONCURRENT", "2"))
+# Poll cadence inside the job wrapper. Gemini's Interactions API returns
+# 'running' quickly; bumping past 20s adds latency without saving cost.
+_DEEP_RESEARCH_POLL_S = int(os.environ.get("DEEP_RESEARCH_POLL_S", "20"))
+
+
+def current_research_load(db) -> int:
+    """Count DeepResearchReport rows currently in flight. Used by the
+    route layer to enforce the concurrency cap."""
+    return (
+        db.query(DeepResearchReport)
+        .filter(DeepResearchReport.status.in_(["queued", "running"]))
+        .count()
+    )
+
+
+def _build_research_brief(competitor, config: dict) -> str:
+    """Fill the deep_research_brief skill with competitor + company context."""
+    from .skills import load_active
+    template = load_active("deep_research_brief") or ""
+    topics = ", ".join(config.get("watch_topics") or []) or "general strategy"
+    vals = {
+        "competitor_name": competitor.name or "",
+        "category":        competitor.category or "unspecified",
+        "our_company":     config.get("company", "Seek"),
+        "our_industry":    config.get("industry", "job search and recruitment platforms"),
+        "threat_angle":    competitor.threat_angle or "unspecified",
+        "watch_topics":    topics,
+    }
+    out = template
+    for k, v in vals.items():
+        out = out.replace("{{" + k + "}}", v)
+    return out
+
+
+def _persist_research_terminal(db, report: DeepResearchReport, normalized: dict) -> None:
+    """Shared commit path for both the happy path and resume-on-boot.
+    Writes the report's terminal state and closes the companion Run if any."""
+    report.status = normalized["status"]
+    report.body_md = normalized.get("body_md") or ""
+    report.sources = normalized.get("sources") or []
+    report.error = normalized.get("error")
+    report.model = normalized.get("model") or report.model
+    report.cost_usd = normalized.get("cost_usd")
+    report.finished_at = datetime.utcnow()
+    db.commit()
+
+
+def _poll_research_to_terminal(
+    db,
+    report: DeepResearchReport,
+    run: Run | None,
+    deadline: datetime,
+) -> str:
+    """Poll Gemini until the report reaches a terminal state or the deadline
+    passes. Returns the final status string."""
+    from .adapters import gemini_research as _gem
+    import time as _time
+
+    while True:
+        if datetime.utcnow() >= deadline:
+            report.status = "failed"
+            report.error = (
+                f"Timed out after {DEEP_RESEARCH_TIMEOUT_S}s waiting for Gemini. "
+                "The task may still complete on Gemini's side; we stopped polling."
+            )
+            report.finished_at = datetime.utcnow()
+            db.commit()
+            if run is not None:
+                _log(db, run, report.error, "warn")
+            return "failed"
+
+        try:
+            result = _gem.poll_research(report.interaction_id)
+        except _gem.GeminiUnavailable as e:
+            # Config-level failure — don't retry, mark failed and bail.
+            report.status = "failed"
+            report.error = str(e)
+            report.finished_at = datetime.utcnow()
+            db.commit()
+            if run is not None:
+                _log(db, run, f"research failed: {e}", "error")
+            return "failed"
+
+        if result.get("_transient_error") and run is not None:
+            # Network blip — log quietly and keep polling.
+            _log(db, run, f"poll transient: {result['_transient_error']}", "warn")
+
+        if result["status"] in ("ready", "failed"):
+            _persist_research_terminal(db, report, result)
+            if run is not None:
+                if result["status"] == "ready":
+                    meta = {
+                        "competitor_id": report.competitor_id,
+                        "report_id": report.id,
+                    }
+                    # Look up the competitor name once for the live-log link.
+                    from .models import Competitor as _C
+                    c = db.get(_C, report.competitor_id)
+                    if c:
+                        meta["competitor_name"] = c.name
+                    db.add(RunEvent(
+                        run_id=run.id,
+                        level="material",
+                        message=f"[research] {c.name if c else 'competitor'} dossier ready",
+                        meta=meta,
+                    ))
+                    db.commit()
+                    _log(db, run, "research ready")
+                else:
+                    _log(db, run, f"research failed: {report.error or 'unknown'}", "error")
+            return result["status"]
+
+        _time.sleep(_DEEP_RESEARCH_POLL_S)
+
+
+def run_deep_research_job(
+    competitor_id: int,
+    report_id: int,
+    agent: str = "preview",
+    triggered_by: str = "manual",
+) -> None:
+    """Background job: kick off a Gemini Deep Research interaction for one
+    competitor and poll it to completion. Creates + closes a Run row so the
+    run shows up in /runs like any other pipeline.
+
+    `report_id` is the pre-created DeepResearchReport row the route layer
+    inserted in 'queued' state — this wrapper fills in interaction_id,
+    drives status transitions, and writes the final body + sources.
+    """
+    from .adapters import gemini_research as _gem
+    from .models import Competitor as _Competitor
+
+    run, db = _start_run("deep_research", triggered_by)
+    token = current_run_id.set(run.id)
+    deadline = datetime.utcnow() + timedelta(seconds=DEEP_RESEARCH_TIMEOUT_S)
+    try:
+        # Read config.json directly — don't `from service import load_config`.
+        # service.py aborts the process on missing ANTHROPIC_API_KEY at import
+        # time, which would kill this worker thread. Deep research only needs
+        # the company / industry / watch_topics strings, so a plain JSON read
+        # is sufficient.
+        import json as _json
+        cfg_path = os.environ.get("CONFIG_PATH", "config.json")
+        try:
+            with open(cfg_path) as _f:
+                config = _json.load(_f)
+        except Exception:
+            config = {}
+
+        competitor = db.get(_Competitor, competitor_id)
+        report = db.get(DeepResearchReport, report_id)
+        if competitor is None or report is None:
+            raise ValueError(
+                f"deep-research job could not locate competitor={competitor_id} "
+                f"report={report_id}"
+            )
+
+        report.run_id = run.id
+        # If the route layer already built the brief, keep it — otherwise
+        # build one now from the current skill + config.
+        if not report.brief:
+            report.brief = _build_research_brief(competitor, config)
+        db.commit()
+
+        _log(db, run, f"deep research for {competitor.name} (agent={agent})")
+
+        try:
+            iid = _gem.start_research(report.brief, agent=agent)
+        except _gem.GeminiUnavailable as e:
+            report.status = "failed"
+            report.error = str(e)
+            report.finished_at = datetime.utcnow()
+            db.commit()
+            _log(db, run, f"research failed: {e}", "error")
+            _finish_run(db, run, "error", str(e))
+            return
+
+        report.interaction_id = iid
+        report.status = "running"
+        db.commit()
+        _log(db, run, f"interaction started: {iid}")
+
+        final = _poll_research_to_terminal(db, report, run, deadline)
+        _finish_run(db, run, "ok" if final == "ready" else "error",
+                    error=report.error if final != "ready" else None)
+    except Exception as e:
+        tb = traceback.format_exc()
+        _log(db, run, f"ERROR: {e}\n{tb}", "error")
+        # Try to surface the error on the report row too, if it exists.
+        try:
+            r = db.get(DeepResearchReport, report_id)
+            if r and r.status not in ("ready", "failed"):
+                r.status = "failed"
+                r.error = f"{type(e).__name__}: {e}"
+                r.finished_at = datetime.utcnow()
+                db.commit()
+        except Exception:
+            pass
+        _finish_run(db, run, "error", str(e))
+    finally:
+        current_run_id.reset(token)
+
+
+def resume_in_flight_research() -> int:
+    """Startup sweep: any DeepResearchReport left in queued/running at boot
+    needs to be resumed. For rows with an interaction_id, poll Gemini once
+    — if it's done, persist the result; if Gemini has lost it, mark failed;
+    else kick a new background poller. Rows without an interaction_id
+    didn't make it past start_research and are marked failed.
+
+    Returns the count of rows touched. Logs quietly; never raises."""
+    from .adapters import gemini_research as _gem
+    import threading as _threading
+
+    db = SessionLocal()
+    touched = 0
+    try:
+        rows = (
+            db.query(DeepResearchReport)
+            .filter(DeepResearchReport.status.in_(["queued", "running"]))
+            .all()
+        )
+        for r in rows:
+            touched += 1
+            if not r.interaction_id:
+                r.status = "failed"
+                r.error = "interrupted before Gemini returned an interaction id"
+                r.finished_at = datetime.utcnow()
+                db.commit()
+                continue
+            try:
+                result = _gem.poll_research(r.interaction_id)
+            except _gem.GeminiUnavailable as e:
+                r.status = "failed"
+                r.error = str(e)
+                r.finished_at = datetime.utcnow()
+                db.commit()
+                continue
+            if result["status"] in ("ready", "failed"):
+                _persist_research_terminal(db, r, result)
+                continue
+            # Still running on Gemini's side — resume polling in a daemon
+            # thread so boot doesn't block. No new Run is opened; the
+            # original Run (if any) is already closed as 'error' by
+            # _reap_orphan_runs on restart, and resuming it is more
+            # confusing than just letting the report update standalone.
+            r.status = "running"
+            db.commit()
+            rid = r.id
+            _threading.Thread(
+                target=_resume_research_poller,
+                args=(rid,),
+                name=f"research-resume-{rid}",
+                daemon=True,
+            ).start()
+    except Exception as e:
+        print(f"  [research-resume] sweep failed: {e}", flush=True)
+    finally:
+        db.close()
+    return touched
+
+
+def _resume_research_poller(report_id: int) -> None:
+    """Thread target for resuming a research poll after a server restart.
+    No Run row (see resume_in_flight_research rationale); just drive the
+    DeepResearchReport row to terminal state."""
+    db = SessionLocal()
+    try:
+        r = db.get(DeepResearchReport, report_id)
+        if r is None or r.status not in ("queued", "running"):
+            return
+        deadline = datetime.utcnow() + timedelta(seconds=DEEP_RESEARCH_TIMEOUT_S)
+        _poll_research_to_terminal(db, r, None, deadline)
+    except Exception as e:
+        print(f"  [research-resume] poller {report_id} failed: {e}", flush=True)
     finally:
         db.close()
 

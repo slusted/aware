@@ -13,7 +13,7 @@ from sqlalchemy import func
 from sqlalchemy import func as _func
 
 from .deps import get_db, get_current_user
-from .models import Run, Finding, Competitor, CompetitorReport, PositioningSnapshot, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter
+from .models import Run, Finding, Competitor, CompetitorReport, PositioningSnapshot, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter, DeepResearchReport
 from . import scheduler
 from .ranker.present import present as _present_clusters, lead_findings as _lead_findings
 from .routes.signal_events import emit_shown_events
@@ -283,6 +283,28 @@ def competitor_profile(competitor_id: int, request: Request, db: Session = Depen
     )
     positioning_err = request.query_params.get("positioning_err")
 
+    # ── Deep research (Gemini) — latest + history + any in-flight run ──
+    research_latest = (
+        db.query(DeepResearchReport)
+        .filter(DeepResearchReport.competitor_id == c.id)
+        .order_by(DeepResearchReport.started_at.desc())
+        .first()
+    )
+    research_history = (
+        db.query(DeepResearchReport)
+        .filter(DeepResearchReport.competitor_id == c.id)
+        .order_by(DeepResearchReport.started_at.desc())
+        .offset(1)
+        .limit(10)
+        .all()
+    )
+    research_in_flight = (
+        research_latest
+        if research_latest and research_latest.status in ("queued", "running")
+        else None
+    )
+    research_gemini_key_set = bool(os.environ.get("GEMINI_API_KEY", "").strip())
+
     return templates.TemplateResponse(request, "competitor_profile.html", {
         "user": user, "c": c, "latest": latest, "history": history,
         "findings": findings, "provider_breakdown": provider_breakdown,
@@ -290,6 +312,10 @@ def competitor_profile(competitor_id: int, request: Request, db: Session = Depen
         "positioning": positioning,
         "positioning_history": positioning_history,
         "positioning_err": positioning_err,
+        "research_latest": research_latest,
+        "research_history": research_history,
+        "research_in_flight": research_in_flight,
+        "research_gemini_key_set": research_gemini_key_set,
     })
 
 
@@ -629,6 +655,35 @@ def partial_live_run(request: Request, db: Session = Depends(get_db), _=Depends(
     return templates.TemplateResponse(request, "_live_run.html", {
         "run": run,
         "events": events,
+    })
+
+
+@router.get("/partials/research_status/{competitor_id}", response_class=HTMLResponse)
+def partial_research_status(
+    competitor_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """HTMX polls this while a deep-research run is in flight. Returns the
+    status card markup; when the latest row is terminal (`ready` / `failed`),
+    returns the report card so HTMX swaps in the finished view in place.
+    Stops polling when the response HTML has no hx-trigger (template decides
+    based on the status)."""
+    c = db.get(Competitor, competitor_id)
+    if not c:
+        raise HTTPException(404)
+    latest = (
+        db.query(DeepResearchReport)
+        .filter(DeepResearchReport.competitor_id == competitor_id)
+        .order_by(DeepResearchReport.started_at.desc())
+        .first()
+    )
+    return templates.TemplateResponse(request, "_research_status.html", {
+        "c": c,
+        "r": latest,
+        "poll": latest is not None and latest.status in ("queued", "running"),
+        "gemini_key_set": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
     })
 
 
