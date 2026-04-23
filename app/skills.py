@@ -49,6 +49,10 @@ KNOWN_SKILLS: dict[str, tuple[str, str]] = {
         "positioning_narrative.md",
         "Narrative synthesis of current positioning and diff vs. the prior snapshot. Call 2 of the positioning pipeline.",
     ),
+    "deep_research_brief": (
+        "deep_research_brief.md",
+        "Brief sent to Gemini Deep Research for an investor-grade per-competitor dossier. Placeholders: {{competitor_name}}, {{category}}, {{our_company}}, {{our_industry}}, {{threat_angle}}, {{watch_topics}}.",
+    ),
 }
 
 

@@ -236,6 +236,60 @@ class PositioningSnapshot(Base):
     )
 
 
+class DeepResearchReport(Base):
+    """One Gemini Deep Research run for a competitor. Append-only:
+    latest per competitor_id is the 'current' view, older rows are
+    history surfaced as a collapsible list on the Research tab.
+
+    Created in 'queued' state when the user clicks Run. The job flips
+    to 'running' once Gemini confirms the interaction is active,
+    'ready' when the final report is written, or 'failed' with the
+    error message captured in `error`.
+    """
+    __tablename__ = "deep_research_reports"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    competitor_id: Mapped[int] = mapped_column(ForeignKey("competitors.id"), index=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("runs.id"), nullable=True, index=True)
+
+    # Gemini-side identifier so we can resume polling after a server
+    # restart. NULL until the adapter has created the interaction.
+    interaction_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+
+    # "preview" | "max" — frozen at creation, drives which model we pick.
+    agent: Mapped[str] = mapped_column(String(32), default="preview")
+
+    # "queued" | "running" | "ready" | "failed" | "cancelled"
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+
+    # Filled-in skill template — persisted so the exact ask is auditable.
+    brief: Mapped[str] = mapped_column(Text, default="")
+
+    # Final markdown. Empty until status flips to 'ready'.
+    body_md: Mapped[str] = mapped_column(Text, default="")
+
+    # Normalized citations from the adapter. Shape:
+    #   [{"title": str, "url": str, "published_at": str | None,
+    #     "snippet": str | None}]
+    sources: Mapped[list] = mapped_column(JSON, default=list)
+
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, index=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_deep_research_competitor_started",
+            "competitor_id",
+            text("started_at DESC"),
+        ),
+    )
+
+
 class Skill(Base):
     __tablename__ = "skills"
     id: Mapped[int] = mapped_column(primary_key=True)

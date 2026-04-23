@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, get_current_user, require_role
-from ..models import Competitor, CompetitorReport, PositioningSnapshot, Run
+from ..models import Competitor, CompetitorReport, PositioningSnapshot, Run, DeepResearchReport
 from ..schemas import CompetitorOut, CompetitorIn
 from ..config_sync import sync_db_to_config
 from .. import logos as logos_cache
@@ -320,6 +320,122 @@ def refresh_positioning(
     return RedirectResponse(
         f"/competitors/{competitor_id}#positioning", status_code=303
     )
+
+
+# Minimum age (seconds) for the latest ready report before the Run button
+# skips the cooldown confirm. Matches the 24h guardrail in the spec — the
+# UI reads this to render a soft "the report is fresh" hint, but the server
+# never hard-blocks; deep research is user-triggered and the user is adult
+# enough to decide.
+DEEP_RESEARCH_COOLDOWN_S = int(os.environ.get("DEEP_RESEARCH_COOLDOWN_S", str(24 * 60 * 60)))
+
+
+@router.post("/{competitor_id}/research/run")
+def run_deep_research(
+    competitor_id: int,
+    bg: BackgroundTasks,
+    agent: str = "preview",
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin", "analyst")),
+):
+    """Kick off a Gemini Deep Research run for one competitor. Creates the
+    DeepResearchReport row in 'queued', enqueues the background job, and
+    redirects to the Research tab — the tab picks up the running state on
+    next render and HTMX-polls until terminal.
+
+    Enforces a global concurrency cap so we don't stampede Gemini or burn
+    budget by accident.
+    """
+    c = db.get(Competitor, competitor_id)
+    if not c:
+        raise HTTPException(404)
+
+    if not os.environ.get("GEMINI_API_KEY", "").strip():
+        raise HTTPException(
+            400,
+            detail="GEMINI_API_KEY is not set. Add it on /settings/keys before running research.",
+        )
+
+    from ..jobs import (
+        DEEP_RESEARCH_MAX_CONCURRENT,
+        current_research_load,
+        run_deep_research_job,
+        _build_research_brief,
+    )
+    load = current_research_load(db)
+    if load >= DEEP_RESEARCH_MAX_CONCURRENT:
+        raise HTTPException(
+            409,
+            detail=(
+                f"{load} deep-research runs already in flight "
+                f"(cap={DEEP_RESEARCH_MAX_CONCURRENT}). Wait for one to finish."
+            ),
+        )
+
+    # Pre-build the brief so the row on disk reflects exactly what will be
+    # sent to Gemini. The job still rebuilds if the brief column is empty,
+    # but persisting up front keeps the audit trail honest.
+    cfg_path = os.environ.get("CONFIG_PATH", "config.json")
+    try:
+        with open(cfg_path) as f:
+            cfg = json.load(f)
+    except Exception:
+        cfg = {}
+    brief = _build_research_brief(c, cfg)
+
+    # Normalize agent choice at the edge so the DB stores the canonical form.
+    resolved_agent = "max" if (agent or "").lower().strip() == "max" else "preview"
+
+    report = DeepResearchReport(
+        competitor_id=competitor_id,
+        agent=resolved_agent,
+        status="queued",
+        brief=brief,
+        started_at=datetime.utcnow(),
+    )
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+
+    bg.add_task(run_deep_research_job, competitor_id, report.id, resolved_agent, "manual")
+    return RedirectResponse(
+        f"/competitors/{competitor_id}#research",
+        status_code=303,
+    )
+
+
+@router.get("/{competitor_id}/research")
+def list_deep_research_reports(
+    competitor_id: int,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    c = db.get(Competitor, competitor_id)
+    if not c:
+        raise HTTPException(404)
+    rows = (
+        db.query(DeepResearchReport)
+        .filter(DeepResearchReport.competitor_id == competitor_id)
+        .order_by(DeepResearchReport.started_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "status": r.status,
+            "agent": r.agent,
+            "model": r.model,
+            "started_at": r.started_at,
+            "finished_at": r.finished_at,
+            "cost_usd": r.cost_usd,
+            "sources_count": len(r.sources or []),
+            "has_body": bool(r.body_md),
+            "error": r.error,
+        }
+        for r in rows
+    ]
 
 
 @router.get("/{competitor_id}/reports")

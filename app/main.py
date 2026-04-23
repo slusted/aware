@@ -212,6 +212,18 @@ async def lifespan(app: FastAPI):
     reaped = _reap_orphan_runs()
     if reaped:
         print(f"  [startup] reaped {reaped} orphan run(s)")
+
+    # Resume any Gemini Deep Research runs that were in flight when the
+    # previous process died. Rows with a live Gemini interaction_id get a
+    # background polling thread; rows that never got an id are marked
+    # failed. Runs on every boot — cheap when no rows match.
+    try:
+        from .jobs import resume_in_flight_research
+        resumed = resume_in_flight_research()
+        if resumed:
+            print(f"  [startup] resumed {resumed} deep-research report(s)")
+    except Exception as _e:
+        print(f"  [startup] deep-research resume failed: {_e}", flush=True)
     skills_module.sync_files_to_db()
     usage.install_hooks()
 

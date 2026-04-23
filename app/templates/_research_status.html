@@ -1,0 +1,110 @@
+{# Deep research status card. Rendered both in-page (initial load) and by
+   the HTMX poller at /partials/research_status/{id}. When the latest row
+   is terminal this partial renders the full report inline so the tab
+   swaps cleanly in place. Polling stops automatically because the
+   returned HTML only includes hx-trigger when `poll` is truthy. #}
+{% set _can_run = gemini_key_set %}
+
+<div id="research-status"
+     class="research-status {% if r %}research-status-{{ r.status }}{% else %}research-status-empty{% endif %}"
+     {% if poll %}
+     hx-get="/partials/research_status/{{ c.id }}"
+     hx-trigger="every 10s"
+     hx-swap="outerHTML"
+     {% endif %}>
+
+  {% if not r %}
+    {# Empty state — never had a run #}
+    <div class="panel">
+      <div class="panel-header"><h2>Deep research</h2></div>
+      <div class="panel-body">
+        {% if not _can_run %}
+          <p class="muted" style="margin-top:0">
+            Deep research uses Google's Gemini research agent to produce an
+            investor-grade dossier (5–15 min, dozens of cited sources).
+          </p>
+          <p class="muted" style="margin-bottom:0">
+            <a href="/settings/keys">Add a <code>GEMINI_API_KEY</code></a> to enable.
+          </p>
+        {% else %}
+          <p class="muted" style="margin-top:0">
+            No deep research on {{ c.name }} yet. Kicks off Google's Gemini
+            research agent — autonomously plans, searches, reads, and
+            returns a cited dossier. Takes 5–15 minutes.
+          </p>
+          <form method="post" action="/api/competitors/{{ c.id }}/research/run"
+                onsubmit="return confirm('Start a Deep Research run for {{ c.name }}? This takes 5–15 minutes and uses Gemini API credits.');">
+            <button type="submit" class="btn">Run Deep Research</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+
+  {% elif r.status in ("queued", "running") %}
+    {# In-flight — show elapsed time and let HTMX keep polling #}
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Deep research · {{ r.status }}</h2>
+        <span class="muted" style="font-size:11px">
+          started {{ r.started_at.strftime('%Y-%m-%d %H:%M') }}
+          · agent: {{ r.agent }}
+        </span>
+      </div>
+      <div class="panel-body">
+        <p class="muted" style="margin-top:0">
+          {% if r.status == "queued" %}
+            Queued — waiting for Gemini to start the interaction.
+          {% else %}
+            Gemini is researching. This usually takes 5–15 minutes.
+            The status updates automatically — leave the page and come back
+            anytime.
+          {% endif %}
+        </p>
+        <div class="research-spinner" aria-hidden="true"></div>
+      </div>
+    </div>
+
+  {% elif r.status == "failed" %}
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Deep research · failed</h2>
+        <span class="muted" style="font-size:11px">
+          started {{ r.started_at.strftime('%Y-%m-%d %H:%M') }}
+        </span>
+      </div>
+      <div class="panel-body">
+        <p style="color:var(--err); margin-top:0">
+          {{ r.error or 'Gemini reported a failure with no details.' }}
+        </p>
+        {% if _can_run %}
+          <form method="post" action="/api/competitors/{{ c.id }}/research/run">
+            <button type="submit" class="btn">Try again</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+
+  {% elif r.status == "cancelled" %}
+    <div class="panel">
+      <div class="panel-header"><h2>Deep research · cancelled</h2></div>
+      <div class="panel-body">
+        {% if _can_run %}
+          <form method="post" action="/api/competitors/{{ c.id }}/research/run">
+            <button type="submit" class="btn">Run again</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+
+  {% else %}
+    {# Ready — render the full report inline. The in-page version also
+       includes research_history in its container; when this partial is
+       returned by the HTMX poller we don't have the history in scope,
+       so we just render the latest report and rely on a reload to pick
+       up history. Close enough — history for a just-finished run is one
+       entry anyway. #}
+    {% with r=r, can_run=_can_run, show_run_button=True %}
+      {% include "_research_report.html" %}
+    {% endwith %}
+  {% endif %}
+</div>
