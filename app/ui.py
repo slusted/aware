@@ -687,6 +687,72 @@ def partial_research_status(
     })
 
 
+@router.get("/partials/research_run_form/{competitor_id}", response_class=HTMLResponse)
+def partial_research_run_form(
+    competitor_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Pre-run settings form for Deep Research. Returned as an HTMX fragment
+    when the operator clicks any "Run" button; swapped into #research-status
+    in place of the status card. Shows the exact brief that will be sent to
+    Gemini (editable), the agent variant, and resolved API settings.
+
+    Canceling the form re-fetches /partials/research_status/{id}, which
+    restores the original status card without a page reload.
+    """
+    import json
+    from .jobs import (
+        DEEP_RESEARCH_MAX_CONCURRENT,
+        DEEP_RESEARCH_TIMEOUT_S,
+        _DEEP_RESEARCH_POLL_S,
+        current_research_load,
+        _build_research_brief,
+    )
+    from .adapters.gemini_research import AGENT_PREVIEW, AGENT_MAX
+
+    c = db.get(Competitor, competitor_id)
+    if not c:
+        raise HTTPException(404)
+
+    cfg_path = os.environ.get("CONFIG_PATH", "config.json")
+    try:
+        with open(cfg_path) as f:
+            cfg = json.load(f)
+    except Exception:
+        cfg = {}
+    brief = _build_research_brief(c, cfg)
+
+    # Default the agent selector to whatever the latest run used, falling
+    # back to preview for a first run. Operator-friendly: re-running after
+    # a max dossier keeps max selected unless they click down.
+    latest = (
+        db.query(DeepResearchReport)
+        .filter(DeepResearchReport.competitor_id == competitor_id)
+        .order_by(DeepResearchReport.started_at.desc())
+        .first()
+    )
+    default_agent = (latest.agent if latest and latest.agent in ("preview", "max") else "preview")
+
+    api = {
+        "model_preview":   AGENT_PREVIEW,
+        "model_max":       AGENT_MAX,
+        "timeout_min":     max(1, DEEP_RESEARCH_TIMEOUT_S // 60),
+        "poll_s":          _DEEP_RESEARCH_POLL_S,
+        "concurrency_cap": DEEP_RESEARCH_MAX_CONCURRENT,
+        "in_flight":       current_research_load(db),
+        "key_set":         bool(os.environ.get("GEMINI_API_KEY", "").strip()),
+    }
+
+    return templates.TemplateResponse(request, "_research_run_form.html", {
+        "c": c,
+        "brief": brief,
+        "default_agent": default_agent,
+        "api": api,
+    })
+
+
 @router.get("/partials/run_events/{run_id}", response_class=HTMLResponse)
 def partial_run_events(
     run_id: int,

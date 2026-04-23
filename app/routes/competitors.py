@@ -1,7 +1,7 @@
 from datetime import datetime
 import json, os
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -336,7 +336,8 @@ DEEP_RESEARCH_COOLDOWN_S = int(os.environ.get("DEEP_RESEARCH_COOLDOWN_S", str(24
 def run_deep_research(
     competitor_id: int,
     bg: BackgroundTasks,
-    agent: str = "preview",
+    agent: str = Form("preview"),
+    brief: str | None = Form(None),
     db: Session = Depends(get_db),
     _=Depends(require_role("admin", "analyst")),
 ):
@@ -344,6 +345,11 @@ def run_deep_research(
     DeepResearchReport row in 'queued', enqueues the background job, and
     redirects to the Research tab — the tab picks up the running state on
     next render and HTMX-polls until terminal.
+
+    Accepts `agent` and `brief` as form fields (submitted from the pre-run
+    settings form at /partials/research_run_form/{id}). When `brief` is
+    missing or blank, we rebuild it from the deep_research_brief skill so
+    the legacy one-click path (no preview form) still works.
 
     Enforces a global concurrency cap so we don't stampede Gemini or burn
     budget by accident.
@@ -374,16 +380,22 @@ def run_deep_research(
             ),
         )
 
-    # Pre-build the brief so the row on disk reflects exactly what will be
-    # sent to Gemini. The job still rebuilds if the brief column is empty,
-    # but persisting up front keeps the audit trail honest.
-    cfg_path = os.environ.get("CONFIG_PATH", "config.json")
-    try:
-        with open(cfg_path) as f:
-            cfg = json.load(f)
-    except Exception:
-        cfg = {}
-    brief = _build_research_brief(c, cfg)
+    # Prefer the operator-edited brief from the preview form; fall back to
+    # the template if the caller skipped the form (legacy curl, retries
+    # from the old confirm-dialog path, etc.). Strip whitespace so a
+    # textarea full of spaces doesn't silently short-circuit to an empty
+    # research task.
+    submitted_brief = (brief or "").strip()
+    if submitted_brief:
+        resolved_brief = submitted_brief
+    else:
+        cfg_path = os.environ.get("CONFIG_PATH", "config.json")
+        try:
+            with open(cfg_path) as f:
+                cfg = json.load(f)
+        except Exception:
+            cfg = {}
+        resolved_brief = _build_research_brief(c, cfg)
 
     # Normalize agent choice at the edge so the DB stores the canonical form.
     resolved_agent = "max" if (agent or "").lower().strip() == "max" else "preview"
@@ -392,7 +404,7 @@ def run_deep_research(
         competitor_id=competitor_id,
         agent=resolved_agent,
         status="queued",
-        brief=brief,
+        brief=resolved_brief,
         started_at=datetime.utcnow(),
     )
     db.add(report)

@@ -19,11 +19,14 @@
       · {{ r.sources|length }} source{{ 's' if r.sources|length != 1 else '' }}
     </span>
     {% if show_run_button and can_run %}
-      <form method="post" action="/api/competitors/{{ r.competitor_id }}/research/run"
-            onsubmit="return confirm('Run a fresh Deep Research dossier? This takes 5–15 minutes and uses Gemini API credits.');"
-            style="margin-left:auto">
-        <button type="submit" class="btn-ghost" title="Kick off a new Deep Research run. ~5–15 min.">Run new research</button>
-      </form>
+      <button type="button" class="btn-ghost"
+              hx-get="/partials/research_run_form/{{ r.competitor_id }}"
+              hx-target="#research-status"
+              hx-swap="outerHTML"
+              style="margin-left:auto"
+              title="Review the brief and settings, then start a fresh dossier.">
+        Run new research…
+      </button>
     {% endif %}
   </div>
   <div class="panel-body">

@@ -1,0 +1,166 @@
+{# Pre-run settings form for Deep Research. Rendered when the operator
+   clicks "Run Deep Research" (or "Run new research", "Try again", etc.) —
+   fetched via HTMX and swapped into #research-status. Shows the exact
+   brief that will be sent to Gemini (editable) + the agent variant +
+   read-only API settings so the operator can verify what's going out
+   before it burns credits.
+
+   Expects in scope:
+     c            — Competitor row
+     brief        — pre-built brief string (from _build_research_brief)
+     default_agent — "preview" | "max" (usually the cheaper/faster one)
+     api          — dict of resolved settings:
+                      model_preview   : str  (agent id for preview)
+                      model_max       : str  (agent id for max)
+                      timeout_min     : int  (minutes before job gives up)
+                      poll_s          : int  (poll cadence)
+                      concurrency_cap : int
+                      in_flight       : int  (queued|running count)
+                      key_set         : bool (GEMINI_API_KEY present)
+#}
+
+<div id="research-status" class="research-run-form">
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Review &amp; confirm · {{ c.name }}</h2>
+      <span class="muted" style="font-size:11px">
+        Verify what's about to be sent to Gemini
+      </span>
+    </div>
+    <div class="panel-body">
+      <form method="post"
+            action="/api/competitors/{{ c.id }}/research/run"
+            class="research-run-settings">
+
+        {# ── Research question (the brief) ─────────────────────────
+           Editable on purpose. The default comes from the active
+           deep_research_brief skill with competitor + company context
+           substituted in; overriding here lets the operator sharpen
+           the ask for a one-off (e.g. "focus on their pricing page"). #}
+        <div class="field">
+          <label class="label" for="rr-brief">
+            Research question
+            <span class="hint">
+              Sent verbatim to Gemini as the task input. Default comes
+              from the <code>deep_research_brief</code> skill; edit for
+              a one-off focus.
+            </span>
+          </label>
+          <textarea id="rr-brief" name="brief" rows="14" class="mono"
+                    style="min-height:260px; width:100%">{{ brief }}</textarea>
+        </div>
+
+        {# ── Agent variant ───────────────────────────────────────── #}
+        <div class="field">
+          <label class="label">
+            Agent
+            <span class="hint">
+              Preview is faster and cheaper; Max runs more research
+              iterations and tends to return longer dossiers.
+            </span>
+          </label>
+          <div class="radio-row">
+            <label class="radio-card">
+              <input type="radio" name="agent" value="preview"
+                     {% if default_agent != "max" %}checked{% endif %}>
+              <div class="radio-card-body">
+                <div class="radio-card-title">Preview</div>
+                <div class="radio-card-sub muted">
+                  {{ api.model_preview }}
+                </div>
+                <div class="radio-card-meta muted">faster · lower cost</div>
+              </div>
+            </label>
+            <label class="radio-card">
+              <input type="radio" name="agent" value="max"
+                     {% if default_agent == "max" %}checked{% endif %}>
+              <div class="radio-card-body">
+                <div class="radio-card-title">Max</div>
+                <div class="radio-card-sub muted">
+                  {{ api.model_max }}
+                </div>
+                <div class="radio-card-meta muted">more iterations · higher cost</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {# ── Resolved API settings (read-only) ───────────────────
+           These come from env vars set on the server, not per-run.
+           Shown so the operator can see exactly what will govern
+           the interaction without digging through settings pages. #}
+        <div class="field">
+          <label class="label">
+            API settings
+            <span class="hint">
+              Server-wide. Change via environment variables; shown here
+              for transparency.
+            </span>
+          </label>
+          <table class="kv-table">
+            <tr>
+              <th>API key</th>
+              <td>
+                {% if api.key_set %}
+                  <span class="ok-dot"></span> <code>GEMINI_API_KEY</code> set
+                {% else %}
+                  <span class="err-dot"></span> missing —
+                  <a href="/settings/keys">add one</a>
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
+              <th>Timeout</th>
+              <td>{{ api.timeout_min }} min
+                <span class="muted" style="font-size:11px">
+                  (<code>DEEP_RESEARCH_TIMEOUT_S</code>)
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <th>Poll cadence</th>
+              <td>every {{ api.poll_s }} s
+                <span class="muted" style="font-size:11px">
+                  (<code>DEEP_RESEARCH_POLL_S</code>)
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <th>Concurrency cap</th>
+              <td>{{ api.in_flight }} / {{ api.concurrency_cap }} in flight
+                <span class="muted" style="font-size:11px">
+                  (<code>DEEP_RESEARCH_MAX_CONCURRENT</code>)
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <th>Transport</th>
+              <td>
+                <code>client.interactions.create(background=True)</code>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        {# ── Actions ────────────────────────────────────────────── #}
+        <div class="form-actions">
+          <button type="submit" class="btn"
+                  {% if not api.key_set or api.in_flight >= api.concurrency_cap %}disabled{% endif %}>
+            Confirm &amp; run
+          </button>
+          <button type="button" class="btn-ghost"
+                  hx-get="/partials/research_status/{{ c.id }}"
+                  hx-target="#research-status"
+                  hx-swap="outerHTML">
+            Cancel
+          </button>
+          {% if api.in_flight >= api.concurrency_cap %}
+            <span class="muted" style="font-size:12px; margin-left:12px">
+              Concurrency cap reached — wait for an in-flight run to finish.
+            </span>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
