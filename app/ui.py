@@ -588,7 +588,22 @@ def run_detail(run_id: int, request: Request, db: Session = Depends(get_db), use
 
 @router.get("/market", response_class=HTMLResponse)
 def market_index(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    rows = db.query(Report).order_by(Report.created_at.desc()).limit(100).all()
+    # Digest tab: show the latest Claude digest inline and collapse older
+    # ones into a disclosure (same shape as the synthesis tab). A list of
+    # 7-day-old digests nobody re-reads isn't earning its pixels.
+    latest_digest = (
+        db.query(Report)
+        .order_by(Report.created_at.desc())
+        .first()
+    )
+    digest_history = (
+        db.query(Report)
+        .order_by(Report.created_at.desc())
+        .offset(1)
+        .limit(20)
+        .all()
+    )
+
     latest_synthesis = (
         db.query(MarketSynthesisReport)
         .order_by(MarketSynthesisReport.started_at.desc())
@@ -610,7 +625,8 @@ def market_index(request: Request, db: Session = Depends(get_db), user=Depends(g
     )
     return templates.TemplateResponse(request, "market_index.html", {
         "user": user,
-        "reports": rows,
+        "digest": latest_digest,
+        "digest_history": digest_history,
         "synthesis": latest_synthesis,
         "synthesis_history": synthesis_history,
         "synthesis_poll": synthesis_poll,

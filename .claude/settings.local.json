@@ -97,7 +97,8 @@
       "Bash(curl -s -b /tmp/cookies -X POST -H \"Content-Type: application/x-www-form-urlencoded\" -H \"Accept: application/json\" --data \"\" http://127.0.0.1:8000/api/runs/market-synthesis -w \"\\\\n%{http_code}\\\\n\")",
       "Bash(curl -s -b /tmp/cookies -L -X POST --data \"agent=preview&window_days=30&brief=Custom+brief+body\" http://127.0.0.1:8000/api/runs/market-synthesis -o /dev/null -w \"%{http_code} %{url_effective}\\\\n\")",
       "Bash(git reset *)",
-      "Bash(awk 'NR>=110 && NR<=170' /tmp/market.html)"
+      "Bash(awk 'NR>=110 && NR<=170' /tmp/market.html)",
+      "Bash(gh pr *)"
     ]
   }
 }
