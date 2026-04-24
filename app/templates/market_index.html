@@ -66,7 +66,10 @@
   {% endif %}
 </section>
 
-{# ─── Market digest tab (daily Claude digest) ───────────────────── #}
+{# ─── Market digest tab (daily Claude digest) ─────────────────────
+   Shows the latest digest inline; older ones collapse into a disclosure.
+   Detail pages at /market/{id} still exist for deep links from the
+   history list and external references. #}
 <section class="tab-panel" id="tab-digest" role="tabpanel" aria-labelledby="tabbtn-digest" hidden>
   <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-top:4px; margin-bottom:14px">
     <p class="muted" style="margin:0; max-width:640px">
@@ -81,24 +84,54 @@
     </button>
   </div>
 
-  <div class="panel">
-    <table>
-      <thead><tr><th>Date</th><th>Title</th><th></th></tr></thead>
-      <tbody>
-      {% for r in reports %}
-        <tr>
-          <td class="muted">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-          <td><a href="/market/{{ r.id }}">{{ r.title }}</a></td>
-          <td style="text-align:right; font-size:12px" class="muted">
-            {% if r.run_id %}<a href="/runs/{{ r.run_id }}">run #{{ r.run_id }}</a>{% endif %}
-          </td>
-        </tr>
-      {% else %}
-        <tr><td colspan="3" class="muted">No digests yet.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  {% if digest %}
+    <div class="panel">
+      <div class="panel-header">
+        <h2>{{ digest.title }}</h2>
+        <span class="muted" style="font-size:11px">
+          {{ digest.created_at.strftime('%Y-%m-%d %H:%M') }}
+          {% if digest.run_id %} · <a href="/runs/{{ digest.run_id }}">run #{{ digest.run_id }}</a>{% endif %}
+        </span>
+      </div>
+      <div class="panel-body">
+        <div id="digest-body" class="markdown research-body"></div>
+        <script id="digest-src" type="text/plain">{{ digest.body_md }}</script>
+      </div>
+    </div>
+  {% else %}
+    <div class="panel">
+      <div class="panel-body">
+        <p class="muted" style="margin:0">
+          No digests yet. Click <strong>Regenerate digest</strong> above, or
+          wait for the next scan.
+        </p>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if digest_history %}
+    <details style="margin-top:12px">
+      <summary class="muted" style="cursor:pointer; font-size:12px">
+        Prior digests ({{ digest_history|length }})
+      </summary>
+      <div class="panel" style="margin-top:8px">
+        <table>
+          <thead><tr><th>Date</th><th>Title</th><th></th></tr></thead>
+          <tbody>
+          {% for r in digest_history %}
+            <tr>
+              <td class="muted">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td><a href="/market/{{ r.id }}">{{ r.title }}</a></td>
+              <td style="text-align:right; font-size:12px" class="muted">
+                {% if r.run_id %}<a href="/runs/{{ r.run_id }}">run #{{ r.run_id }}</a>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  {% endif %}
 </section>
 
 {# ─── Tab controller (hash-driven, matches competitor profile pattern) ─── #}
@@ -194,7 +227,7 @@
   (function () {
     var btn = document.getElementById('regen-digest-btn');
     if (!btn) return;
-    var latestId = {{ reports[0].id if reports else 0 }};
+    var latestId = {{ digest.id if digest else 0 }};
 
     btn.addEventListener('click', async function () {
       btn.disabled = true;
@@ -231,6 +264,18 @@
         btn.disabled = false; btn.textContent = label;
       }
     });
+  })();
+</script>
+
+{# Hydrate the digest body as markdown — matches market_detail.html #}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  (function renderDigestBody() {
+    var src = document.getElementById('digest-src');
+    var out = document.getElementById('digest-body');
+    if (src && out && window.marked) {
+      out.innerHTML = window.marked.parse(src.textContent);
+    }
   })();
 </script>
 {% endblock %}
