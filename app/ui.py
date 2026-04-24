@@ -13,7 +13,7 @@ from sqlalchemy import func
 from sqlalchemy import func as _func
 
 from .deps import get_db, get_current_user
-from .models import Run, Finding, Competitor, CompetitorReport, PositioningSnapshot, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter, DeepResearchReport, UserSignalEvent
+from .models import Run, Finding, Competitor, CompetitorReport, PositioningSnapshot, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter, DeepResearchReport, UserSignalEvent, CompetitorCandidate
 from . import scheduler
 from .ranker.present import present as _present_clusters, lead_findings as _lead_findings
 from .routes.signal_events import emit_shown_events
@@ -319,19 +319,81 @@ def competitor_profile(competitor_id: int, request: Request, db: Session = Depen
     })
 
 
+def _discover_page_context(db) -> dict:
+    """Shared context for Manage Watchlist's Discover panel — loaded both on
+    the main page render and by the HTMX status poller."""
+    active_run = (
+        db.query(Run)
+        .filter(Run.kind == "discover_competitors", Run.status == "running")
+        .order_by(Run.started_at.desc())
+        .first()
+    )
+    last_run = (
+        db.query(Run)
+        .filter(Run.kind == "discover_competitors")
+        .order_by(Run.started_at.desc())
+        .first()
+    )
+    suggested = (
+        db.query(CompetitorCandidate)
+        .filter(CompetitorCandidate.status == "suggested")
+        .order_by(CompetitorCandidate.created_at.desc())
+        .all()
+    )
+    dismissed = (
+        db.query(CompetitorCandidate)
+        .filter(CompetitorCandidate.status == "dismissed")
+        .order_by(CompetitorCandidate.dismissed_at.desc())
+        .limit(50)
+        .all()
+    )
+    anthropic_key_set = bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+    tavily_key_set = bool(os.environ.get("TAVILY_API_KEY", "").strip())
+    return {
+        "discover_active_run": active_run,
+        "discover_last_run": last_run,
+        "discover_suggested": suggested,
+        "discover_dismissed": dismissed,
+        "discover_anthropic_key_set": anthropic_key_set,
+        "discover_tavily_key_set": tavily_key_set,
+    }
+
+
 @router.get("/admin/competitors", response_class=HTMLResponse)
 def admin_competitors(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
     active = db.query(Competitor).filter(Competitor.active == True).order_by(Competitor.name).all()
     inactive = db.query(Competitor).filter(Competitor.active == False).order_by(Competitor.name).all()
-    return templates.TemplateResponse(request, "admin_competitors.html", {
-        "user": user, "active": active, "inactive": inactive,
-    })
+    ctx = {"user": user, "active": active, "inactive": inactive}
+    ctx.update(_discover_page_context(db))
+    return templates.TemplateResponse(request, "admin_competitors.html", ctx)
+
+
+@router.get("/partials/discover_status", response_class=HTMLResponse)
+def partial_discover_status(request: Request, db: Session = Depends(get_db),
+                            _=Depends(get_current_user)):
+    """HTMX polls this while a discovery run is active. Returns the status
+    card partial, which self-removes the poller on terminal states by
+    swapping in the full panel (no-op: the next poll just sees no active
+    run and renders the idle form)."""
+    ctx = _discover_page_context(db)
+    return templates.TemplateResponse(request, "_discover_status.html", ctx)
 
 
 @router.get("/admin/competitors/new", response_class=HTMLResponse)
-def admin_competitor_new(request: Request, user=Depends(get_current_user)):
+def admin_competitor_new(request: Request, candidate_id: int | None = None,
+                         db: Session = Depends(get_db),
+                         user=Depends(get_current_user)):
+    """New competitor form. When `candidate_id` is supplied, the form pre-
+    fills Name + Homepage from the candidate row and auto-fires the
+    autofill agent on load. A save flips the candidate to 'adopted' and
+    links it to the new Competitor.id (wired in the save handler)."""
+    candidate = None
+    if candidate_id is not None:
+        candidate = db.get(CompetitorCandidate, candidate_id)
+        if candidate is None or candidate.status == "adopted":
+            candidate = None
     return templates.TemplateResponse(request, "admin_competitor_edit.html", {
-        "user": user, "c": None,
+        "user": user, "c": None, "candidate": candidate,
     })
 
 

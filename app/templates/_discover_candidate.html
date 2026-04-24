@@ -1,0 +1,78 @@
+{# Render one suggested CompetitorCandidate row. Caller passes `cand`. #}
+<div class="candidate-card" data-cand-id="{{ cand.id }}"
+     style="padding:12px 14px; background:white;
+            border:1px solid rgba(0,0,0,0.08); border-radius:4px">
+  <div style="display:flex; justify-content:space-between; gap:10px; align-items:baseline">
+    <div style="min-width:0; flex:1">
+      <div style="font-size:15px">
+        <strong>{{ cand.name }}</strong>
+        {% if cand.homepage_domain %}
+          <a href="https://{{ cand.homepage_domain }}" target="_blank" rel="noopener"
+             class="hint" style="margin-left:6px; font-size:13px">
+            {{ cand.homepage_domain }} ↗
+          </a>
+        {% endif %}
+        {% if cand.category %}
+          <span style="display:inline-block; margin-left:6px; padding:1px 7px;
+                       font-size:11px; border-radius:3px;
+                       background:rgba(100,120,255,0.1);
+                       color:rgba(60,80,180,1); text-transform:uppercase;
+                       letter-spacing:0.5px">{{ cand.category }}</span>
+        {% endif %}
+      </div>
+      {% if cand.one_line_why %}
+        <div style="margin-top:4px; font-size:13.5px; color:#333">
+          {{ cand.one_line_why }}
+        </div>
+      {% endif %}
+      {% if cand.evidence %}
+        <div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:4px 6px">
+          {% for ev in cand.evidence[:5] %}
+            <a href="{{ ev.url }}" target="_blank" rel="noopener"
+               title="{{ ev.title or ev.url }}"
+               style="display:inline-block; padding:1px 6px; font-size:11px;
+                      background:rgba(0,0,0,0.04); border:1px solid rgba(0,0,0,0.08);
+                      border-radius:3px; color:#444; text-decoration:none;
+                      max-width:260px; overflow:hidden; text-overflow:ellipsis;
+                      white-space:nowrap">
+              {{ ev.title or ev.url }}
+            </a>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+    <div style="display:flex; gap:6px; flex-shrink:0">
+      <a href="/admin/competitors/new?candidate_id={{ cand.id }}"
+         class="btn" style="padding:4px 12px; font-size:13px">Add</a>
+      <button type="button" class="btn btn-ghost"
+              style="padding:4px 12px; font-size:13px"
+              onclick="document.getElementById('dismiss-form-{{ cand.id }}').style.display='block';
+                       this.style.display='none';">
+        Dismiss
+      </button>
+    </div>
+  </div>
+
+  <form id="dismiss-form-{{ cand.id }}" method="post"
+        action="/api/competitors/candidates/{{ cand.id }}/dismiss"
+        style="display:none; margin-top:10px; padding-top:10px;
+               border-top:1px solid rgba(0,0,0,0.06)">
+    <label class="hint" style="font-size:12px">
+      Why? <span class="hint" style="font-weight:normal">optional — stays on the
+        dismissed list so you remember what you decided</span>
+    </label>
+    <div style="display:flex; gap:6px; margin-top:4px">
+      <input name="reason" type="text" maxlength="200" placeholder="(optional)"
+             style="flex:1; padding:4px 6px; font-size:13px">
+      <button type="submit" class="btn" style="padding:4px 12px; font-size:13px">
+        Confirm dismiss
+      </button>
+      <button type="button" class="btn btn-ghost"
+              style="padding:4px 12px; font-size:13px"
+              onclick="this.closest('form').style.display='none';
+                       this.closest('.candidate-card').querySelector('button.btn-ghost').style.display='inline-block';">
+        Cancel
+      </button>
+    </div>
+  </form>
+</div>

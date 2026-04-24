@@ -1,0 +1,130 @@
+{# Discover panel — idle form, running status, key-missing nudge, and
+   suggested-candidate list. Used by both the full page render and the
+   HTMX status poller. The outer element has id='discover-panel' and
+   hx-target=this so the poller can swap the whole panel in place. #}
+{% set key_ok = discover_anthropic_key_set and discover_tavily_key_set %}
+<section id="discover-panel" class="panel discover-panel"
+  {% if discover_active_run %}
+    hx-get="/partials/discover_status" hx-trigger="every 10s"
+    hx-target="#discover-panel" hx-swap="outerHTML"
+  {% endif %}>
+  <div class="panel-header">
+    <h2>Discover new competitors</h2>
+    <div class="hint" style="font-size:12px">
+      {% if discover_last_run %}
+        Last run {{ discover_last_run.started_at.strftime('%Y-%m-%d %H:%M') }}
+        · <a href="/runs/{{ discover_last_run.id }}">run #{{ discover_last_run.id }}</a>
+      {% else %}
+        Never run.
+      {% endif %}
+    </div>
+  </div>
+
+  {% if not key_ok %}
+    <div class="hint" style="padding:12px 14px; background:rgba(200,120,0,0.05);
+         border:1px solid rgba(200,120,0,0.2); border-radius:4px">
+      Discovery needs
+      {% if not discover_anthropic_key_set %}<code>ANTHROPIC_API_KEY</code>{% endif %}
+      {% if not discover_anthropic_key_set and not discover_tavily_key_set %} and {% endif %}
+      {% if not discover_tavily_key_set %}<code>TAVILY_API_KEY</code>{% endif %}.
+      Add {% if not discover_anthropic_key_set and not discover_tavily_key_set %}them{% else %}it{% endif %}
+      on <a href="/settings/keys">/settings/keys</a> to enable the Run button.
+    </div>
+  {% elif discover_active_run %}
+    <div class="discover-running" style="padding:14px;
+         background:rgba(100,120,255,0.04);
+         border:1px solid rgba(100,120,255,0.2); border-radius:4px">
+      <div style="display:flex; gap:10px; align-items:center">
+        <span class="spinner" aria-hidden="true"
+              style="width:14px; height:14px; border:2px solid rgba(100,120,255,0.3);
+                     border-top-color:rgba(100,120,255,0.9); border-radius:50%;
+                     display:inline-block; animation:spin 0.9s linear infinite"></span>
+        <strong>Running…</strong>
+        <span class="hint" style="font-size:13px">
+          started {{ discover_active_run.started_at.strftime('%H:%M:%S') }}
+        </span>
+      </div>
+      <div class="hint" style="margin-top:6px; font-size:13px">
+        Gemini-equivalent this isn't — the agent researches for ~30–90s
+        before returning a list of candidates. Watch
+        <a href="/runs/{{ discover_active_run.id }}">run #{{ discover_active_run.id }}</a>
+        for live events.
+      </div>
+    </div>
+  {% else %}
+    <form method="post" action="/api/competitors/discover/run"
+          style="display:flex; flex-direction:column; gap:10px; padding:4px 0">
+      <label class="label" style="margin:0">
+        Optional focus
+        <span class="hint" style="font-weight:normal">
+          Shape this run — e.g. "focus on Australian ATS players" or
+          "adjacent categories like HR analytics." Leave blank for a broad sweep.
+        </span>
+      </label>
+      <input name="hint" type="text" maxlength="300"
+             placeholder="(blank = broad sweep)"
+             style="padding:6px 8px">
+      <div style="display:flex; justify-content:flex-end">
+        <button type="submit">Run discovery</button>
+      </div>
+    </form>
+  {% endif %}
+
+  {% if discover_suggested %}
+    <div style="margin-top:18px">
+      <h3 style="margin:0 0 8px; font-size:14px">
+        {{ discover_suggested|length }} suggested
+        {{ 'candidate' if discover_suggested|length == 1 else 'candidates' }}
+      </h3>
+      <div class="candidate-list" style="display:flex; flex-direction:column; gap:10px">
+        {% for cand in discover_suggested %}
+          {% include "_discover_candidate.html" %}
+        {% endfor %}
+      </div>
+    </div>
+  {% elif not discover_active_run and key_ok and discover_last_run %}
+    <p class="hint" style="margin-top:14px">
+      Last run surfaced nothing new — everyone good was already tracked
+      or previously dismissed. Try a focus hint to shift what the agent looks at.
+    </p>
+  {% endif %}
+
+  {% if discover_dismissed %}
+    <details style="margin-top:18px">
+      <summary class="hint" style="cursor:pointer">
+        Dismissed · {{ discover_dismissed|length }}
+      </summary>
+      <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px">
+        {% for cand in discover_dismissed %}
+          <div style="display:flex; justify-content:space-between; gap:10px;
+                      padding:6px 10px; background:rgba(0,0,0,0.02);
+                      border:1px solid rgba(0,0,0,0.06); border-radius:3px">
+            <div style="min-width:0; flex:1">
+              <div style="font-size:13px">
+                <strong>{{ cand.name }}</strong>
+                {% if cand.homepage_domain %}
+                  · <span class="hint">{{ cand.homepage_domain }}</span>
+                {% endif %}
+              </div>
+              {% if cand.dismissed_reason %}
+                <div class="hint" style="font-size:12px; margin-top:2px">
+                  {{ cand.dismissed_reason }}
+                </div>
+              {% endif %}
+            </div>
+            <form method="post"
+                  action="/api/competitors/candidates/{{ cand.id }}/undismiss"
+                  style="margin:0; align-self:center">
+              <button type="submit" class="btn btn-ghost"
+                      style="padding:2px 8px; font-size:12px">undo</button>
+            </form>
+          </div>
+        {% endfor %}
+      </div>
+    </details>
+  {% endif %}
+</section>
+
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
