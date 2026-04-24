@@ -40,6 +40,13 @@
           <button id="synthesis-run-btn" type="button" class="btn">
             Run synthesis
           </button>
+          <button type="button" class="btn-ghost"
+                  hx-get="/partials/synthesis_run_form"
+                  hx-target="#synthesis-status"
+                  hx-swap="outerHTML"
+                  style="margin-left:6px">
+            Customize…
+          </button>
         {% endif %}
       </div>
     </div>
@@ -89,6 +96,13 @@
         </p>
         {% if _can_run %}
           <button id="synthesis-run-btn" type="button" class="btn">Try again</button>
+          <button type="button" class="btn-ghost"
+                  hx-get="/partials/synthesis_run_form"
+                  hx-target="#synthesis-status"
+                  hx-swap="outerHTML"
+                  style="margin-left:6px">
+            Customize…
+          </button>
         {% endif %}
       </div>
     </div>
@@ -99,6 +113,13 @@
       <div class="panel-body">
         {% if _can_run %}
           <button id="synthesis-run-btn" type="button" class="btn">Run again</button>
+          <button type="button" class="btn-ghost"
+                  hx-get="/partials/synthesis_run_form"
+                  hx-target="#synthesis-status"
+                  hx-swap="outerHTML"
+                  style="margin-left:6px">
+            Customize…
+          </button>
         {% endif %}
       </div>
     </div>
@@ -123,7 +144,14 @@
         </span>
         {% if _can_run %}
           <button id="synthesis-run-btn" type="button" class="btn-ghost"
-                  style="margin-left:auto">Run new synthesis…</button>
+                  style="margin-left:auto">Run new synthesis</button>
+          <button type="button" class="btn-ghost"
+                  hx-get="/partials/synthesis_run_form"
+                  hx-target="#synthesis-status"
+                  hx-swap="outerHTML"
+                  style="margin-left:6px">
+            Customize…
+          </button>
         {% endif %}
       </div>
       <div class="panel-body">

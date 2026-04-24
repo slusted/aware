@@ -1,87 +1,158 @@
 {% extends "base.html" %}
-{% block title %}Market{% endblock %}
-
-{% block page_actions %}
-  {% if gemini_key_set %}
-    <button id="synthesis-run-btn-header" type="button" class="btn"
-            title="Run a cross-competitor Gemini Deep Synthesis (5–20 min, ~$3–10).">
-      Run synthesis
-    </button>
-  {% endif %}
-  <button id="regen-digest-btn" type="button" class="btn btn-ghost"
-          title="LLM only — re-synthesize the daily market digest over existing findings + reviews">Regenerate digest</button>
-{% endblock %}
+{% block title %}Market brief{% endblock %}
 
 {% block content %}
-<p class="muted" style="margin-top:0; max-width:720px">
-  Market digests synthesize every scan across all competitors. Each one combines the per-competitor strategy reviews, the company brief, and customer context into a single read of the market. Deep syntheses (below) go further: Gemini pulls primary sources beyond our scan to stitch a weekly cross-competitor view.
-</p>
+<nav class="tabs" role="tablist" aria-label="Market brief views">
+  <button role="tab" class="tab active" data-tab="synthesis" id="tabbtn-synthesis"
+          aria-selected="true" aria-controls="tab-synthesis">Market synthesis</button>
+  <button role="tab" class="tab" data-tab="digest" id="tabbtn-digest"
+          aria-selected="false" aria-controls="tab-digest">Market digest</button>
+</nav>
 
-{# ─── Deep synthesis panel (spec 05) ─────────────────────────────
-   Lives above the daily digest table. Status partial drives every
-   state (empty / queued / running / ready / failed / cancelled)
-   via a single template path, so the initial render and the HTMX
-   poll swap identical markup. #}
-{% with s=synthesis, poll=synthesis_poll, gemini_key_set=gemini_key_set %}
-  {% include "_synthesis_status.html" %}
-{% endwith %}
+{# ─── Market synthesis tab (Gemini Deep Research, spec 05) ──────── #}
+<section class="tab-panel" id="tab-synthesis" role="tabpanel" aria-labelledby="tabbtn-synthesis">
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-top:4px; margin-bottom:14px">
+    <p class="muted" style="margin:0; max-width:640px">
+      A weekly cross-competitor read built by Gemini Deep Research — stitches
+      30 days of findings, per-competitor strategy reviews, and deep-research
+      dossiers into one investor-grade synthesis grounded in primary sources
+      beyond our scan.
+    </p>
+    {% if gemini_key_set %}
+      <div style="flex-shrink:0; display:flex; gap:6px">
+        <button id="synthesis-run-btn-header" type="button" class="btn"
+                title="Run with the default brief (5–20 min, ~$3–10).">
+          Run synthesis
+        </button>
+        <button type="button" class="btn btn-ghost"
+                hx-get="/partials/synthesis_run_form"
+                hx-target="#synthesis-status"
+                hx-swap="outerHTML"
+                title="Review the brief, switch agent, or widen the findings window before the run starts.">
+          Customize…
+        </button>
+      </div>
+    {% endif %}
+  </div>
 
-{% if synthesis_history %}
-  <details style="margin-top:12px; margin-bottom:18px">
-    <summary class="muted" style="cursor:pointer; font-size:12px">
-      Prior syntheses ({{ synthesis_history|length }})
-    </summary>
-    <div class="panel" style="margin-top:8px">
-      <table>
-        <thead><tr><th>Date</th><th>Agent</th><th>Sources</th><th></th></tr></thead>
-        <tbody>
-        {% for h in synthesis_history %}
-          <tr>
-            <td class="muted">{{ h.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
-            <td class="muted">{{ h.agent }}</td>
-            <td class="muted">{{ h.sources|length }}</td>
-            <td><a href="/market/synthesis/{{ h.id }}">View</a></td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </details>
-{% endif %}
+  {# Status partial drives every state (empty / queued / running / ready /
+     failed / cancelled) via a single template path, so the initial render
+     and the HTMX poll swap identical markup. #}
+  {% with s=synthesis, poll=synthesis_poll, gemini_key_set=gemini_key_set %}
+    {% include "_synthesis_status.html" %}
+  {% endwith %}
 
-<h2 style="margin-top:28px; font-size:16px">Market digests (daily)</h2>
-<div class="panel">
-  <table>
-    <thead><tr><th>Date</th><th>Title</th><th></th></tr></thead>
-    <tbody>
-    {% for r in reports %}
-      <tr>
-        <td class="muted">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-        <td><a href="/market/{{ r.id }}">{{ r.title }}</a></td>
-        <td style="text-align:right; font-size:12px" class="muted">
-          {% if r.run_id %}<a href="/runs/{{ r.run_id }}">run #{{ r.run_id }}</a>{% endif %}
-        </td>
-      </tr>
-    {% else %}
-      <tr><td colspan="3" class="muted">No digests yet.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
+  {% if synthesis_history %}
+    <details style="margin-top:12px">
+      <summary class="muted" style="cursor:pointer; font-size:12px">
+        Prior syntheses ({{ synthesis_history|length }})
+      </summary>
+      <div class="panel" style="margin-top:8px">
+        <table>
+          <thead><tr><th>Date</th><th>Agent</th><th>Sources</th><th></th></tr></thead>
+          <tbody>
+          {% for h in synthesis_history %}
+            <tr>
+              <td class="muted">{{ h.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td class="muted">{{ h.agent }}</td>
+              <td class="muted">{{ h.sources|length }}</td>
+              <td><a href="/market/synthesis/{{ h.id }}">View</a></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  {% endif %}
+</section>
+
+{# ─── Market digest tab (daily Claude digest) ───────────────────── #}
+<section class="tab-panel" id="tab-digest" role="tabpanel" aria-labelledby="tabbtn-digest" hidden>
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-top:4px; margin-bottom:14px">
+    <p class="muted" style="margin:0; max-width:640px">
+      The daily digest — one Claude call over the latest scan's findings plus
+      each competitor's current strategy review. Fast, cheap, emailed to the
+      team; grounded entirely in what our scanners surfaced.
+    </p>
+    <button id="regen-digest-btn" type="button" class="btn btn-ghost"
+            style="flex-shrink:0"
+            title="LLM only — re-synthesize the daily market digest over existing findings + reviews">
+      Regenerate digest
+    </button>
+  </div>
+
+  <div class="panel">
+    <table>
+      <thead><tr><th>Date</th><th>Title</th><th></th></tr></thead>
+      <tbody>
+      {% for r in reports %}
+        <tr>
+          <td class="muted">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td><a href="/market/{{ r.id }}">{{ r.title }}</a></td>
+          <td style="text-align:right; font-size:12px" class="muted">
+            {% if r.run_id %}<a href="/runs/{{ r.run_id }}">run #{{ r.run_id }}</a>{% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3" class="muted">No digests yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{# ─── Tab controller (hash-driven, matches competitor profile pattern) ─── #}
+<script>
+  (function initMarketTabs() {
+    var TABS = ['synthesis', 'digest'];
+    var buttons = document.querySelectorAll('.tabs .tab');
+    var panels  = document.querySelectorAll('.tab-panel');
+
+    function show(name) {
+      if (TABS.indexOf(name) === -1) name = 'synthesis';
+      buttons.forEach(function (b) {
+        var active = b.dataset.tab === name;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        if (p.id === 'tab-' + name) p.removeAttribute('hidden');
+        else p.setAttribute('hidden', '');
+      });
+    }
+
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        var name = b.dataset.tab;
+        show(name);
+        history.replaceState(null, '', '#' + name);
+      });
+    });
+    window.addEventListener('hashchange', function () {
+      show((location.hash || '').replace('#', ''));
+    });
+    show((location.hash || '').replace('#', ''));
+  })();
+</script>
 
 <script>
-  // Shared synthesis-run launcher. Called from both the header button and
-  // any in-panel "Run" button the status partial renders. The endpoint
-  // enforces the freshness cooldown on its side; a 429 returns the operator
-  // a clear "already fresh" prompt with a force-override option.
+  // One-click synthesis launcher. Kicks off a run with server-side defaults.
+  // Operators who want to tune the brief/agent/window click "Customize…"
+  // instead, which HTMX-swaps the status card for the pre-run form.
+  // Sends form-encoded so the Form-based POST endpoint parses the body
+  // cleanly even with no fields set.
   window.runMarketSynthesis = async function runMarketSynthesis(force) {
     if (!confirm('Run a new market synthesis? Takes 5–20 minutes and costs ~$3–10.')) return;
     try {
-      var qs = force ? '?force=1' : '';
-      var r = await fetch('/api/runs/market-synthesis' + qs, {method: 'POST'});
+      var body = force ? 'force=1' : '';
+      var r = await fetch('/api/runs/market-synthesis', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json'},
+        body: body,
+      });
       if (r.status === 429 && !force) {
-        var body = await r.text();
-        if (confirm(body + '\n\nRun anyway?')) {
+        var msg = await r.text();
+        if (confirm(msg + '\n\nRun anyway?')) {
           return window.runMarketSynthesis(true);
         }
         return;
@@ -108,8 +179,8 @@
 
   (function wireSynthesisRunButtons() {
     // Both the header button and any button rendered inside the status
-    // partial use the same id scheme. Delegate from document.body so we
-    // catch elements that get swapped in later by HTMX too.
+    // partial share an id scheme. Delegate from body so HTMX-swapped
+    // buttons work too.
     document.body.addEventListener('click', function (e) {
       var t = e.target;
       if (!t) return;

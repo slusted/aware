@@ -80,7 +80,24 @@
       "Bash(curl -s -b /tmp/cookies http://127.0.0.1:8000/partials/synthesis_status -w \"\\\\n---\\\\nHTTP %{http_code}\\\\n\")",
       "Bash(curl -s -b /tmp/cookies -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:8000/market/synthesis/99999)",
       "Bash(curl -s -b /tmp/cookies -X POST -w \"%{http_code} \" http://127.0.0.1:8000/api/runs/market-synthesis)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh pr create --title 'Market Deep Synthesis — cross-competitor Gemini synthesis on /market' --body ' *)",
+      "Bash(git fetch *)",
+      "Bash(git merge *)",
+      "Bash(git mv *)",
+      "Bash(python -c \"from alembic.config import Config; from alembic.script import ScriptDirectory; cfg = Config\\('alembic.ini'\\); sd = ScriptDirectory.from_config\\(cfg\\); print\\('head:', sd.get_current_head\\(\\)\\); print\\('all revs:', [r.revision for r in sd.walk_revisions\\(\\)]\\)\")",
+      "Bash(curl -s -b /tmp/cookies http://127.0.0.1:8000/market)",
+      "Bash(python -X utf8 -c \"from app.main import app; print\\('OK app loads'\\)\")",
+      "Bash(sqlite3 data/app.db \"SELECT name FROM sqlite_master WHERE type='table' AND name IN \\('market_synthesis_reports','competitor_candidates','alembic_version'\\); SELECT * FROM alembic_version;\")",
+      "Bash(curl -s -c /tmp/cookies -b /tmp/cookies -X POST -d \"email=test@local&name=Test&password=testpass1234&password_confirm=testpass1234\" http://127.0.0.1:8000/setup -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(curl -s -b /tmp/cookies -o /tmp/market.html -w \"%{http_code}\\\\n\" http://127.0.0.1:8000/market)",
+      "Bash(curl -s -b /tmp/cookies http://127.0.0.1:8000/partials/synthesis_run_form -o /tmp/form.html -w \"%{http_code}\\\\n\")",
+      "Bash(curl -s -b /tmp/cookies -X POST -H \"Content-Type: application/x-www-form-urlencoded\" -H \"Accept: application/json\" --data \"\" http://127.0.0.1:8000/api/runs/market-synthesis -w \"\\\\n%{http_code}\\\\n\")",
+      "Bash(curl -s -b /tmp/cookies -L -X POST --data \"agent=preview&window_days=30&brief=Custom+brief+body\" http://127.0.0.1:8000/api/runs/market-synthesis -o /dev/null -w \"%{http_code} %{url_effective}\\\\n\")",
+      "Bash(git reset *)",
+      "Bash(awk 'NR>=110 && NR<=170' /tmp/market.html)"
     ]
   }
 }

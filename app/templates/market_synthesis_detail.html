@@ -2,7 +2,7 @@
 {% block title %}Market synthesis · {{ synthesis.started_at.strftime('%Y-%m-%d') }}{% endblock %}
 
 {% block page_actions %}
-  <a href="/market" class="btn-ghost">← Back to Market</a>
+  <a href="/market" class="btn-ghost">← Back to Market brief</a>
   {% if gemini_key_set and synthesis.status == "ready" %}
     <button id="synthesis-rerun-btn" type="button" class="btn-ghost"
             title="Run a fresh cross-competitor synthesis.">Run new synthesis…</button>
@@ -52,7 +52,7 @@
     {% elif synthesis.status in ("queued", "running") %}
       <p class="muted" style="margin-top:0">
         Synthesis is still running. Refresh the page to see progress, or
-        <a href="/market">head back to Market</a> for the live status card.
+        <a href="/market">head back to Market brief</a> for the live status card.
       </p>
     {% elif synthesis.body_md %}
       <div id="synthesis-body" class="markdown research-body"></div>
