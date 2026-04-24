@@ -167,3 +167,18 @@ MMR_SIM_WEIGHTS: dict[str, float] = {
 # while letting a high-materiality older item hold its place.
 STANDIN_RECENCY_BOOST: float = 0.3
 STANDIN_RECENCY_HALFLIFE_DAYS: float = 7.0
+
+# Stand-in seen-decay (docs/ranker/07-seen-decay.md). Each prior view/open
+# event for this finding subtracts PER_VIEW from the score, capped at
+# MAX_VIEWS. Events inside the trailing EXCLUDE_MINUTES window don't count
+# — that's the "current session" carve-out so within-session scrolling
+# doesn't reshuffle the list. Zero per-view disables the decay without a
+# code revert. Obsoleted by spec 03's `novelty_penalty` once the real
+# scorer lands.
+#
+# `view` fires once per card per page-load (see app/static/signals.js), so
+# N countable views ≈ N times the user has loaded the stream and seen this
+# card.
+STANDIN_SEEN_DECAY_PER_VIEW: float = 0.25
+STANDIN_SEEN_DECAY_MAX_VIEWS: int = 3
+STANDIN_SEEN_DECAY_EXCLUDE_MINUTES: int = 60

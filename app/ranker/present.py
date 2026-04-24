@@ -50,9 +50,22 @@ def effective_date(finding: Finding) -> datetime | None:
     return finding.published_at or finding.created_at
 
 
-def default_score(finding: Finding, *, now: datetime | None = None) -> float:
-    """Materiality + recency-decay stand-in. Used until spec 03's real
-    scorer is wired in. Deterministic; same input → same output."""
+def default_score(
+    finding: Finding,
+    *,
+    now: datetime | None = None,
+    seen_count: int = 0,
+) -> float:
+    """Materiality + recency − seen-decay stand-in (spec 07). Used until
+    spec 03's real scorer is wired in. Deterministic; same input → same
+    output.
+
+    `seen_count` is the number of prior view/open events the user fired
+    for this finding OUTSIDE the trailing exclusion window (default 60
+    min, see config). Views inside the window are treated as "current
+    session" and don't count — otherwise within-session scrolling would
+    reshuffle the list.
+    """
     now = now or datetime.utcnow()
     materiality = finding.materiality or 0.0
     ref = effective_date(finding) or now
@@ -60,7 +73,9 @@ def default_score(finding: Finding, *, now: datetime | None = None) -> float:
     recency = rcfg.STANDIN_RECENCY_BOOST * math.exp(
         -math.log(2.0) * age_days / rcfg.STANDIN_RECENCY_HALFLIFE_DAYS
     )
-    return materiality + recency
+    capped = min(max(seen_count, 0), rcfg.STANDIN_SEEN_DECAY_MAX_VIEWS)
+    seen_penalty = rcfg.STANDIN_SEEN_DECAY_PER_VIEW * capped
+    return materiality + recency - seen_penalty
 
 
 # ── Title normalization + Jaccard ───────────────────────────────────
@@ -273,14 +288,20 @@ def present(
     *,
     score_fn: Callable[[Finding], float] | None = None,
     now: datetime | None = None,
+    seen_count_by_id: dict[int, int] | None = None,
     mmr_window: int | None = None,
     mmr_lambda: float | None = None,
     jaccard_threshold: float | None = None,
 ) -> list[ClusterCard]:
     """Cluster near-duplicates, then diversify the top of the list.
 
-    `score_fn` defaults to `default_score` — materiality + recency. Once
-    spec 03's ranker lands, callers pass a lookup into the Scored map.
+    `score_fn` defaults to `default_score` — materiality + recency − seen-decay.
+    Once spec 03's ranker lands, callers pass a lookup into the Scored map.
+
+    `seen_count_by_id` maps finding.id → number of prior view/open events
+    outside the exclusion window (spec 07). Threaded into the default
+    scorer only; when a caller supplies its own `score_fn`, this param is
+    ignored — the custom scorer owns its math.
     """
     if not findings:
         return []
@@ -288,8 +309,10 @@ def present(
     _now = now or datetime.utcnow()
 
     if score_fn is None:
+        seen_map = seen_count_by_id or {}
+
         def _score(f: Finding, _now: datetime = _now) -> float:
-            return default_score(f, now=_now)
+            return default_score(f, now=_now, seen_count=seen_map.get(f.id, 0))
         score_fn = _score
 
     clustered = cluster(findings, score_fn=score_fn, jaccard_threshold=jaccard_threshold)
