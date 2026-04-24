@@ -2,14 +2,54 @@
 {% block title %}Market{% endblock %}
 
 {% block page_actions %}
+  {% if gemini_key_set %}
+    <button id="synthesis-run-btn-header" type="button" class="btn"
+            title="Run a cross-competitor Gemini Deep Synthesis (5–20 min, ~$3–10).">
+      Run synthesis
+    </button>
+  {% endif %}
   <button id="regen-digest-btn" type="button" class="btn btn-ghost"
-          title="LLM only — re-synthesize the market digest over existing findings + reviews">Regenerate digest</button>
+          title="LLM only — re-synthesize the daily market digest over existing findings + reviews">Regenerate digest</button>
 {% endblock %}
 
 {% block content %}
-<p class="muted" style="margin-top:0; max-width:640px">
-  Market digests synthesize every scan across all competitors. Each one combines the per-competitor strategy reviews, the company brief, and customer context into a single read of the market.
+<p class="muted" style="margin-top:0; max-width:720px">
+  Market digests synthesize every scan across all competitors. Each one combines the per-competitor strategy reviews, the company brief, and customer context into a single read of the market. Deep syntheses (below) go further: Gemini pulls primary sources beyond our scan to stitch a weekly cross-competitor view.
 </p>
+
+{# ─── Deep synthesis panel (spec 05) ─────────────────────────────
+   Lives above the daily digest table. Status partial drives every
+   state (empty / queued / running / ready / failed / cancelled)
+   via a single template path, so the initial render and the HTMX
+   poll swap identical markup. #}
+{% with s=synthesis, poll=synthesis_poll, gemini_key_set=gemini_key_set %}
+  {% include "_synthesis_status.html" %}
+{% endwith %}
+
+{% if synthesis_history %}
+  <details style="margin-top:12px; margin-bottom:18px">
+    <summary class="muted" style="cursor:pointer; font-size:12px">
+      Prior syntheses ({{ synthesis_history|length }})
+    </summary>
+    <div class="panel" style="margin-top:8px">
+      <table>
+        <thead><tr><th>Date</th><th>Agent</th><th>Sources</th><th></th></tr></thead>
+        <tbody>
+        {% for h in synthesis_history %}
+          <tr>
+            <td class="muted">{{ h.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td class="muted">{{ h.agent }}</td>
+            <td class="muted">{{ h.sources|length }}</td>
+            <td><a href="/market/synthesis/{{ h.id }}">View</a></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+{% endif %}
+
+<h2 style="margin-top:28px; font-size:16px">Market digests (daily)</h2>
 <div class="panel">
   <table>
     <thead><tr><th>Date</th><th>Title</th><th></th></tr></thead>
@@ -30,6 +70,56 @@
 </div>
 
 <script>
+  // Shared synthesis-run launcher. Called from both the header button and
+  // any in-panel "Run" button the status partial renders. The endpoint
+  // enforces the freshness cooldown on its side; a 429 returns the operator
+  // a clear "already fresh" prompt with a force-override option.
+  window.runMarketSynthesis = async function runMarketSynthesis(force) {
+    if (!confirm('Run a new market synthesis? Takes 5–20 minutes and costs ~$3–10.')) return;
+    try {
+      var qs = force ? '?force=1' : '';
+      var r = await fetch('/api/runs/market-synthesis' + qs, {method: 'POST'});
+      if (r.status === 429 && !force) {
+        var body = await r.text();
+        if (confirm(body + '\n\nRun anyway?')) {
+          return window.runMarketSynthesis(true);
+        }
+        return;
+      }
+      if (!r.ok) {
+        alert('Failed: ' + r.status + '\n' + await r.text());
+        return;
+      }
+      // Re-fetch the status partial so the poller starts without a full reload.
+      var poll = await fetch('/partials/synthesis_status');
+      if (poll.ok) {
+        var wrap = document.getElementById('synthesis-status');
+        if (wrap) {
+          wrap.outerHTML = await poll.text();
+          if (window.htmx) window.htmx.process(document.body);
+          return;
+        }
+      }
+      location.reload();
+    } catch (e) {
+      alert('Network error: ' + e);
+    }
+  };
+
+  (function wireSynthesisRunButtons() {
+    // Both the header button and any button rendered inside the status
+    // partial use the same id scheme. Delegate from document.body so we
+    // catch elements that get swapped in later by HTMX too.
+    document.body.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t) return;
+      if (t.id === 'synthesis-run-btn' || t.id === 'synthesis-run-btn-header') {
+        e.preventDefault();
+        window.runMarketSynthesis(false);
+      }
+    });
+  })();
+
   (function () {
     var btn = document.getElementById('regen-digest-btn');
     if (!btn) return;

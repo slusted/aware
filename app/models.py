@@ -300,6 +300,66 @@ class DeepResearchReport(Base):
     )
 
 
+class MarketSynthesisReport(Base):
+    """One Gemini Deep Research run spanning every active competitor.
+    Append-only: latest row is the 'current' synthesis shown on /market,
+    older rows are history in a collapsible list. Unlike
+    DeepResearchReport there is no competitor_id — one row covers the
+    whole market.
+
+    Created by the weekly cron (agent='max', triggered_by='scheduled')
+    or by the manual Run button (agent='preview', triggered_by='manual').
+    State machine mirrors DeepResearchReport so the resume-on-boot sweep
+    and adapter stay shared.
+    """
+    __tablename__ = "market_synthesis_reports"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int | None] = mapped_column(ForeignKey("runs.id"), nullable=True, index=True)
+
+    # Gemini-side identifier — keeps a row poll-resumable after a restart.
+    interaction_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+
+    # "preview" | "max". Frozen at creation; cron uses max, manual uses preview.
+    agent: Mapped[str] = mapped_column(String(32), default="preview")
+
+    # "queued" | "running" | "ready" | "failed" | "cancelled"
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+
+    # "manual" | "scheduled" — mirrors Run.triggered_by so the row is
+    # diagnosable without a Run join.
+    triggered_by: Mapped[str] = mapped_column(String(16), default="manual")
+
+    # Days of findings history that fed the brief. Stored so older syntheses
+    # remain interpretable if we change the default later.
+    window_days: Mapped[int] = mapped_column(Integer, default=30)
+
+    # Filled-in skill template sent to Gemini — exact ask is auditable.
+    brief: Mapped[str] = mapped_column(Text, default="")
+
+    # Final markdown. Empty until status flips to 'ready'.
+    body_md: Mapped[str] = mapped_column(Text, default="")
+
+    # Same shape as DeepResearchReport.sources:
+    #   [{"title": str, "url": str, "published_at": str | None,
+    #     "snippet": str | None}]
+    sources: Mapped[list] = mapped_column(JSON, default=list)
+
+    # Composer telemetry — what the synthesis was actually built from.
+    # Surfaced on the detail page so a thin read is diagnosable at a glance.
+    # Shape: {"findings_count": int, "competitors_covered": int,
+    #         "dr_reports_used": int, "brief_chars": int}
+    inputs_meta: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, index=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
 class CompetitorCandidate(Base):
     """A competitor-shaped thing surfaced by a discovery run that the user
     hasn't yet decided on. Append-only; status transitions ('suggested' →

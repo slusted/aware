@@ -10,7 +10,7 @@ import traceback
 from datetime import datetime, timedelta
 
 from .db import SessionLocal
-from .models import Run, RunEvent, Finding, Report, UserSignalEvent, DeepResearchReport, Competitor, CompetitorCandidate
+from .models import Run, RunEvent, Finding, Report, UserSignalEvent, DeepResearchReport, MarketSynthesisReport, Competitor, CompetitorCandidate
 from .usage import current_run_id
 
 
@@ -1500,6 +1500,31 @@ def _resume_research_poller(report_id: int) -> None:
         db.close()
 
 
+# ── Market synthesis (Spec 05) ──────────────────────────────────────
+# Cross-competitor Gemini Deep Research. Reuses the adapter + persist
+# helper from DR; the job wrapper, poll loop, and resume-on-boot are
+# mirrored here rather than folded into DR to keep each path auditable
+# and avoid introducing a kind-switch inside the DR helpers.
+
+MARKET_SYNTHESIS_TIMEOUT_S = int(
+    os.environ.get("MARKET_SYNTHESIS_TIMEOUT_S", str(30 * 60))
+)
+_MARKET_SYNTHESIS_POLL_S = int(
+    os.environ.get("MARKET_SYNTHESIS_POLL_S", "20")
+)
+
+
+def current_synthesis_load(db) -> int:
+    """Count in-flight MarketSynthesisReport rows. v1 enforces at-most-1
+    globally — both the route and the cron respect that lock, so this
+    returns 0 or 1."""
+    return (
+        db.query(MarketSynthesisReport)
+        .filter(MarketSynthesisReport.status.in_(["queued", "running"]))
+        .count()
+    )
+
+
 def current_discovery_load(db) -> int:
     """Count discover_competitors Runs currently in flight. Route layer
     uses this to enforce the one-at-a-time cap."""
@@ -1508,6 +1533,178 @@ def current_discovery_load(db) -> int:
         .filter(Run.kind == "discover_competitors", Run.status == "running")
         .count()
     )
+
+
+def _poll_synthesis_to_terminal(
+    db,
+    report: "MarketSynthesisReport",
+    run: Run | None,
+    deadline: datetime,
+) -> str:
+    """Poll Gemini for a synthesis row until it reaches a terminal state or
+    the deadline passes. Mirrors `_poll_research_to_terminal` but emits a
+    synthesis-flavoured material event on completion. Returns the final
+    status string."""
+    from .adapters import gemini_research as _gem
+    import time as _time
+
+    while True:
+        if datetime.utcnow() >= deadline:
+            report.status = "failed"
+            report.error = (
+                f"Timed out after {MARKET_SYNTHESIS_TIMEOUT_S}s waiting for Gemini. "
+                "The task may still complete on Gemini's side; we stopped polling."
+            )
+            report.finished_at = datetime.utcnow()
+            db.commit()
+            if run is not None:
+                _log(db, run, report.error, "warn")
+            return "failed"
+
+        try:
+            result = _gem.poll_research(report.interaction_id)
+        except _gem.GeminiUnavailable as e:
+            report.status = "failed"
+            report.error = str(e)
+            report.finished_at = datetime.utcnow()
+            db.commit()
+            if run is not None:
+                _log(db, run, f"synthesis failed: {e}", "error")
+            return "failed"
+
+        if result.get("_transient_error") and run is not None:
+            _log(db, run, f"poll transient: {result['_transient_error']}", "warn")
+
+        if result["status"] in ("ready", "failed"):
+            _persist_research_terminal(db, report, result)
+            if run is not None:
+                if result["status"] == "ready":
+                    title = (
+                        f"Market synthesis · {report.started_at:%Y-%m-%d}"
+                    )
+                    db.add(RunEvent(
+                        run_id=run.id,
+                        level="material",
+                        message=f"[synthesis] {title} ready",
+                        meta={
+                            "synthesis_id": report.id,
+                            "title": title,
+                        },
+                    ))
+                    db.commit()
+                    _log(db, run, "synthesis ready")
+                else:
+                    _log(
+                        db, run,
+                        f"synthesis failed: {report.error or 'unknown'}",
+                        "error",
+                    )
+            return result["status"]
+
+        _time.sleep(_MARKET_SYNTHESIS_POLL_S)
+
+
+def run_market_synthesis_job(
+    triggered_by: str = "manual",
+    agent: str = "preview",
+    window_days: int = 30,
+) -> None:
+    """Background job: compose a cross-competitor brief, kick off a Gemini
+    Deep Research interaction, and poll it to completion. Creates a Run
+    row so the synthesis shows up on /runs alongside scans/digests.
+
+    Uniform entry point for both the weekly cron (agent='max',
+    triggered_by='scheduled') and the manual Run button
+    (agent='preview', triggered_by='manual'). Concurrency is gated at the
+    route + scheduler layer (at-most-1 synthesis in flight), not here —
+    this wrapper assumes the caller already holds the slot.
+    """
+    from .adapters import gemini_research as _gem
+    from .market_synthesis import compose_brief
+
+    run, db = _start_run("market_synthesis", triggered_by)
+    token = current_run_id.set(run.id)
+    deadline = datetime.utcnow() + timedelta(
+        seconds=MARKET_SYNTHESIS_TIMEOUT_S
+    )
+    report: MarketSynthesisReport | None = None
+    try:
+        _log(db, run, f"composing brief (window={window_days}d, agent={agent})")
+        try:
+            brief, inputs_meta = compose_brief(db, window_days=window_days)
+        except Exception as e:
+            _log(db, run, f"brief composition failed: {e}", "error")
+            _finish_run(db, run, "error", str(e))
+            return
+
+        _log(
+            db, run,
+            f"brief: {inputs_meta['competitors_covered']} competitors, "
+            f"{inputs_meta['findings_count']} findings, "
+            f"{inputs_meta['dr_reports_used']} DR excerpts, "
+            f"{inputs_meta['brief_chars']} chars"
+            + (" (truncated)" if inputs_meta.get("truncated") else ""),
+        )
+        if inputs_meta.get("missing_context"):
+            _log(
+                db, run,
+                "missing ContextBrief scope(s): "
+                + ", ".join(inputs_meta["missing_context"]),
+                "warn",
+            )
+
+        report = MarketSynthesisReport(
+            run_id=run.id,
+            agent=agent,
+            status="queued",
+            triggered_by=triggered_by,
+            window_days=int(window_days),
+            brief=brief,
+            inputs_meta=inputs_meta,
+        )
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+
+        try:
+            iid = _gem.start_research(report.brief, agent=agent)
+        except _gem.GeminiUnavailable as e:
+            report.status = "failed"
+            report.error = str(e)
+            report.finished_at = datetime.utcnow()
+            db.commit()
+            _log(db, run, f"synthesis failed: {e}", "error")
+            _finish_run(db, run, "error", str(e))
+            return
+
+        report.interaction_id = iid
+        report.status = "running"
+        db.commit()
+        _log(db, run, f"interaction started: {iid}")
+
+        final = _poll_synthesis_to_terminal(db, report, run, deadline)
+        _finish_run(
+            db, run,
+            "ok" if final == "ready" else "error",
+            error=report.error if final != "ready" else None,
+        )
+    except Exception as e:
+        tb = traceback.format_exc()
+        _log(db, run, f"ERROR: {e}\n{tb}", "error")
+        # Best-effort: surface the error on the report row if it was created.
+        try:
+            if report is not None:
+                r = db.get(MarketSynthesisReport, report.id)
+                if r and r.status not in ("ready", "failed"):
+                    r.status = "failed"
+                    r.error = f"{type(e).__name__}: {e}"
+                    r.finished_at = datetime.utcnow()
+                    db.commit()
+        except Exception:
+            pass
+        _finish_run(db, run, "error", str(e))
+    finally:
+        current_run_id.reset(token)
 
 
 def run_discover_competitors_job(hint: str | None = None,
@@ -1601,6 +1798,75 @@ def run_discover_competitors_job(hint: str | None = None,
         _finish_run(db, run, "error", str(e))
     finally:
         current_run_id.reset(token)
+
+
+def resume_in_flight_market_synthesis() -> int:
+    """Startup sweep for synthesis rows in queued/running at boot.
+    Same semantics as `resume_in_flight_research` (Spec 04): rows with a
+    live interaction_id get re-polled; rows without one are marked failed.
+    Returns count of rows touched."""
+    from .adapters import gemini_research as _gem
+    import threading as _threading
+
+    db = SessionLocal()
+    touched = 0
+    try:
+        rows = (
+            db.query(MarketSynthesisReport)
+            .filter(MarketSynthesisReport.status.in_(["queued", "running"]))
+            .all()
+        )
+        for r in rows:
+            touched += 1
+            if not r.interaction_id:
+                r.status = "failed"
+                r.error = "interrupted before Gemini returned an interaction id"
+                r.finished_at = datetime.utcnow()
+                db.commit()
+                continue
+            try:
+                result = _gem.poll_research(r.interaction_id)
+            except _gem.GeminiUnavailable as e:
+                r.status = "failed"
+                r.error = str(e)
+                r.finished_at = datetime.utcnow()
+                db.commit()
+                continue
+            if result["status"] in ("ready", "failed"):
+                _persist_research_terminal(db, r, result)
+                continue
+            r.status = "running"
+            db.commit()
+            rid = r.id
+            _threading.Thread(
+                target=_resume_synthesis_poller,
+                args=(rid,),
+                name=f"synthesis-resume-{rid}",
+                daemon=True,
+            ).start()
+    except Exception as e:
+        print(f"  [synthesis-resume] sweep failed: {e}", flush=True)
+    finally:
+        db.close()
+    return touched
+
+
+def _resume_synthesis_poller(report_id: int) -> None:
+    """Thread target: resume polling a synthesis row after a restart.
+    No Run row (same rationale as `_resume_research_poller`)."""
+    db = SessionLocal()
+    try:
+        r = db.get(MarketSynthesisReport, report_id)
+        if r is None or r.status not in ("queued", "running"):
+            return
+        deadline = datetime.utcnow() + timedelta(
+            seconds=MARKET_SYNTHESIS_TIMEOUT_S
+        )
+        _poll_synthesis_to_terminal(db, r, None, deadline)
+    except Exception as e:
+        print(f"  [synthesis-resume] poller {report_id} failed: {e}", flush=True)
+    finally:
+        db.close()
 
 
 def run_momentum_job(country: str = "au", triggered_by: str = "schedule"):

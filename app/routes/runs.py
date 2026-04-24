@@ -1,8 +1,11 @@
+import os
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, get_current_user, require_role
-from ..models import Run, RunEvent
+from ..models import Run, RunEvent, MarketSynthesisReport
 from ..schemas import RunOut, RunEventOut
 from .. import jobs
 
@@ -69,6 +72,81 @@ def trigger_market_digest(
         )
     bg.add_task(jobs.run_market_digest_job, "manual")
     return {"queued": True, "kind": "market_digest"}
+
+
+# Manual cooldown default: 6h. Within this window, an extra Run click is
+# refused unless `force=1` is passed (which the UI supplies after the user
+# confirms the "already fresh" prompt). The cron path ignores this — it's
+# expected to fire on schedule regardless of recency.
+_MARKET_SYNTHESIS_COOLDOWN_S = int(
+    os.environ.get("MARKET_SYNTHESIS_COOLDOWN_S", str(6 * 3600))
+)
+
+
+@router.post("/market-synthesis", status_code=202)
+def trigger_market_synthesis(
+    bg: BackgroundTasks,
+    agent: str = "preview",
+    window_days: int = 30,
+    force: int = 0,
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin", "analyst")),
+):
+    """Kick off a cross-competitor market synthesis (spec 05). Runs Gemini
+    Deep Research over last-{window_days}-days findings + per-competitor
+    reviews + per-competitor DR excerpts and writes a MarketSynthesisReport.
+
+    Global singleton: 409 if another synthesis is already in flight (cron or
+    manual). `force=1` bypasses the freshness cooldown for manual reruns."""
+    if not os.environ.get("GEMINI_API_KEY", "").strip():
+        raise HTTPException(
+            400,
+            detail="GEMINI_API_KEY is not set. Add it on /settings/keys before running synthesis.",
+        )
+
+    in_flight = (
+        db.query(MarketSynthesisReport)
+        .filter(MarketSynthesisReport.status.in_(["queued", "running"]))
+        .first()
+    )
+    if in_flight:
+        raise HTTPException(
+            409,
+            detail=f"market synthesis #{in_flight.id} is already in flight — wait for it to finish",
+        )
+
+    if not force:
+        latest_ready = (
+            db.query(MarketSynthesisReport)
+            .filter(MarketSynthesisReport.status == "ready")
+            .order_by(MarketSynthesisReport.started_at.desc())
+            .first()
+        )
+        if latest_ready and latest_ready.started_at:
+            age = (datetime.utcnow() - latest_ready.started_at).total_seconds()
+            if age < _MARKET_SYNTHESIS_COOLDOWN_S:
+                raise HTTPException(
+                    429,
+                    detail=(
+                        f"Synthesis #{latest_ready.id} is only "
+                        f"{int(age // 60)} min old — pass force=1 to run anyway."
+                    ),
+                )
+
+    agent_resolved = agent if agent in ("preview", "max") else "preview"
+    window = max(1, min(int(window_days), 365))
+    bg.add_task(
+        jobs.run_market_synthesis_job,
+        "manual",
+        agent_resolved,
+        window,
+    )
+    return {
+        "queued": True,
+        "kind": "market_synthesis",
+        "agent": agent_resolved,
+        "window_days": window,
+    }
 
 
 @router.post("/{run_id}/cancel", status_code=202)

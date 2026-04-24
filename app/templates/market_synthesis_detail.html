@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Market synthesis · {{ synthesis.started_at.strftime('%Y-%m-%d') }}{% endblock %}
+
+{% block page_actions %}
+  <a href="/market" class="btn-ghost">← Back to Market</a>
+  {% if gemini_key_set and synthesis.status == "ready" %}
+    <button id="synthesis-rerun-btn" type="button" class="btn-ghost"
+            title="Run a fresh cross-competitor synthesis.">Run new synthesis…</button>
+  {% endif %}
+  {% if synthesis.run_id %}
+    <a href="/runs/{{ synthesis.run_id }}" class="btn-ghost">View run</a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+{% set _duration_s = (synthesis.finished_at - synthesis.started_at).total_seconds() if synthesis.finished_at and synthesis.started_at else 0 %}
+{% set _minutes = (_duration_s / 60)|round(1) if _duration_s else 0 %}
+
+<div class="panel">
+  <div class="panel-header">
+    <h2>Market synthesis · {{ synthesis.started_at.strftime('%Y-%m-%d %H:%M') }}</h2>
+    <span class="muted" style="font-size:11px">
+      agent: {{ synthesis.agent }}
+      {% if synthesis.model %} · {{ synthesis.model }}{% endif %}
+      {% if _minutes %} · {{ _minutes }} min{% endif %}
+      {% if synthesis.cost_usd is not none %} · ${{ '%.2f'|format(synthesis.cost_usd) }}{% endif %}
+      · {{ synthesis.triggered_by }}
+      · status: {{ synthesis.status }}
+    </span>
+  </div>
+  <div class="panel-body">
+    {% if synthesis.inputs_meta %}
+      <p class="muted" style="font-size:12px; margin:0 0 14px">
+        Built from {{ synthesis.inputs_meta.get('findings_count', 0) }} findings
+        across {{ synthesis.inputs_meta.get('competitors_covered', 0) }} competitors
+        (last {{ synthesis.window_days }} days) ·
+        {{ synthesis.inputs_meta.get('dr_reports_used', 0) }} deep-research
+        excerpt{{ 's' if synthesis.inputs_meta.get('dr_reports_used', 0) != 1 else '' }} referenced
+        {% if synthesis.inputs_meta.get('missing_context') %}
+          · <span style="color:var(--warn, var(--text-dim))">missing context: {{ synthesis.inputs_meta.missing_context|join(', ') }}</span>
+        {% endif %}
+        {% if synthesis.inputs_meta.get('truncated') %}
+          · <span style="color:var(--warn, var(--text-dim))">brief truncated to fit</span>
+        {% endif %}
+      </p>
+    {% endif %}
+
+    {% if synthesis.status == "failed" %}
+      <p style="color:var(--err); margin-top:0">
+        {{ synthesis.error or 'Gemini reported a failure with no details.' }}
+      </p>
+    {% elif synthesis.status in ("queued", "running") %}
+      <p class="muted" style="margin-top:0">
+        Synthesis is still running. Refresh the page to see progress, or
+        <a href="/market">head back to Market</a> for the live status card.
+      </p>
+    {% elif synthesis.body_md %}
+      <div id="synthesis-body" class="markdown research-body"></div>
+      <script id="synthesis-src" type="text/plain">{{ synthesis.body_md }}</script>
+    {% else %}
+      <p class="muted" style="margin:0">Report body is empty.</p>
+    {% endif %}
+
+    {% if synthesis.sources %}
+      <div class="research-sources">
+        <div class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px">
+          Sources ({{ synthesis.sources|length }})
+        </div>
+        <div class="citation-grid">
+        {% for src in synthesis.sources %}
+          <a class="citation-chip" href="{{ src.url }}" target="_blank" rel="noopener"
+             title="{{ src.snippet or src.url }}">
+            <span class="citation-title">{{ src.title or src.url }}</span>
+            {% if src.published_at %}<span class="citation-date muted">{{ src.published_at }}</span>{% endif %}
+          </a>
+        {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if history %}
+  <details class="panel" style="margin-top:16px">
+    <summary class="panel-header" style="cursor:pointer">
+      <h2>Prior syntheses ({{ history|length }})</h2>
+    </summary>
+    <div class="panel-body">
+      <table>
+        <thead><tr><th>Date</th><th>Agent</th><th>Sources</th><th>Duration</th><th></th></tr></thead>
+        <tbody>
+        {% for h in history %}
+          {% set _dur = (h.finished_at - h.started_at).total_seconds() if h.finished_at and h.started_at else 0 %}
+          <tr>
+            <td class="muted">{{ h.started_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td class="muted">{{ h.agent }}</td>
+            <td class="muted">{{ h.sources|length }}</td>
+            <td class="muted">{% if _dur %}{{ (_dur / 60)|round(1) }} min{% else %}—{% endif %}</td>
+            <td><a href="/market/synthesis/{{ h.id }}">View</a></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+  (function renderSynthesisBody() {
+    var src = document.getElementById('synthesis-src');
+    var out = document.getElementById('synthesis-body');
+    if (src && out && window.marked) {
+      out.innerHTML = window.marked.parse(src.textContent);
+    }
+  })();
+</script>
+
+<script>
+  (function wireRerun() {
+    var btn = document.getElementById('synthesis-rerun-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      if (!confirm('Run a new market synthesis? Takes 5–20 minutes and costs ~$3–10.')) return;
+      btn.disabled = true;
+      var label = btn.textContent;
+      btn.textContent = 'Queued…';
+      try {
+        var r = await fetch('/api/runs/market-synthesis?force=1', {method: 'POST'});
+        if (!r.ok) {
+          alert('Failed: ' + r.status + '\n' + await r.text());
+          btn.disabled = false; btn.textContent = label;
+          return;
+        }
+        window.location.href = '/market';
+      } catch (e) {
+        btn.disabled = false; btn.textContent = label;
+      }
+    });
+  })();
+</script>
+{% endblock %}

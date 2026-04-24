@@ -63,7 +63,24 @@
       "Bash(python -c \"import deepen; print\\('deepen OK'\\); from deepen import deepen_findings, TOOLS; print\\(f'tools: {[t[\\\\\"name\\\\\"] for t in TOOLS]}'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('service.py'\\).read\\(\\)\\); print\\('service.py syntax OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('service.py'\\).read\\(\\)\\); ast.parse\\(open\\('analyzer.py'\\).read\\(\\)\\); print\\('both OK'\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('deepen.py'\\).read\\(\\)\\); ast.parse\\(open\\('service.py'\\).read\\(\\)\\); print\\('both OK'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('deepen.py'\\).read\\(\\)\\); ast.parse\\(open\\('service.py'\\).read\\(\\)\\); print\\('both OK'\\)\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8765/)",
+      "Bash(python -c \"from app.models import MarketSynthesisReport; print\\('OK models'\\)\")",
+      "Bash(python -c \"from app import jobs; print\\('OK jobs'\\)\")",
+      "Bash(python -c \"from app import main; print\\('OK main'\\)\")",
+      "Bash(netstat -ano)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:8765/market)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:8000/market)",
+      "Bash(curl -s -L -b /tmp/cookies -c /tmp/cookies -o /dev/null -w \"%{http_code} %{url_effective}\\\\n\" http://127.0.0.1:8000/market)",
+      "Bash(curl -s http://127.0.0.1:8000/setup)",
+      "Bash(rm -f /tmp/cookies)",
+      "Bash(curl -s -c /tmp/cookies -b /tmp/cookies -X POST -d \"email=test@local&name=Test&password=testpass1234&password_confirm=testpass1234\" http://127.0.0.1:8000/setup -o /tmp/setup_out.html -w \"%{http_code} %{redirect_url}\\\\n\")",
+      "Bash(curl -s -b /tmp/cookies http://127.0.0.1:8000/market -o /tmp/market.html -w \"%{http_code}\\\\n\")",
+      "Read(//tmp/**)",
+      "Bash(curl -s -b /tmp/cookies http://127.0.0.1:8000/partials/synthesis_status -w \"\\\\n---\\\\nHTTP %{http_code}\\\\n\")",
+      "Bash(curl -s -b /tmp/cookies -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:8000/market/synthesis/99999)",
+      "Bash(curl -s -b /tmp/cookies -X POST -w \"%{http_code} \" http://127.0.0.1:8000/api/runs/market-synthesis)",
+      "Bash(git add *)"
     ]
   }
 }

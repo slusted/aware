@@ -224,6 +224,17 @@ async def lifespan(app: FastAPI):
             print(f"  [startup] resumed {resumed} deep-research report(s)")
     except Exception as _e:
         print(f"  [startup] deep-research resume failed: {_e}", flush=True)
+
+    # Same resume-on-boot semantics for cross-competitor market syntheses
+    # (spec 05). Runs independently of the deep-research sweep so a failure
+    # in one doesn't stall the other.
+    try:
+        from .jobs import resume_in_flight_market_synthesis
+        resumed = resume_in_flight_market_synthesis()
+        if resumed:
+            print(f"  [startup] resumed {resumed} market-synthesis report(s)")
+    except Exception as _e:
+        print(f"  [startup] market-synthesis resume failed: {_e}", flush=True)
     skills_module.sync_files_to_db()
     usage.install_hooks()
 

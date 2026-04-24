@@ -1,0 +1,146 @@
+{# Market synthesis status card. Rendered both in-page (initial /market load)
+   and by the HTMX poller at /partials/synthesis_status. Single template drives
+   every state so behaviour is identical on both code paths.
+
+   Expects in scope:
+     s              — latest MarketSynthesisReport row or None
+     poll           — bool: include the HTMX poll trigger?
+     gemini_key_set — bool: GEMINI_API_KEY present in env?
+#}
+{% set _can_run = gemini_key_set %}
+
+<div id="synthesis-status"
+     class="research-status {% if s %}research-status-{{ s.status }}{% else %}research-status-empty{% endif %}"
+     {% if poll %}
+     hx-get="/partials/synthesis_status"
+     hx-trigger="every 10s"
+     hx-swap="outerHTML"
+     {% endif %}>
+
+  {% if not s %}
+    {# Empty state — never had a synthesis #}
+    <div class="panel">
+      <div class="panel-header"><h2>Deep synthesis</h2></div>
+      <div class="panel-body">
+        {% if not _can_run %}
+          <p class="muted" style="margin-top:0">
+            A Deep Synthesis uses Google's Gemini research agent to stitch
+            every competitor's recent findings, strategy review, and
+            deep-research dossier into one cross-market read (5–20 minutes,
+            dozens of cited sources).
+          </p>
+          <p class="muted" style="margin-bottom:0">
+            <a href="/settings/keys">Add a <code>GEMINI_API_KEY</code></a> to enable.
+          </p>
+        {% else %}
+          <p class="muted" style="margin-top:0">
+            No market synthesis yet. Weekly synthesis runs Monday 03:00, or
+            kick one off now — takes 5–20 minutes, costs ~$3–10 per run.
+          </p>
+          <button id="synthesis-run-btn" type="button" class="btn">
+            Run synthesis
+          </button>
+        {% endif %}
+      </div>
+    </div>
+
+  {% elif s.status in ("queued", "running") %}
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Deep synthesis · {{ s.status }}</h2>
+        <span class="muted" style="font-size:11px">
+          started {{ s.started_at.strftime('%Y-%m-%d %H:%M') }}
+          · agent: {{ s.agent }}
+          · {{ s.triggered_by }}
+        </span>
+      </div>
+      <div class="panel-body">
+        <p class="muted" style="margin-top:0">
+          {% if s.status == "queued" %}
+            Queued — waiting for Gemini to start the interaction.
+          {% else %}
+            Gemini is synthesizing across the market. This usually takes
+            5–20 minutes. The status updates automatically — leave the page
+            and come back anytime.
+          {% endif %}
+        </p>
+        {% if s.inputs_meta %}
+          <p class="muted" style="font-size:12px; margin:8px 0 0">
+            Brief: {{ s.inputs_meta.get('competitors_covered', 0) }} competitors ·
+            {{ s.inputs_meta.get('findings_count', 0) }} findings ·
+            {{ s.inputs_meta.get('dr_reports_used', 0) }} DR excerpts
+          </p>
+        {% endif %}
+        <div class="research-spinner" aria-hidden="true"></div>
+      </div>
+    </div>
+
+  {% elif s.status == "failed" %}
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Deep synthesis · failed</h2>
+        <span class="muted" style="font-size:11px">
+          started {{ s.started_at.strftime('%Y-%m-%d %H:%M') }}
+        </span>
+      </div>
+      <div class="panel-body">
+        <p style="color:var(--err); margin-top:0">
+          {{ s.error or 'Gemini reported a failure with no details.' }}
+        </p>
+        {% if _can_run %}
+          <button id="synthesis-run-btn" type="button" class="btn">Try again</button>
+        {% endif %}
+      </div>
+    </div>
+
+  {% elif s.status == "cancelled" %}
+    <div class="panel">
+      <div class="panel-header"><h2>Deep synthesis · cancelled</h2></div>
+      <div class="panel-body">
+        {% if _can_run %}
+          <button id="synthesis-run-btn" type="button" class="btn">Run again</button>
+        {% endif %}
+      </div>
+    </div>
+
+  {% else %}
+    {# Ready — summary card with link to the full detail page. We don't
+       inline the full body here because /market is a list/overview
+       surface; the detail view lives at /market/synthesis/{id}. #}
+    {% set _duration_s = (s.finished_at - s.started_at).total_seconds() if s.finished_at and s.started_at else 0 %}
+    {% set _minutes = (_duration_s / 60)|round(1) if _duration_s else 0 %}
+    {% set _excerpt = (s.body_md or '') %}
+    {% if _excerpt|length > 320 %}{% set _excerpt = _excerpt[:320] ~ '…' %}{% endif %}
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Deep synthesis</h2>
+        <span class="muted" style="font-size:11px">
+          {{ s.started_at.strftime('%Y-%m-%d %H:%M') }}
+          · agent: {{ s.agent }}
+          {% if _minutes %} · {{ _minutes }} min{% endif %}
+          {% if s.cost_usd is not none %} · ${{ '%.2f'|format(s.cost_usd) }}{% endif %}
+          · {{ s.sources|length }} source{{ 's' if s.sources|length != 1 else '' }}
+        </span>
+        {% if _can_run %}
+          <button id="synthesis-run-btn" type="button" class="btn-ghost"
+                  style="margin-left:auto">Run new synthesis…</button>
+        {% endif %}
+      </div>
+      <div class="panel-body">
+        {% if s.inputs_meta %}
+          <p class="muted" style="font-size:12px; margin:0 0 10px">
+            Built from {{ s.inputs_meta.get('findings_count', 0) }} findings
+            across {{ s.inputs_meta.get('competitors_covered', 0) }} competitors ·
+            {{ s.inputs_meta.get('dr_reports_used', 0) }} deep-research
+            excerpt{{ 's' if s.inputs_meta.get('dr_reports_used', 0) != 1 else '' }} referenced
+            {% if s.inputs_meta.get('truncated') %}· <span style="color:var(--warn, var(--text-dim))">inputs truncated to fit</span>{% endif %}
+          </p>
+        {% endif %}
+        {% if _excerpt %}
+          <p style="margin:0 0 12px">{{ _excerpt }}</p>
+        {% endif %}
+        <a class="btn" href="/market/synthesis/{{ s.id }}">Read full synthesis →</a>
+      </div>
+    </div>
+  {% endif %}
+</div>
