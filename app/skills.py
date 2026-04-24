@@ -57,6 +57,10 @@ KNOWN_SKILLS: dict[str, tuple[str, str]] = {
         "market_synthesis_brief.md",
         "Brief sent to Gemini Deep Research for a cross-competitor market synthesis (weekly/on-demand). Placeholders: {{our_company}}, {{our_industry}}, {{window_days}}, {{company_brief}}, {{customer_brief}}, {{competitor_context}}, {{findings_digest}}, {{deep_research_digest}}.",
     ),
+    "discover_competitors": (
+        "discover_competitors.md",
+        "Drives the 'Discover new competitors' tool-use loop on Manage Watchlist — surfaces up to 8 candidate competitors with verified homepages and cited evidence. Placeholders: {{our_company}}, {{our_industry}}, {{existing_list}}, {{dismissed_list}}, {{hint}}.",
+    ),
 }
 
 

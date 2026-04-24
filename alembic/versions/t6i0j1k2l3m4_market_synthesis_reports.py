@@ -1,20 +1,23 @@
 """market_synthesis_reports
 
-Revision ID: s5h9i0j1k2l3
-Revises: r4g8h9i0j1k2
-Create Date: 2026-04-24 00:00:00.000000
+Revision ID: t6i0j1k2l3m4
+Revises: s5h9i0j1k2l3
+Create Date: 2026-04-25 00:00:00.000000
 
 Adds the `market_synthesis_reports` table — one row per cross-competitor
 Gemini Deep Research synthesis. Append-only; latest row is the 'current'
 synthesis on /market, older rows are history. Unlike deep_research_reports
 there's no competitor_id: one synthesis covers the whole market.
+
+Chains after `s5h9i0j1k2l3` (competitor_candidates), which landed on main
+ahead of this branch.
 """
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = 's5h9i0j1k2l3'
-down_revision = 'r4g8h9i0j1k2'
+revision = 't6i0j1k2l3m4'
+down_revision = 's5h9i0j1k2l3'
 branch_labels = None
 depends_on = None
 

@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, get_current_user, require_role
-from ..models import Competitor, CompetitorReport, PositioningSnapshot, Run, DeepResearchReport
+from ..models import Competitor, CompetitorReport, PositioningSnapshot, Run, DeepResearchReport, CompetitorCandidate
 from ..schemas import CompetitorOut, CompetitorIn
 from ..config_sync import sync_db_to_config
 from .. import logos as logos_cache
@@ -117,6 +117,7 @@ def get_competitor(competitor_id: int, db: Session = Depends(get_db), _=Depends(
 def create_competitor(
     payload: CompetitorIn,
     bg: BackgroundTasks,
+    candidate_id: int | None = None,
     db: Session = Depends(get_db),
     _=Depends(require_role("admin", "analyst")),
 ):
@@ -145,6 +146,16 @@ def create_competitor(
     db.commit()
     db.refresh(c)
     sync_db_to_config(db)
+    # Adopted-from-candidate hook: flip the candidate row to 'adopted' and
+    # wire it to the new Competitor so the Discover panel stops surfacing
+    # it. A stale or missing candidate_id is silent — the competitor still
+    # gets created.
+    if candidate_id is not None:
+        cand = db.get(CompetitorCandidate, candidate_id)
+        if cand is not None and cand.status == "suggested":
+            cand.status = "adopted"
+            cand.adopted_competitor_id = c.id
+            db.commit()
     if payload.homepage_domain:
         bg.add_task(logos_cache.fetch_and_store, payload.homepage_domain)
     return c
@@ -450,6 +461,87 @@ def list_deep_research_reports(
         }
         for r in rows
     ]
+
+
+@router.post("/discover/run")
+def run_discover_competitors(
+    bg: BackgroundTasks,
+    hint: str | None = Form(None),
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin")),
+):
+    """Kick off the 'Discover new competitors' tool-use loop. Creates a
+    Run(kind='discover_competitors') and enqueues the background job.
+    Enforces a single-in-flight cap so the operator can't stampede Anthropic
+    or Tavily by mashing the button. Redirects back to Manage Watchlist on
+    the Discover panel."""
+    if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        raise HTTPException(
+            400,
+            detail="ANTHROPIC_API_KEY is not set. Add it on /settings/keys before running discovery.",
+        )
+    if not os.environ.get("TAVILY_API_KEY", "").strip():
+        raise HTTPException(
+            400,
+            detail="TAVILY_API_KEY is not set. Add it on /settings/keys before running discovery.",
+        )
+    from ..jobs import current_discovery_load, run_discover_competitors_job
+    if current_discovery_load(db) >= 1:
+        raise HTTPException(
+            409,
+            detail="A discovery run is already in flight — wait for it to finish.",
+        )
+    clean_hint = (hint or "").strip() or None
+    bg.add_task(run_discover_competitors_job, clean_hint, "manual")
+    return RedirectResponse("/admin/competitors#discover", status_code=303)
+
+
+@router.post("/candidates/{candidate_id}/dismiss")
+def dismiss_candidate(
+    candidate_id: int,
+    reason: str | None = Form(None),
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin")),
+):
+    """Dismiss a discovered candidate. Sticky — the domain is added to the
+    exclusion list used by future discovery runs. HTMX callers get an empty
+    204; the candidate card element is swapped out by the template's
+    hx-target."""
+    cand = db.get(CompetitorCandidate, candidate_id)
+    if cand is None:
+        raise HTTPException(404)
+    if cand.status != "suggested":
+        raise HTTPException(
+            409, f"candidate is in status '{cand.status}', cannot dismiss",
+        )
+    cand.status = "dismissed"
+    cand.dismissed_at = datetime.utcnow()
+    cand.dismissed_reason = (reason or "").strip() or None
+    db.commit()
+    return RedirectResponse("/admin/competitors#discover", status_code=303)
+
+
+@router.post("/candidates/{candidate_id}/undismiss")
+def undismiss_candidate(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin")),
+):
+    """Flip a dismissed candidate back to suggested — undo button for
+    misclicks. Rejects anything that's already been adopted (that would
+    resurrect a live competitor's shadow)."""
+    cand = db.get(CompetitorCandidate, candidate_id)
+    if cand is None:
+        raise HTTPException(404)
+    if cand.status != "dismissed":
+        raise HTTPException(
+            409, f"candidate is in status '{cand.status}', cannot undismiss",
+        )
+    cand.status = "suggested"
+    cand.dismissed_at = None
+    cand.dismissed_reason = None
+    db.commit()
+    return RedirectResponse("/admin/competitors#discover", status_code=303)
 
 
 @router.get("/{competitor_id}/reports")
