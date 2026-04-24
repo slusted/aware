@@ -13,7 +13,7 @@ from sqlalchemy import func
 from sqlalchemy import func as _func
 
 from .deps import get_db, get_current_user
-from .models import Run, Finding, Competitor, CompetitorReport, PositioningSnapshot, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter, DeepResearchReport
+from .models import Run, Finding, Competitor, CompetitorReport, PositioningSnapshot, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter, DeepResearchReport, UserSignalEvent
 from . import scheduler
 from .ranker.present import present as _present_clusters, lead_findings as _lead_findings
 from .routes.signal_events import emit_shown_events
@@ -940,12 +940,39 @@ def _stream_query(db, user, filters):
 
     findings = q.limit(STREAM_SAFETY_CAP).all()
 
+    # Per-user prior-exposure counts (docs/ranker/07-seen-decay.md). One
+    # aggregate query → dict[finding_id, n_prior_views]. `view` fires once
+    # per card per page-load, so each event ≈ one prior stream-load where
+    # the user had this card on screen. The trailing-EXCLUDE_MINUTES window
+    # is the "current session" carve-out — views inside it don't count, so
+    # scrolling doesn't reshuffle what's in front of you right now.
+    from .ranker import config as _rcfg
+    seen_count_by_id: dict[int, int] = {}
+    if findings:
+        ids = [f.id for f in findings]
+        cutoff = now - timedelta(minutes=_rcfg.STANDIN_SEEN_DECAY_EXCLUDE_MINUTES)
+        rows = (
+            db.query(
+                UserSignalEvent.finding_id,
+                func.count(UserSignalEvent.id),
+            )
+            .filter(
+                UserSignalEvent.user_id == user.id,
+                UserSignalEvent.event_type.in_(("view", "open")),
+                UserSignalEvent.finding_id.in_(ids),
+                UserSignalEvent.ts < cutoff,
+            )
+            .group_by(UserSignalEvent.finding_id)
+            .all()
+        )
+        seen_count_by_id = {fid: int(n) for fid, n in rows if fid is not None}
+
     # Cluster near-duplicates and apply MMR diversity to the top slots
     # (docs/ranker/06-cluster-diversity.md). Pure post-processing — DB
     # query shape is untouched. `lead_findings()` stamps `_cluster_size`
     # on each returned Finding so the template can render the "+N more"
     # chip without restructuring.
-    cards = _present_clusters(findings, now=now)
+    cards = _present_clusters(findings, now=now, seen_count_by_id=seen_count_by_id)
     findings = _lead_findings(cards)
 
     views: dict[int, SignalView] = {}
