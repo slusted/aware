@@ -300,6 +300,60 @@ class DeepResearchReport(Base):
     )
 
 
+class CompetitorCandidate(Base):
+    """A competitor-shaped thing surfaced by a discovery run that the user
+    hasn't yet decided on. Append-only; status transitions ('suggested' →
+    'dismissed' | 'adopted') are the only mutation. Dedup identity is
+    `homepage_domain` — we exclude already-tracked competitors and
+    previously dismissed candidates by domain on every discovery run.
+    """
+    __tablename__ = "competitor_candidates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("runs.id"), nullable=True, index=True
+    )
+
+    name: Mapped[str] = mapped_column(String(255))
+    # Canonical apex domain (lower-cased, no scheme, no www). Nullable
+    # because the model may surface a name without a confirmed homepage —
+    # we still store the row but can't dedupe it.
+    homepage_domain: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
+    category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    one_line_why: Mapped[str] = mapped_column(Text, default="")
+
+    # [{"url": str, "title": str}] — links the agent cited as evidence.
+    # Capped at ~5 entries in the adapter.
+    evidence: Mapped[list] = mapped_column(JSON, default=list)
+
+    # "suggested" | "dismissed" | "adopted"
+    status: Mapped[str] = mapped_column(String(16), default="suggested", index=True)
+
+    # The user hint that shaped the run (optional).
+    run_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Set when status='adopted' and the New Competitor save succeeded.
+    adopted_competitor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("competitors.id"), nullable=True, index=True
+    )
+
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    dismissed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, index=True
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_competitor_candidates_status_created",
+            "status",
+            text("created_at DESC"),
+        ),
+    )
+
+
 class Skill(Base):
     __tablename__ = "skills"
     id: Mapped[int] = mapped_column(primary_key=True)

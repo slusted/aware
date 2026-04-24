@@ -10,7 +10,7 @@ import traceback
 from datetime import datetime, timedelta
 
 from .db import SessionLocal
-from .models import Run, RunEvent, Finding, Report, UserSignalEvent, DeepResearchReport
+from .models import Run, RunEvent, Finding, Report, UserSignalEvent, DeepResearchReport, Competitor, CompetitorCandidate
 from .usage import current_run_id
 
 
@@ -1498,6 +1498,109 @@ def _resume_research_poller(report_id: int) -> None:
         print(f"  [research-resume] poller {report_id} failed: {e}", flush=True)
     finally:
         db.close()
+
+
+def current_discovery_load(db) -> int:
+    """Count discover_competitors Runs currently in flight. Route layer
+    uses this to enforce the one-at-a-time cap."""
+    return (
+        db.query(Run)
+        .filter(Run.kind == "discover_competitors", Run.status == "running")
+        .count()
+    )
+
+
+def run_discover_competitors_job(hint: str | None = None,
+                                 triggered_by: str = "manual") -> None:
+    """Background job: run the competitor-discovery tool-use loop and
+    persist each returned candidate as a CompetitorCandidate row.
+
+    Exclusion list = active competitors ∪ previously dismissed candidates
+    (both keyed on homepage_domain). The prompt is told to skip them; we
+    also drop anything that slips through at persist time as defence in
+    depth.
+
+    Writes RunEvents for progress + a single 'material' event on completion
+    so /runs and the live log surface the outcome.
+    """
+    run, db = _start_run("discover_competitors", triggered_by)
+    token = current_run_id.set(run.id)
+    try:
+        import json as _json
+        cfg_path = os.environ.get("CONFIG_PATH", "config.json")
+        try:
+            with open(cfg_path) as _f:
+                config = _json.load(_f)
+        except Exception:
+            config = {}
+        company = config.get("company", "Seek")
+        industry = config.get("industry", "job search and recruitment platforms")
+
+        existing_rows = db.query(Competitor).filter(Competitor.active == True).all()  # noqa: E712
+        existing = [c.homepage_domain for c in existing_rows if c.homepage_domain]
+        dismissed = [
+            d[0] for d in (
+                db.query(CompetitorCandidate.homepage_domain)
+                .filter(CompetitorCandidate.status == "dismissed")
+                .filter(CompetitorCandidate.homepage_domain.isnot(None))
+                .all()
+            )
+        ]
+
+        _log(db, run, f"discovering (excluding {len(existing)} tracked · "
+                      f"{len(dismissed)} dismissed)")
+        if hint:
+            _log(db, run, f"focus: {hint[:200]}")
+
+        from .competitor_discover import discover_stream
+
+        exclude = {d for d in (existing + dismissed) if d}
+        candidates: list[dict] = []
+        with _StreamToRunEvents(run.id) as tee, contextlib.redirect_stdout(tee):
+            for event in discover_stream(
+                company, industry, existing, dismissed, hint=hint,
+            ):
+                etype = event.get("type")
+                if etype == "progress":
+                    print(f"[discover] {event.get('message', '')}")
+                elif etype == "error":
+                    raise RuntimeError(event.get("message") or "discover failed")
+                elif etype == "done":
+                    candidates = event.get("candidates") or []
+
+        kept = 0
+        for cand in candidates:
+            domain = cand.get("homepage_domain")
+            if domain and domain in exclude:
+                continue
+            db.add(CompetitorCandidate(
+                run_id=run.id,
+                name=cand["name"],
+                homepage_domain=domain,
+                category=cand.get("category"),
+                one_line_why=cand.get("one_line_why") or "",
+                evidence=cand.get("evidence") or [],
+                status="suggested",
+                run_hint=(hint or None),
+            ))
+            kept += 1
+        db.commit()
+
+        msg = f"[discover] {kept} new candidate{'s' if kept != 1 else ''}"
+        db.add(RunEvent(
+            run_id=run.id,
+            level="material",
+            message=msg,
+            meta={"kind": "discover_competitors", "count": kept, "hint": hint},
+        ))
+        db.commit()
+        _finish_run(db, run, "ok")
+    except Exception as e:
+        tb = traceback.format_exc()
+        _log(db, run, f"ERROR: {e}\n{tb}", "error")
+        _finish_run(db, run, "error", str(e))
+    finally:
+        current_run_id.reset(token)
 
 
 def run_momentum_job(country: str = "au", triggered_by: str = "schedule"):

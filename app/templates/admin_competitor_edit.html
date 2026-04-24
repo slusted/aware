@@ -6,11 +6,25 @@
 {% endblock %}
 
 {% block content %}
+{% if candidate %}
+<div class="panel" style="padding:14px 16px; max-width:720px; margin-bottom:16px;
+     border-left:3px solid var(--accent, #36d); background:rgba(54,115,221,0.04)">
+  <div style="font-size:13px; color:var(--muted, #666); margin-bottom:4px">
+    From discovery run on {{ candidate.created_at.strftime('%Y-%m-%d') }}
+    {% if candidate.homepage_domain %} · {{ candidate.homepage_domain }}{% endif %}
+  </div>
+  {% if candidate.one_line_why %}
+    <div style="font-size:14px"><em>{{ candidate.one_line_why }}</em></div>
+  {% endif %}
+</div>
+{% endif %}
+
 <form id="edit-form" class="panel" style="padding:20px; max-width:720px">
+  {% if candidate %}<input type="hidden" name="candidate_id" value="{{ candidate.id }}">{% endif %}
 
   <div class="field">
     <label class="label">Name</label>
-    <input name="name" required value="{{ c.name if c else '' }}">
+    <input name="name" required value="{{ c.name if c else (candidate.name if candidate else '') }}">
     <div style="margin-top:8px; display:flex; gap:8px; align-items:center">
       <button type="button" id="autofill-btn" class="btn btn-ghost">
         {{ 'Optimise with agent' if c else 'Auto-fill with agent' }}
@@ -73,7 +87,7 @@
            style="border-radius:4px; background:var(--bg-raised, #f3f4f6); object-fit:contain; flex-shrink:0;"
            src="{% if c and c.homepage_domain %}/logos/{{ c.homepage_domain }}.webp?v={{ c.id }}{% else %}{% endif %}">
       <input name="homepage_domain" id="homepage-domain-input"
-             value="{{ c.homepage_domain if c and c.homepage_domain else '' }}"
+             value="{{ c.homepage_domain if c and c.homepage_domain else (candidate.homepage_domain if candidate and candidate.homepage_domain else '') }}"
              placeholder="e.g. linkedin.com" style="flex:1">
     </div>
   </div>
@@ -162,6 +176,7 @@
   var form = document.getElementById('edit-form');
   var isEdit = {{ 'true' if c else 'false' }};
   var id    = {{ c.id if c else 'null' }};
+  var candidateId = {{ candidate.id if candidate else 'null' }};
   function parseLines(s){ return (s||'').split('\n').map(x=>x.trim()).filter(Boolean); }
   function parseCsv(s){ return (s||'').split(',').map(x=>x.trim()).filter(Boolean); }
 
@@ -206,6 +221,12 @@
       if (level === 'done')  row.style.color = 'var(--color-success, #2a7)';
       autofillLog.appendChild(row);
       autofillLog.scrollTop = autofillLog.scrollHeight;
+    }
+
+    // Auto-fire when the operator arrived from a discovery candidate —
+    // they already chose the name, no reason to force a second click.
+    if (candidateId != null) {
+      setTimeout(function () { autofillBtn.click(); }, 50);
     }
 
     autofillBtn.addEventListener('click', function () {
@@ -495,7 +516,9 @@
       social_score_multiplier: (function(){ var v=(data.get('social_score_multiplier')||'').trim(); return v ? parseFloat(v) : null; })(),
       positioning_pages: parseLines(data.get('positioning_pages')),
     };
-    var url = isEdit ? '/api/competitors/' + id : '/api/competitors';
+    var url = isEdit
+      ? '/api/competitors/' + id
+      : ('/api/competitors' + (candidateId != null ? '?candidate_id=' + candidateId : ''));
     var method = isEdit ? 'PUT' : 'POST';
     var resp = await fetch(url, {
       method: method,
