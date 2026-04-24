@@ -1455,7 +1455,11 @@ button.chip-btn.active {
   text-align: right;
 }
 
-/* ── Deep Research tab ───────────────────────────────────────────── */
+/* ── Deep Research tab + Market Deep Synthesis ───────────────────
+   These classes (.research-status-*, .research-spinner, .research-body,
+   .research-sources, .citation-*) are reused by the /market synthesis
+   panel (spec 05). The visual language is identical; don't rename one
+   side without updating the other. */
 .research-status-queued .panel-header h2,
 .research-status-running .panel-header h2 {
   color: var(--text);

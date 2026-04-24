@@ -13,7 +13,7 @@ from sqlalchemy import func
 from sqlalchemy import func as _func
 
 from .deps import get_db, get_current_user
-from .models import Run, Finding, Competitor, CompetitorReport, PositioningSnapshot, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter, DeepResearchReport, UserSignalEvent
+from .models import Run, Finding, Competitor, CompetitorReport, PositioningSnapshot, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter, DeepResearchReport, UserSignalEvent, MarketSynthesisReport
 from . import scheduler
 from .ranker.present import present as _present_clusters, lead_findings as _lead_findings
 from .routes.signal_events import emit_shown_events
@@ -527,8 +527,60 @@ def run_detail(run_id: int, request: Request, db: Session = Depends(get_db), use
 @router.get("/market", response_class=HTMLResponse)
 def market_index(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
     rows = db.query(Report).order_by(Report.created_at.desc()).limit(100).all()
+    latest_synthesis = (
+        db.query(MarketSynthesisReport)
+        .order_by(MarketSynthesisReport.started_at.desc())
+        .first()
+    )
+    synthesis_history = (
+        db.query(MarketSynthesisReport)
+        .filter(MarketSynthesisReport.status == "ready")
+        .order_by(MarketSynthesisReport.started_at.desc())
+        .offset(1)
+        .limit(20)
+        .all()
+    )
+    # Second argument tells the status partial whether to activate the
+    # HTMX poller — only when the latest row is still working.
+    synthesis_poll = (
+        latest_synthesis is not None
+        and latest_synthesis.status in ("queued", "running")
+    )
     return templates.TemplateResponse(request, "market_index.html", {
-        "user": user, "reports": rows,
+        "user": user,
+        "reports": rows,
+        "synthesis": latest_synthesis,
+        "synthesis_history": synthesis_history,
+        "synthesis_poll": synthesis_poll,
+        "gemini_key_set": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
+    })
+
+
+@router.get("/market/synthesis/{synthesis_id}", response_class=HTMLResponse)
+def market_synthesis_detail(
+    synthesis_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    synthesis = db.get(MarketSynthesisReport, synthesis_id)
+    if not synthesis:
+        raise HTTPException(404)
+    history = (
+        db.query(MarketSynthesisReport)
+        .filter(
+            MarketSynthesisReport.id != synthesis_id,
+            MarketSynthesisReport.status == "ready",
+        )
+        .order_by(MarketSynthesisReport.started_at.desc())
+        .limit(20)
+        .all()
+    )
+    return templates.TemplateResponse(request, "market_synthesis_detail.html", {
+        "user": user,
+        "synthesis": synthesis,
+        "history": history,
+        "gemini_key_set": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
     })
 
 
@@ -539,6 +591,29 @@ def market_detail(report_id: int, request: Request, db: Session = Depends(get_db
         raise HTTPException(404)
     return templates.TemplateResponse(request, "market_detail.html", {
         "user": user, "report": report,
+    })
+
+
+@router.get("/partials/synthesis_status", response_class=HTMLResponse)
+def partial_synthesis_status(
+    request: Request,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """HTMX polls this while a synthesis run is in flight. Returns the
+    status card markup; when the latest row is terminal (`ready`/`failed`),
+    returns the ready/failed state card and drops the poll trigger so
+    HTMX stops calling. There is always at most one synthesis in flight
+    globally, so this endpoint is a singleton — no id in the path."""
+    latest = (
+        db.query(MarketSynthesisReport)
+        .order_by(MarketSynthesisReport.started_at.desc())
+        .first()
+    )
+    return templates.TemplateResponse(request, "_synthesis_status.html", {
+        "s": latest,
+        "poll": latest is not None and latest.status in ("queued", "running"),
+        "gemini_key_set": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
     })
 
 

@@ -53,6 +53,10 @@ KNOWN_SKILLS: dict[str, tuple[str, str]] = {
         "deep_research_brief.md",
         "Brief sent to Gemini Deep Research for an investor-grade per-competitor dossier. Placeholders: {{competitor_name}}, {{category}}, {{our_company}}, {{our_industry}}, {{threat_angle}}, {{watch_topics}}.",
     ),
+    "market_synthesis_brief": (
+        "market_synthesis_brief.md",
+        "Brief sent to Gemini Deep Research for a cross-competitor market synthesis (weekly/on-demand). Placeholders: {{our_company}}, {{our_industry}}, {{window_days}}, {{company_brief}}, {{customer_brief}}, {{competitor_context}}, {{findings_digest}}, {{deep_research_digest}}.",
+    ),
 }
 
 

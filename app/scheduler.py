@@ -26,6 +26,30 @@ def _load_config_safe() -> dict:
         return {}
 
 
+def _run_market_synthesis_scheduled():
+    """Cron entrypoint for the weekly market synthesis. Skips (does not
+    queue) when a synthesis is already in flight — manual runs take
+    priority, and we never want two overlapping syntheses from the same
+    week. Uses the 'max' agent: depth matters more than latency when
+    nobody's waiting."""
+    from .db import SessionLocal
+    db = SessionLocal()
+    try:
+        load = jobs.current_synthesis_load(db)
+    finally:
+        db.close()
+    if load > 0:
+        print(
+            "  [scheduler] market_synthesis_weekly skipped — "
+            f"{load} synthesis already in flight",
+            flush=True,
+        )
+        return
+    jobs.run_market_synthesis_job(
+        triggered_by="scheduled", agent="max", window_days=30
+    )
+
+
 def start():
     global _scheduler
     if _scheduler and _scheduler.running:
@@ -105,6 +129,28 @@ def start():
             f"[scheduler] invalid POSITIONING_REFRESH_CRON={pos_cron!r}; "
             "expected 'min hour dom'. Skipping positioning job."
         )
+
+    # Weekly market synthesis (spec 05). Monday 03:00 local TZ by default —
+    # well clear of the daily scan / momentum windows and early enough that
+    # the team has a fresh read waiting when Monday morning starts.
+    # MARKET_SYNTHESIS_CRON = "min hour day_of_week" (day_of_week in
+    # APScheduler's syntax: 0-6 or 'mon'-'sun'). Empty string disables.
+    ms_cron = os.environ.get("MARKET_SYNTHESIS_CRON", "0 3 mon")
+    if ms_cron.strip():
+        try:
+            mmin, mhour, mdow = ms_cron.split()
+            sched.add_job(
+                _run_market_synthesis_scheduled,
+                CronTrigger(minute=mmin, hour=mhour, day_of_week=mdow),
+                id="market_synthesis_weekly",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
+        except ValueError:
+            print(
+                f"[scheduler] invalid MARKET_SYNTHESIS_CRON={ms_cron!r}; "
+                "expected 'min hour dow'. Skipping weekly synthesis."
+            )
 
     sched.start()
     _scheduler = sched
