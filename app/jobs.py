@@ -1608,6 +1608,7 @@ def run_market_synthesis_job(
     triggered_by: str = "manual",
     agent: str = "preview",
     window_days: int = 30,
+    brief: str | None = None,
 ) -> None:
     """Background job: compose a cross-competitor brief, kick off a Gemini
     Deep Research interaction, and poll it to completion. Creates a Run
@@ -1618,6 +1619,13 @@ def run_market_synthesis_job(
     (agent='preview', triggered_by='manual'). Concurrency is gated at the
     route + scheduler layer (at-most-1 synthesis in flight), not here —
     this wrapper assumes the caller already holds the slot.
+
+    When `brief` is provided (operator edited it in the pre-run form),
+    that text is sent to Gemini verbatim. We still call compose_brief()
+    to capture telemetry (competitors_covered, findings_count, etc.) so
+    the detail page's inputs-line renders; any divergence between the
+    composed default and the submitted text is flagged with
+    `inputs_meta['edited'] = True`.
     """
     from .adapters import gemini_research as _gem
     from .market_synthesis import compose_brief
@@ -1631,11 +1639,24 @@ def run_market_synthesis_job(
     try:
         _log(db, run, f"composing brief (window={window_days}d, agent={agent})")
         try:
-            brief, inputs_meta = compose_brief(db, window_days=window_days)
+            default_brief, inputs_meta = compose_brief(db, window_days=window_days)
         except Exception as e:
             _log(db, run, f"brief composition failed: {e}", "error")
             _finish_run(db, run, "error", str(e))
             return
+
+        # Operator-edited brief wins; otherwise use the freshly composed
+        # default. Whitespace-only edits fall back to the default so an
+        # accidentally cleared textarea doesn't silently send an empty
+        # brief to Gemini.
+        submitted = (brief or "").strip()
+        if submitted:
+            final_brief = submitted
+            inputs_meta = dict(inputs_meta)
+            inputs_meta["edited"] = True
+            inputs_meta["brief_chars"] = len(final_brief)
+        else:
+            final_brief = default_brief
 
         _log(
             db, run,
@@ -1643,6 +1664,7 @@ def run_market_synthesis_job(
             f"{inputs_meta['findings_count']} findings, "
             f"{inputs_meta['dr_reports_used']} DR excerpts, "
             f"{inputs_meta['brief_chars']} chars"
+            + (" (edited)" if inputs_meta.get("edited") else "")
             + (" (truncated)" if inputs_meta.get("truncated") else ""),
         )
         if inputs_meta.get("missing_context"):
@@ -1659,7 +1681,7 @@ def run_market_synthesis_job(
             status="queued",
             triggered_by=triggered_by,
             window_days=int(window_days),
-            brief=brief,
+            brief=final_brief,
             inputs_meta=inputs_meta,
         )
         db.add(report)

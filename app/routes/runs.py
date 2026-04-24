@@ -1,7 +1,8 @@
 import os
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Form, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, get_current_user, require_role
@@ -85,10 +86,12 @@ _MARKET_SYNTHESIS_COOLDOWN_S = int(
 
 @router.post("/market-synthesis", status_code=202)
 def trigger_market_synthesis(
+    request: Request,
     bg: BackgroundTasks,
-    agent: str = "preview",
-    window_days: int = 30,
-    force: int = 0,
+    agent: str = Form("preview"),
+    brief: str | None = Form(None),
+    window_days: int = Form(30),
+    force: int = Form(0),
     db: Session = Depends(get_db),
     _=Depends(require_role("admin", "analyst")),
 ):
@@ -96,8 +99,16 @@ def trigger_market_synthesis(
     Deep Research over last-{window_days}-days findings + per-competitor
     reviews + per-competitor DR excerpts and writes a MarketSynthesisReport.
 
+    Accepts the operator-edited `brief` from /partials/synthesis_run_form;
+    when it's missing or blank, the job composes the default brief
+    itself (legacy one-click path / curl).
+
     Global singleton: 409 if another synthesis is already in flight (cron or
-    manual). `force=1` bypasses the freshness cooldown for manual reruns."""
+    manual). `force=1` bypasses the 6h freshness cooldown for reruns.
+
+    Response shape depends on the caller: browser form posts get a 303 back
+    to /market so the page reloads into the "queued" status card; JSON
+    clients get a 202 with the queued metadata."""
     if not os.environ.get("GEMINI_API_KEY", "").strip():
         raise HTTPException(
             400,
@@ -135,17 +146,29 @@ def trigger_market_synthesis(
 
     agent_resolved = agent if agent in ("preview", "max") else "preview"
     window = max(1, min(int(window_days), 365))
+    submitted_brief = (brief or "").strip() or None
+
     bg.add_task(
         jobs.run_market_synthesis_job,
         "manual",
         agent_resolved,
         window,
+        submitted_brief,
     )
+
+    # Browser form submits want a redirect; fetch/XHR callers want JSON.
+    # Distinguish by content-type — form posts arrive as
+    # application/x-www-form-urlencoded or multipart/form-data.
+    ctype = request.headers.get("content-type", "")
+    if ctype.startswith("application/x-www-form-urlencoded") or ctype.startswith("multipart/form-data"):
+        return RedirectResponse("/market", status_code=303)
+
     return {
         "queued": True,
         "kind": "market_synthesis",
         "agent": agent_resolved,
         "window_days": window,
+        "brief_was_edited": submitted_brief is not None,
     }
 
 

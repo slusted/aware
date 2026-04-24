@@ -1,0 +1,220 @@
+{# Pre-run settings form for Market Deep Synthesis. Fetched via HTMX when
+   the operator clicks any "Run synthesis" / "Run new synthesis" button and
+   swapped into #synthesis-status in place of the status card. Lets the
+   operator review and edit exactly what's about to be sent to Gemini
+   before the job is queued — the synthesis is a >$3 call, the extra step
+   is cheap.
+
+   Mirrors _research_run_form.html so the two Gemini surfaces feel the same.
+
+   Expects in scope:
+     brief         — the default brief text (compose_brief output)
+     inputs_meta   — composition telemetry (findings_count, competitors_covered,
+                     dr_reports_used, brief_chars, missing_context, truncated)
+     default_agent — "preview" | "max"
+     window_days   — int, the lookback window the brief was composed from
+     cooldown_note — str | None, shown when the latest ready row is newer than
+                     MARKET_SYNTHESIS_COOLDOWN_S ("Fresh synthesis from 2h ago")
+     api           — dict with resolved settings:
+                       model_preview / model_max : str  agent ids
+                       timeout_min     : int
+                       poll_s          : int
+                       in_flight       : int    queued|running count
+                       key_set         : bool
+#}
+
+<div id="synthesis-status" class="research-run-form">
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Review &amp; confirm · Market synthesis</h2>
+      <span class="muted" style="font-size:11px">
+        Verify what's about to be sent to Gemini
+      </span>
+    </div>
+    <div class="panel-body">
+      <form method="post"
+            action="/api/runs/market-synthesis"
+            class="research-run-settings">
+
+        {# ── Research question (the brief) ─────────────────────────
+           Editable. Default is compose_brief() output with 30 days of
+           findings, every active competitor's latest review + DR
+           excerpt, and the company / customer context briefs.
+           Override here for a one-off focus (e.g. "Focus on pricing
+           moves across ATS competitors only."). #}
+        <div class="field">
+          <label class="label" for="ms-brief">
+            Synthesis brief
+            <span class="hint">
+              Sent verbatim to Gemini as the task input. Default comes
+              from the <code>market_synthesis_brief</code> skill with
+              the last {{ window_days }} days of signals stitched in.
+              Edit for a one-off focus.
+            </span>
+          </label>
+          <textarea id="ms-brief" name="brief" rows="16" class="mono"
+                    style="min-height:320px; width:100%">{{ brief }}</textarea>
+          {% if inputs_meta %}
+            <p class="muted" style="font-size:11px; margin:6px 0 0">
+              Built from {{ inputs_meta.findings_count }} findings across
+              {{ inputs_meta.competitors_covered }} competitors ·
+              {{ inputs_meta.dr_reports_used }} deep-research
+              excerpt{{ 's' if inputs_meta.dr_reports_used != 1 else '' }} ·
+              {{ inputs_meta.brief_chars }} chars
+              {% if inputs_meta.truncated %}
+                · <span style="color:var(--warn, var(--text-dim))">truncated to fit</span>
+              {% endif %}
+              {% if inputs_meta.missing_context %}
+                · <span style="color:var(--warn, var(--text-dim))">missing context: {{ inputs_meta.missing_context|join(', ') }}</span>
+              {% endif %}
+            </p>
+          {% endif %}
+        </div>
+
+        {# ── Lookback window ─────────────────────────────────────── #}
+        <div class="field">
+          <label class="label" for="ms-window">
+            Findings lookback
+            <span class="hint">
+              Days of history folded into the default brief. Change then
+              regenerate if you want a wider or narrower window.
+            </span>
+          </label>
+          <div style="display:flex; gap:8px; align-items:center">
+            <input id="ms-window" name="window_days" type="number"
+                   min="1" max="365" value="{{ window_days }}"
+                   style="width:120px">
+            <span class="muted" style="font-size:12px">days</span>
+            <button type="button" class="btn-ghost"
+                    hx-get="/partials/synthesis_run_form"
+                    hx-target="#synthesis-status"
+                    hx-swap="outerHTML"
+                    hx-include="#ms-window"
+                    style="margin-left:auto">
+              Regenerate brief
+            </button>
+          </div>
+        </div>
+
+        {# ── Agent variant ───────────────────────────────────────── #}
+        <div class="field">
+          <label class="label">
+            Agent
+            <span class="hint">
+              Preview is faster and cheaper; Max runs more research
+              iterations and tends to return longer reports. Weekly cron
+              uses Max by default.
+            </span>
+          </label>
+          <div class="radio-row">
+            <label class="radio-card">
+              <input type="radio" name="agent" value="preview"
+                     {% if default_agent != "max" %}checked{% endif %}>
+              <div class="radio-card-body">
+                <div class="radio-card-title">Preview</div>
+                <div class="radio-card-sub muted">
+                  {{ api.model_preview }}
+                </div>
+                <div class="radio-card-meta muted">faster · lower cost</div>
+              </div>
+            </label>
+            <label class="radio-card">
+              <input type="radio" name="agent" value="max"
+                     {% if default_agent == "max" %}checked{% endif %}>
+              <div class="radio-card-body">
+                <div class="radio-card-title">Max</div>
+                <div class="radio-card-sub muted">
+                  {{ api.model_max }}
+                </div>
+                <div class="radio-card-meta muted">more iterations · higher cost</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {# ── Resolved API settings (read-only) ──────────────────── #}
+        <div class="field">
+          <label class="label">
+            API settings
+            <span class="hint">
+              Server-wide. Change via environment variables; shown here
+              for transparency.
+            </span>
+          </label>
+          <table class="kv-table">
+            <tr>
+              <th>API key</th>
+              <td>
+                {% if api.key_set %}
+                  <span class="ok-dot"></span> <code>GEMINI_API_KEY</code> set
+                {% else %}
+                  <span class="err-dot"></span> missing —
+                  <a href="/settings/keys">add one</a>
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
+              <th>Timeout</th>
+              <td>{{ api.timeout_min }} min
+                <span class="muted" style="font-size:11px">
+                  (<code>MARKET_SYNTHESIS_TIMEOUT_S</code>)
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <th>Poll cadence</th>
+              <td>every {{ api.poll_s }} s
+                <span class="muted" style="font-size:11px">
+                  (<code>MARKET_SYNTHESIS_POLL_S</code>)
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <th>Concurrency</th>
+              <td>
+                {{ api.in_flight }} in flight · singleton (at most 1 run)
+              </td>
+            </tr>
+            <tr>
+              <th>Transport</th>
+              <td><code>client.interactions.create(background=True)</code></td>
+            </tr>
+          </table>
+        </div>
+
+        {# ── Cooldown hint ───────────────────────────────────────
+           Rendered when the latest ready synthesis is inside the
+           freshness window. The hidden `force` field is flipped to "1"
+           so the POST bypasses the 429; we still show the hint so the
+           operator knows they're re-running something recent. #}
+        {% if cooldown_note %}
+          <p class="muted" style="font-size:12px; margin:4px 0">
+            <span style="color:var(--warn, var(--text-dim))">⚠</span>
+            {{ cooldown_note }} — submitting anyway will run a fresh
+            synthesis and burn credits.
+          </p>
+          <input type="hidden" name="force" value="1">
+        {% endif %}
+
+        {# ── Actions ──────────────────────────────────────────── #}
+        <div class="form-actions">
+          <button type="submit" class="btn"
+                  {% if not api.key_set or api.in_flight >= 1 %}disabled{% endif %}>
+            Confirm &amp; run
+          </button>
+          <button type="button" class="btn-ghost"
+                  hx-get="/partials/synthesis_status"
+                  hx-target="#synthesis-status"
+                  hx-swap="outerHTML">
+            Cancel
+          </button>
+          {% if api.in_flight >= 1 %}
+            <span class="muted" style="font-size:12px; margin-left:12px">
+              A synthesis is already running — wait for it to finish.
+            </span>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

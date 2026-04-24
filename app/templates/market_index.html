@@ -1,11 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Market{% endblock %}
+{% block title %}Market brief{% endblock %}
 
 {% block page_actions %}
   {% if gemini_key_set %}
     <button id="synthesis-run-btn-header" type="button" class="btn"
-            title="Run a cross-competitor Gemini Deep Synthesis (5–20 min, ~$3–10).">
+            title="Run a cross-competitor Gemini Deep Synthesis with the default brief (5–20 min, ~$3–10).">
       Run synthesis
+    </button>
+    <button type="button" class="btn btn-ghost"
+            hx-get="/partials/synthesis_run_form"
+            hx-target="#synthesis-status"
+            hx-swap="outerHTML"
+            title="Review the default brief, switch agent, or widen the findings window before the run starts.">
+      Customize…
     </button>
   {% endif %}
   <button id="regen-digest-btn" type="button" class="btn btn-ghost"
@@ -70,18 +77,23 @@
 </div>
 
 <script>
-  // Shared synthesis-run launcher. Called from both the header button and
-  // any in-panel "Run" button the status partial renders. The endpoint
-  // enforces the freshness cooldown on its side; a 429 returns the operator
-  // a clear "already fresh" prompt with a force-override option.
+  // Shared one-click synthesis launcher. Kicks off a run with server-side
+  // defaults — operators who want to tune the brief/agent/window click the
+  // "Customize…" button instead, which HTMX-swaps the status card for the
+  // pre-run settings form. Sends form-encoded so the POST endpoint (Form
+  // fields) parses the body cleanly even when no fields are set.
   window.runMarketSynthesis = async function runMarketSynthesis(force) {
     if (!confirm('Run a new market synthesis? Takes 5–20 minutes and costs ~$3–10.')) return;
     try {
-      var qs = force ? '?force=1' : '';
-      var r = await fetch('/api/runs/market-synthesis' + qs, {method: 'POST'});
+      var body = force ? 'force=1' : '';
+      var r = await fetch('/api/runs/market-synthesis', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json'},
+        body: body,
+      });
       if (r.status === 429 && !force) {
-        var body = await r.text();
-        if (confirm(body + '\n\nRun anyway?')) {
+        var msg = await r.text();
+        if (confirm(msg + '\n\nRun anyway?')) {
           return window.runMarketSynthesis(true);
         }
         return;

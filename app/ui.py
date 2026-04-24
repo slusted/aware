@@ -679,6 +679,74 @@ def partial_synthesis_status(
     })
 
 
+@router.get("/partials/synthesis_run_form", response_class=HTMLResponse)
+def partial_synthesis_run_form(
+    request: Request,
+    window_days: int = 30,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Pre-run settings form for Market Deep Synthesis. Returned as an
+    HTMX fragment when the operator clicks any "Run synthesis" button;
+    swapped into #synthesis-status in place of the status card. Shows
+    the exact brief that compose_brief() produced (editable) + the agent
+    variant + resolved API settings.
+
+    `window_days` is read off the querystring so the "Regenerate brief"
+    button can re-fetch the form with a different lookback window
+    without a full page reload.
+
+    Canceling the form re-fetches /partials/synthesis_status, which
+    restores the original status card.
+    """
+    from datetime import timedelta
+    from .jobs import (
+        MARKET_SYNTHESIS_TIMEOUT_S,
+        _MARKET_SYNTHESIS_POLL_S,
+        current_synthesis_load,
+    )
+    from .market_synthesis import compose_brief
+    from .adapters.gemini_research import AGENT_PREVIEW, AGENT_MAX
+    from .routes.runs import _MARKET_SYNTHESIS_COOLDOWN_S
+
+    window = max(1, min(int(window_days), 365))
+    brief, inputs_meta = compose_brief(db, window_days=window)
+
+    latest_ready = (
+        db.query(MarketSynthesisReport)
+        .filter(MarketSynthesisReport.status == "ready")
+        .order_by(MarketSynthesisReport.started_at.desc())
+        .first()
+    )
+    cooldown_note: str | None = None
+    if latest_ready and latest_ready.started_at:
+        age = (datetime.utcnow() - latest_ready.started_at).total_seconds()
+        if age < _MARKET_SYNTHESIS_COOLDOWN_S:
+            mins = int(age // 60)
+            cooldown_note = (
+                f"Latest synthesis is only {mins} min old"
+                if mins < 60
+                else f"Latest synthesis is only {mins // 60}h {mins % 60}m old"
+            )
+
+    api = {
+        "model_preview": AGENT_PREVIEW,
+        "model_max": AGENT_MAX,
+        "timeout_min": MARKET_SYNTHESIS_TIMEOUT_S // 60,
+        "poll_s": _MARKET_SYNTHESIS_POLL_S,
+        "in_flight": current_synthesis_load(db),
+        "key_set": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
+    }
+    return templates.TemplateResponse(request, "_synthesis_run_form.html", {
+        "brief": brief,
+        "inputs_meta": inputs_meta,
+        "default_agent": "preview",
+        "window_days": window,
+        "cooldown_note": cooldown_note,
+        "api": api,
+    })
+
+
 @router.get("/partials/status_bar", response_class=HTMLResponse)
 def partial_status_bar(request: Request, db: Session = Depends(get_db), _=Depends(get_current_user)):
     """Global footer status — shown on every page via base.html. Three states:
