@@ -1085,12 +1085,39 @@ STREAM_WINDOW_DAYS = 30
 STREAM_SAFETY_CAP = 500
 
 
+def _view_counts_for_user(db, user_id: int, finding_ids: list[int]) -> dict[int, int]:
+    """Per-user lifetime `view`-event count keyed by finding_id.
+
+    Powers the "Viewed N×" indicator on stream cards. Counts every `view`
+    event ever logged by this user for each finding — no time window. The
+    in-DB de-dup (5-min window inside post_events_batch) means each row
+    is roughly one distinct page-load impression, which is what users
+    expect when reading "viewed 3 times".
+    """
+    if not finding_ids:
+        return {}
+    rows = (
+        db.query(
+            UserSignalEvent.finding_id,
+            func.count(UserSignalEvent.id),
+        )
+        .filter(
+            UserSignalEvent.user_id == user_id,
+            UserSignalEvent.event_type == "view",
+            UserSignalEvent.finding_id.in_(finding_ids),
+        )
+        .group_by(UserSignalEvent.finding_id)
+        .all()
+    )
+    return {fid: int(n) for fid, n in rows if fid is not None}
+
+
 def _stream_query(db, user, filters):
     """Build + run the stream query.
 
-    Returns (findings, view_by_finding_id, has_more). `has_more` is True when
-    windowing is active and there's at least one Finding older than the
-    current window — i.e., clicking "load more" would reach real data.
+    Returns (findings, view_by_finding_id, view_counts, has_more). `has_more`
+    is True when windowing is active and there's at least one Finding older
+    than the current window — i.e., clicking "load more" would reach real data.
     """
     from sqlalchemy import and_, or_, case
     q = db.query(Finding)
@@ -1204,7 +1231,8 @@ def _stream_query(db, user, filters):
             SignalView.finding_id.in_(ids),
         ).all():
             views[v.finding_id] = v
-    return findings, views, has_more
+    view_counts = _view_counts_for_user(db, user.id, [f.id for f in findings])
+    return findings, views, view_counts, has_more
 
 
 @router.get("/stream", response_class=HTMLResponse)
@@ -1224,7 +1252,7 @@ def stream_page(
         active_filter_id = user.default_filter_id if default_sf else None
     else:
         filters = _parse_stream_filters(request.query_params)
-    findings, views, has_more = _stream_query(db, user, filters)
+    findings, views, view_counts, has_more = _stream_query(db, user, filters)
     competitors = [c.name for c in db.query(Competitor).filter(Competitor.active == True).order_by(Competitor.name).all()]
     # Saved filters (own + team-shared) for the dropdown.
     from sqlalchemy import or_ as _or
@@ -1248,6 +1276,7 @@ def stream_page(
         "filters": filters,
         "findings": findings,
         "views": views,
+        "view_counts": view_counts,
         "has_more": has_more,
         "competitors": competitors,
         "signal_types": SIGNAL_TYPES,
@@ -1265,7 +1294,7 @@ def partial_stream_list(
     user=Depends(get_current_user),
 ):
     filters = _parse_stream_filters(request.query_params)
-    findings, views, has_more = _stream_query(db, user, filters)
+    findings, views, view_counts, has_more = _stream_query(db, user, filters)
     background_tasks.add_task(
         emit_shown_events,
         user.id,
@@ -1274,6 +1303,7 @@ def partial_stream_list(
     return templates.TemplateResponse(request, "_stream_list.html", {
         "findings": findings,
         "views": views,
+        "view_counts": view_counts,
         "filters": filters,
         "has_more": has_more,
         "logos": _build_logo_map(db, findings),
@@ -1327,9 +1357,11 @@ async def partial_stream_view(
         )
         db.add(v)
     db.commit()
+    view_counts = _view_counts_for_user(db, user.id, [f.id])
     return templates.TemplateResponse(request, "_stream_card.html", {
         "f": f,
         "view": v,
+        "view_count": view_counts.get(f.id, 0),
         "logos": _build_logo_map(db, [f]),
     })
 
