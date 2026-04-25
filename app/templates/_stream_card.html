@@ -69,6 +69,15 @@
               aria-controls="card-{{ f.id }}-expanded"
               title="Show details">›</button>
     </span>
+    {% else %}
+    {# Spec 09: desktop pin path — flip the card to reveal pin / ask-follow-up
+       actions. On mobile this duplicates the swipe-right gesture. Hidden when
+       the partial is rendered read-only on the competitor profile. #}
+    <span class="card-actions flip-actions">
+      <button type="button" class="btn-mini flip-toggle"
+              aria-label="Pin or ask follow-up"
+              title="Pin or ask follow-up">↻</button>
+    </span>
     {% endif %}
   </header>
 
@@ -89,6 +98,13 @@
 
   {% if expandable %}
   <div id="card-{{ f.id }}-expanded" class="signal-card-expanded" hidden>
+    {% if view and view.question %}
+    {# Spec 09: surface the user's pinned-with-question on the competitor
+       profile so the question is visible alongside the finding. #}
+    <div class="follow-up-question">
+      <strong>Asked:</strong> &ldquo;{{ view.question }}&rdquo;
+    </div>
+    {% endif %}
     <div class="provenance">
       <span><strong>URL:</strong> {% if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener" class="mono">{{ f.url[:90] }}</a>{% else %}—{% endif %}</span>
       <span><strong>Topic:</strong> {{ f.topic or '—' }}</span>
@@ -107,5 +123,24 @@
     <footer class="signal-card-foot muted">Snoozed until {{ view.snoozed_until.strftime('%b %d') }}</footer>
   {% endif %}
   </div>{# /signal-card-content #}
+
+  {% if not expandable %}
+  {# Spec 09: back-of-card actions — single screen, optional textarea.
+     Primary button label adapts: "Pin" when textarea empty, "Pin & ask"
+     when typed. JS picks the endpoint at submit time (stream_view for
+     plain pin, /partials/finding/.../question when there's text). #}
+  <div class="signal-card-back" aria-hidden="true" data-finding-id="{{ f.id }}">
+    <textarea class="signal-card-back-textarea"
+              maxlength="500"
+              rows="3"
+              placeholder="Ask a follow-up about this finding (optional)"></textarea>
+    <div class="signal-card-back-row">
+      <button type="button" class="btn-card-back is-primary"
+              data-flip-action="submit">Pin</button>
+      <button type="button" class="btn-card-back is-cancel"
+              data-flip-action="cancel">Cancel</button>
+    </div>
+  </div>
+  {% endif %}
   </div>{# /signal-card-inner #}
 </article>

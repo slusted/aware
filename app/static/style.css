@@ -905,19 +905,101 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
     z-index: 0;
   }
   .signal-card::before {
-    content: "Dismiss ✕";
+    content: "Hide ✕";
     left: 0; right: 50%;
     background: #b23a48;
     justify-content: flex-start;
     opacity: var(--swipe-left-opacity, 0);
   }
   .signal-card::after {
-    content: "★ Insight";
+    content: "Flip ↻";
     left: 50%; right: 0;
     background: #c9963a;
     justify-content: flex-end;
     opacity: var(--swipe-right-opacity, 0);
   }
+}
+
+/* Spec 09 — back-of-card UI (right-swipe / desktop flip path).
+   Single-screen design: optional textarea + adaptive primary button
+   ("Pin" when empty, "Pin & ask" when typed) + Cancel. The back is
+   rendered inline; .is-flipped on the article toggles which side shows. */
+.signal-card .signal-card-back {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 0;
+}
+.signal-card.is-flipped .signal-card-content,
+.signal-card.is-flipped .competitor-logo {
+  display: none;
+}
+.signal-card.is-flipped .signal-card-back {
+  display: flex;
+}
+.signal-card.is-flipped .signal-card-inner {
+  background: rgba(201, 150, 58, 0.06);
+}
+.signal-card-back-textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 6px;
+  background: var(--bg, #fff);
+  color: var(--text, #222);
+}
+.signal-card-back-row {
+  display: flex;
+  gap: 8px;
+}
+.signal-card-back-row > * { flex: 1; }
+.btn-card-back {
+  display: block;
+  padding: 10px 14px;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 6px;
+  background: var(--bg, #fff);
+  color: var(--text, #222);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.1s, border-color 0.1s;
+}
+.btn-card-back:hover { background: rgba(0, 0, 0, 0.03); }
+.btn-card-back.is-primary {
+  background: #c9963a;
+  border-color: #b6852f;
+  color: #fff;
+}
+.btn-card-back.is-primary:hover { background: #b6852f; }
+.btn-card-back.is-cancel {
+  color: var(--text-muted, #666);
+  border-style: dashed;
+}
+.flip-toggle {
+  background: none;
+  border: 0;
+  color: var(--text-muted, #888);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.flip-toggle:hover { background: rgba(0, 0, 0, 0.05); color: var(--text, #222); }
+
+/* Spec 09 — follow-up question echo on the competitor profile expand panel. */
+.follow-up-question {
+  background: rgba(201, 150, 58, 0.08);
+  border-left: 3px solid #c9963a;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  border-radius: 0 4px 4px 0;
 }
 
 .signal-card-head {
