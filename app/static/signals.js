@@ -175,39 +175,6 @@
     });
   });
 
-  // Rating buttons (👍 / 👎 / More / Less). One click = one event. Bypass
-  // the queue — ratings are explicit high-intent signals and should land
-  // in the DB immediately so the ranker's incremental rollup trigger (spec
-  // 02) fires without a 10-second lag.
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('.rating-btn[data-rating]');
-    if (!btn) return;
-    const card = btn.closest('.signal-card[data-finding-id]');
-    if (!card) return;
-    const fid = Number(card.dataset.findingId);
-    if (!fid) return;
-    const rating = btn.dataset.rating;
-    // Visual feedback — sibling active swap, then pulse the clicked one.
-    for (const sib of card.querySelectorAll('.rating-btn.active')) {
-      sib.classList.remove('active');
-    }
-    btn.classList.add('active');
-    fetch('/api/signals/event', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        event_type: rating,
-        source: 'stream',
-        finding_id: fid,
-      }),
-    }).catch(() => {
-      // Roll back the active state on failure so the user knows it didn't
-      // land. Errors are rare (only auth / network); silent success is fine.
-      btn.classList.remove('active');
-    });
-  });
-
   // Initial attach + re-attach after HTMX swaps in new cards.
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', observeAllCards);

@@ -1,15 +1,17 @@
 {# One finding card. Rendered standalone (via stream_view POST) and inside _stream_list.html.
 
    Flags (all optional, default to current stream behavior):
-   - show_rating      (bool, default True)  — render the 👍 / 👎 buttons.
    - show_competitor  (bool, default True)  — render the competitor name in the head.
    - expandable       (bool, default False) — render expand caret + hidden detail panel
                                               with provenance + full content.
+   - view_count       (int,  default 0)     — how many times the current user has viewed
+                                              this finding (server-side count of `view`
+                                              events in user_signal_events).
 #}
-{% set show_rating = show_rating if show_rating is defined else True %}
 {% set show_competitor = show_competitor if show_competitor is defined else True %}
 {% set expandable = expandable if expandable is defined else False %}
 {% set view = view if view is defined else None %}
+{% set view_count = view_count if view_count is defined else 0 %}
 {% set state = view.state if view else None %}
 <article id="card-{{ f.id }}" data-finding-id="{{ f.id }}"{% if expandable %} data-expandable="true"{% endif %} class="signal-card {% if state %}state-{{ state }}{% else %}state-new{% endif %}">
   <div class="signal-card-inner">
@@ -52,16 +54,12 @@
       scraped {{ f.created_at.strftime('%b %d, %H:%M') }}
     </span>
 
-    {% if show_rating %}
-    {# Ratings feed the ranker's preference log directly
-       (docs/ranker/01-signal-log.md). Pin / snooze / dismiss as buttons
-       are gone — mobile swipe-left/right still dual-writes pin/dismiss
-       via the same backend. more_like_this / less_like_this remain in
-       the event taxonomy for a future reason-tagged flow, but the UI
-       only exposes thumbs for now. #}
-    <span class="card-actions rating-actions">
-      <button type="button" class="btn-mini rating-btn" data-rating="rate_up" title="Useful">👍</button>
-      <button type="button" class="btn-mini rating-btn" data-rating="rate_down" title="Not useful">👎</button>
+    {# Per-user view counter — `view` events fire once per page-load when a
+       card is ≥50% visible for ≥500ms. Hidden when the user hasn't viewed
+       it yet (the new-dot already covers that state). #}
+    {% if view_count > 0 %}
+    <span class="view-count muted" title="You've viewed this {{ view_count }} time{{ 's' if view_count != 1 else '' }}">
+      <span aria-hidden="true">👁</span> {{ view_count }}×
     </span>
     {% endif %}
     {% if expandable %}

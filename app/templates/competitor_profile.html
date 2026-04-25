@@ -339,7 +339,7 @@
     {% if findings %}
       <div class="stream-list">
         {% for f in findings %}
-          {% with show_rating=False, show_competitor=False, expandable=True, view=views_by_finding.get(f.id) %}
+          {% with show_competitor=False, expandable=True, view=views_by_finding.get(f.id) %}
             {% include "_stream_card.html" %}
           {% endwith %}
         {% endfor %}
