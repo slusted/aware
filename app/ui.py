@@ -12,6 +12,7 @@ from sqlalchemy import func
 
 from sqlalchemy import func as _func
 
+from .auth import SESSION_COOKIE, lookup_session
 from .deps import get_db, get_current_user
 from .models import Run, Finding, Competitor, CompetitorReport, PositioningSnapshot, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter, DeepResearchReport, UserSignalEvent, MarketSynthesisReport, CompetitorCandidate
 from . import scheduler
@@ -38,11 +39,14 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 router = APIRouter(include_in_schema=False)
 
 
-@router.get("/")
-def root_to_stream():
-    # Stream is the default landing surface; the dashboard is an admin view
-    # now reachable at /dashboard (and still linked from the sidebar).
-    return RedirectResponse("/stream", status_code=303)
+@router.get("/", response_class=HTMLResponse)
+def root(request: Request, db: Session = Depends(get_db)):
+    # Public marketing page for unauthenticated visitors; signed-in users
+    # skip straight to the stream (the work surface).
+    token = request.cookies.get(SESSION_COOKIE, "")
+    if token and lookup_session(db, token):
+        return RedirectResponse("/stream", status_code=303)
+    return templates.TemplateResponse(request, "landing.html", {})
 
 
 @router.get("/dashboard", response_class=HTMLResponse)

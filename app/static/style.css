@@ -1695,3 +1695,291 @@ button.chip-btn.active {
   padding-top: 16px;
   border-top: 1px solid var(--border);
 }
+
+/* ---------- Public landing page (/ when signed-out) ----------
+   Lives outside the .app sidebar shell — full-width marketing layout
+   that reuses the same tokens (accent, surfaces, type) as the app. */
+
+.landing-body {
+  background:
+    radial-gradient(1100px 600px at 50% -200px, rgba(94,106,210,0.18), transparent 70%),
+    var(--bg);
+  min-height: 100vh;
+}
+
+.landing-nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(12, 13, 16, 0.72);
+  backdrop-filter: saturate(140%) blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.landing-nav-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.landing-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+.landing-brand .dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), #b8a8ff);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.landing-nav-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+}
+.landing-nav-links a {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.landing-nav-links a:hover { color: var(--text); }
+.landing-nav-links a.landing-signin {
+  padding: 6px 12px;
+  border-radius: var(--r);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+}
+
+.landing-main {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 64px 24px 80px;
+}
+
+.landing-hero {
+  text-align: center;
+  padding: 32px 0 56px;
+}
+.landing-eyebrow {
+  display: inline-block;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid rgba(94,106,210,0.25);
+  border-radius: 999px;
+  padding: 4px 12px;
+  margin-bottom: 22px;
+}
+.landing-headline {
+  font-size: 44px;
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0 auto 18px;
+  max-width: 820px;
+  color: var(--text);
+}
+.landing-headline em {
+  font-style: normal;
+  background: linear-gradient(135deg, var(--accent), #b8a8ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.landing-sub {
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  margin: 0 auto 28px;
+  max-width: 660px;
+}
+.landing-cta-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.landing-cta {
+  padding: 10px 18px;
+  border-radius: var(--r);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+a.btn.primary.landing-cta {
+  background: var(--accent);
+  color: white;
+  border: 1px solid var(--accent);
+}
+a.btn.primary.landing-cta:hover { background: var(--accent-hover); }
+a.btn-ghost.landing-cta,
+a.btn-ghost.landing-signin {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+}
+a.btn-ghost.landing-cta:hover { background: var(--bg-raised); }
+.landing-meta {
+  margin-top: 22px;
+  font-size: 12px;
+  color: var(--text-dim);
+  letter-spacing: 0.01em;
+}
+
+.landing-pillars {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 24px 0 64px;
+}
+.landing-pillar {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 24px 22px;
+  display: flex;
+  flex-direction: column;
+}
+.landing-pillar:hover {
+  border-color: var(--border-strong);
+}
+.landing-pillar-num {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  font-weight: 500;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+.landing-pillar h2 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 6px;
+  color: var(--text);
+}
+.landing-pillar-lede {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin: 0 0 14px;
+}
+.landing-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.landing-list li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.landing-list li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+.landing-signals {
+  text-align: center;
+  padding: 48px 0 56px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.landing-section-title {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+}
+.landing-section-sub {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin: 0 0 24px;
+}
+.landing-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-width: 720px;
+  margin: 0 auto;
+}
+.landing-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.landing-closer {
+  text-align: center;
+  padding: 64px 0 16px;
+}
+.landing-closer-title {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin: 0 0 10px;
+}
+.landing-closer-sub {
+  color: var(--text-muted);
+  font-size: 15px;
+  margin: 0 0 22px;
+}
+
+.landing-footer {
+  border-top: 1px solid var(--border);
+  margin-top: 24px;
+}
+.landing-footer-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 22px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.landing-footer-dim { color: var(--text-dim); }
+
+@media (max-width: 820px) {
+  .landing-headline { font-size: 32px; }
+  .landing-sub { font-size: 15px; }
+  .landing-pillars { grid-template-columns: 1fr; }
+  .landing-main { padding: 40px 18px 56px; }
+  .landing-nav-inner { padding: 12px 18px; }
+  .landing-nav-links { gap: 12px; }
+  .landing-nav-links a:not(.landing-signin) { display: none; }
+  .landing-footer-inner { flex-direction: column; align-items: flex-start; gap: 6px; }
+}
+@media (max-width: 460px) {
+  .landing-headline { font-size: 28px; }
+  .landing-closer-title { font-size: 22px; }
+}
