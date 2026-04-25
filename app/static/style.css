@@ -920,33 +920,44 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
   }
 }
 
-/* Spec 09 — back-of-card UI for the right-swipe / desktop flip path.
-   The back is rendered inline beneath the front and shown by toggling
-   .is-flipped. Front collapses to display:none rather than rotating
-   in 3D — simpler, no perspective math, plays nicely with HTMX swaps. */
+/* Spec 09 — back-of-card UI (right-swipe / desktop flip path).
+   Single-screen design: optional textarea + adaptive primary button
+   ("Pin" when empty, "Pin & ask" when typed) + Cancel. The back is
+   rendered inline; .is-flipped on the article toggles which side shows. */
 .signal-card .signal-card-back {
   display: none;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 0;
 }
 .signal-card.is-flipped .signal-card-content,
 .signal-card.is-flipped .competitor-logo {
   display: none;
 }
 .signal-card.is-flipped .signal-card-back {
-  display: block;
-  width: 100%;
+  display: flex;
 }
 .signal-card.is-flipped .signal-card-inner {
   background: rgba(201, 150, 58, 0.06);
 }
-.signal-card-back-inner {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 4px 0;
+.signal-card-back-textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #ddd);
+  border-radius: 6px;
+  background: var(--bg, #fff);
+  color: var(--text, #222);
 }
+.signal-card-back-row {
+  display: flex;
+  gap: 8px;
+}
+.signal-card-back-row > * { flex: 1; }
 .btn-card-back {
   display: block;
-  width: 100%;
   padding: 10px 14px;
   border: 1px solid var(--border, #ddd);
   border-radius: 6px;
@@ -955,7 +966,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  text-align: left;
+  text-align: center;
   transition: background 0.1s, border-color 0.1s;
 }
 .btn-card-back:hover { background: rgba(0, 0, 0, 0.03); }
@@ -969,30 +980,6 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
   color: var(--text-muted, #666);
   border-style: dashed;
 }
-/* Hide the three top-level buttons while the textarea is showing,
-   so the back-of-card has one focused job. The form's own Send/Back
-   buttons live one level deeper and are unaffected. */
-.signal-card-back-inner.is-asking > .btn-card-back {
-  display: none;
-}
-.signal-card-ask {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.signal-card-ask textarea {
-  width: 100%;
-  resize: vertical;
-  font: inherit;
-  padding: 8px 10px;
-  border: 1px solid var(--border, #ddd);
-  border-radius: 6px;
-}
-.signal-card-ask-row {
-  display: flex;
-  gap: 8px;
-}
-.signal-card-ask-row > * { flex: 1; }
 .flip-toggle {
   background: none;
   border: 0;

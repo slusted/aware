@@ -254,7 +254,21 @@
     if (active) { reset(active.card); active = null; }
   });
 
-  // Desktop ↻ button — only path to pinning when there's no touch.
+  // Adapt the primary button label to the textarea state. "Pin" when
+  // empty, "Pin & ask" when there's text. Single delegated handler so
+  // it works for cards swapped in by HTMX after a pin/dismiss.
+  list.addEventListener('input', (e) => {
+    const ta = e.target.closest('.signal-card-back-textarea');
+    if (!ta) return;
+    const card = ta.closest('.signal-card');
+    if (!card) return;
+    const primary = card.querySelector('[data-flip-action="submit"]');
+    if (primary) {
+      primary.textContent = ta.value.trim() ? 'Pin & ask' : 'Pin';
+    }
+  });
+
+  // Click handlers: ↻ flips, Cancel un-flips, Submit picks endpoint.
   list.addEventListener('click', (e) => {
     const flipBtn = e.target.closest('.flip-toggle');
     if (flipBtn) {
@@ -269,28 +283,29 @@
     const kind = action.dataset.flipAction;
     if (kind === 'cancel') {
       flipToFront(card);
-    } else if (kind === 'ask') {
-      // Reveal the textarea form; collapse the three top-level buttons.
-      const back = card.querySelector('.signal-card-back-inner');
-      const ask = card.querySelector('.signal-card-ask');
-      if (back && ask) {
-        ask.hidden = false;
-        const ta = ask.querySelector('textarea');
-        if (ta) ta.focus();
-        back.classList.add('is-asking');
-      }
-    } else if (kind === 'ask-cancel') {
-      const back = card.querySelector('.signal-card-back-inner');
-      const ask = card.querySelector('.signal-card-ask');
-      if (back && ask) {
-        ask.hidden = true;
-        const ta = ask.querySelector('textarea');
-        if (ta) ta.value = '';
-        back.classList.remove('is-asking');
-      }
+      return;
     }
-    // 'pin' is a hx-post button — HTMX swaps in the new card markup,
-    // which doesn't have .is-flipped, so the front naturally returns.
+    if (kind === 'submit') {
+      const id = card.id.replace('card-', '');
+      const ta = card.querySelector('.signal-card-back-textarea');
+      const question = ta ? ta.value.trim() : '';
+      if (!window.htmx) return;
+      if (question) {
+        htmx.ajax('POST', '/partials/finding/' + id + '/question', {
+          target: '#card-' + id,
+          swap: 'outerHTML',
+          values: { question: question }
+        });
+      } else {
+        htmx.ajax('POST', '/partials/stream_view/' + id, {
+          target: '#card-' + id,
+          swap: 'outerHTML',
+          values: { state: 'pinned' }
+        });
+      }
+      // The HTMX-swapped card markup has no .is-flipped, so the front
+      // naturally returns once the response lands.
+    }
   });
 })();
 </script>

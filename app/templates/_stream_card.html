@@ -127,41 +127,20 @@
   </div>{# /signal-card-content #}
 
   {% if not expandable %}
-  {# Spec 09: back-of-card actions. Hidden behind .is-flipped on the
-     wrapper article. Three primary actions: Pin, Ask follow-up, Cancel.
-     The Ask path expands an inline textarea before submit. #}
-  <div class="signal-card-back" aria-hidden="true">
-    <div class="signal-card-back-inner">
-      <button type="button"
-              class="btn-card-back is-primary"
-              data-flip-action="pin"
-              hx-post="/partials/stream_view/{{ f.id }}"
-              hx-vals='{"state":"pinned"}'
-              hx-target="#card-{{ f.id }}"
-              hx-swap="outerHTML">Pin / save</button>
-      <button type="button"
-              class="btn-card-back"
-              data-flip-action="ask">Ask follow-up</button>
-      <button type="button"
-              class="btn-card-back is-cancel"
+  {# Spec 09: back-of-card actions — single screen, optional textarea.
+     Primary button label adapts: "Pin" when textarea empty, "Pin & ask"
+     when typed. JS picks the endpoint at submit time (stream_view for
+     plain pin, /partials/finding/.../question when there's text). #}
+  <div class="signal-card-back" aria-hidden="true" data-finding-id="{{ f.id }}">
+    <textarea class="signal-card-back-textarea"
+              maxlength="500"
+              rows="3"
+              placeholder="Ask a follow-up about this finding (optional)"></textarea>
+    <div class="signal-card-back-row">
+      <button type="button" class="btn-card-back is-primary"
+              data-flip-action="submit">Pin</button>
+      <button type="button" class="btn-card-back is-cancel"
               data-flip-action="cancel">Cancel</button>
-
-      <form class="signal-card-ask"
-            hx-post="/partials/finding/{{ f.id }}/question"
-            hx-target="#card-{{ f.id }}"
-            hx-swap="outerHTML"
-            hidden>
-        <textarea name="question"
-                  maxlength="500"
-                  rows="3"
-                  placeholder="What would you like to know about this finding?"
-                  required></textarea>
-        <div class="signal-card-ask-row">
-          <button type="submit" class="btn-card-back is-primary">Send</button>
-          <button type="button" class="btn-card-back is-cancel"
-                  data-flip-action="ask-cancel">Back</button>
-        </div>
-      </form>
     </div>
   </div>
   {% endif %}
