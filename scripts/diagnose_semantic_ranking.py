@@ -74,6 +74,13 @@ def fmt_arrow(delta_rank: int) -> str:
     return str(delta_rank)
 
 
+def safe(s: str) -> str:
+    """Strip characters the local console encoding can't render. Some titles
+    contain emoji (e.g. ocean wave) that crash Windows cp1252 stdout."""
+    enc = sys.stdout.encoding or "utf-8"
+    return s.encode(enc, errors="replace").decode(enc, errors="replace")
+
+
 def main() -> int:
     args = parse_args()
     db = SessionLocal()
@@ -212,7 +219,7 @@ def main() -> int:
         print(f"  cards whose rank changed: {moved} / {len(scored)}")
         print(f"  top-{top_n} composition: {len(added)} added, {len(dropped)} dropped")
         print(f"  largest score delta: {max_delta:+.4f}"
-              + (f"  ({max_finding.competitor!r}: {(max_finding.title or '')[:60]!r})"
+              + (f"  ({max_finding.competitor!r}: {safe((max_finding.title or '')[:60])!r})"
                  if max_finding else ""))
         print()
 
@@ -221,10 +228,11 @@ def main() -> int:
         print(f"    {'rank':>4}  {'score':>7}  {'delta':>7}  {'shift':>5}  finding")
         for i, (f, s_off, s_on) in enumerate(order_on[:top_n]):
             shift = rank_off_by_id[f.id] - i  # +ve = climbed; -ve = dropped
-            title = (f.title or "(no title)")[:80]
+            title = safe((f.title or "(no title)")[:80])
+            comp = safe((f.competitor or "")[:14])
             print(f"    {i+1:>4}  {fmt_score(s_on):>7}  "
                   f"{fmt_score(s_on - s_off):>7}  {fmt_arrow(shift):>5}  "
-                  f"{f.competitor[:14]:14}  {title}")
+                  f"{comp:14}  {title}")
 
         print()
         if moved == 0:
