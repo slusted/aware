@@ -125,22 +125,20 @@
     </div>
 
   {% else %}
-    {# Ready — summary card with link to the full detail page. We don't
-       inline the full body here because /market is a list/overview
-       surface; the detail view lives at /market/synthesis/{id}. #}
+    {# Ready — render the latest synthesis inline (mirrors the Findings
+       summary tab). The standalone detail page at /market/synthesis/{id}
+       is still reachable from the "Prior syntheses" history below. #}
     {% set _duration_s = (s.finished_at - s.started_at).total_seconds() if s.finished_at and s.started_at else 0 %}
     {% set _minutes = (_duration_s / 60)|round(1) if _duration_s else 0 %}
-    {% set _excerpt = (s.body_md or '') %}
-    {% if _excerpt|length > 320 %}{% set _excerpt = _excerpt[:320] ~ '…' %}{% endif %}
     <div class="panel">
       <div class="panel-header">
-        <h2>Deep synthesis</h2>
+        <h2>Market synthesis · {{ s.started_at.strftime('%Y-%m-%d %H:%M') }}</h2>
         <span class="muted" style="font-size:11px">
-          {{ s.started_at.strftime('%Y-%m-%d %H:%M') }}
-          · agent: {{ s.agent }}
+          agent: {{ s.agent }}
           {% if _minutes %} · {{ _minutes }} min{% endif %}
           {% if s.cost_usd is not none %} · ${{ '%.2f'|format(s.cost_usd) }}{% endif %}
           · {{ s.sources|length }} source{{ 's' if s.sources|length != 1 else '' }}
+          {% if s.run_id %} · <a href="/runs/{{ s.run_id }}">run #{{ s.run_id }}</a>{% endif %}
         </span>
         {% if _can_run %}
           <button id="synthesis-run-btn" type="button" class="btn-ghost"
@@ -156,7 +154,7 @@
       </div>
       <div class="panel-body">
         {% if s.inputs_meta %}
-          <p class="muted" style="font-size:12px; margin:0 0 10px">
+          <p class="muted" style="font-size:12px; margin:0 0 14px">
             Built from {{ s.inputs_meta.get('findings_count', 0) }} findings
             across {{ s.inputs_meta.get('competitors_covered', 0) }} competitors ·
             {{ s.inputs_meta.get('dr_reports_used', 0) }} deep-research
@@ -164,11 +162,43 @@
             {% if s.inputs_meta.get('truncated') %}· <span style="color:var(--warn, var(--text-dim))">inputs truncated to fit</span>{% endif %}
           </p>
         {% endif %}
-        {% if _excerpt %}
-          <p style="margin:0 0 12px">{{ _excerpt }}</p>
+        {% if s.body_md %}
+          <div id="synthesis-body" class="markdown research-body"></div>
+          <script id="synthesis-src" type="text/plain">{{ s.body_md }}</script>
+        {% else %}
+          <p class="muted" style="margin:0">Synthesis body is empty.</p>
         {% endif %}
-        <a class="btn" href="/market/synthesis/{{ s.id }}">Read full synthesis →</a>
+
+        {% if s.sources %}
+          <div class="research-sources">
+            <div class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px">
+              Sources ({{ s.sources|length }})
+            </div>
+            <div class="citation-grid">
+            {% for src in s.sources %}
+              <a class="citation-chip" href="{{ src.url }}" target="_blank" rel="noopener"
+                 title="{{ src.snippet or src.url }}">
+                <span class="citation-title">{{ src.title or src.url }}</span>
+                {% if src.published_at %}<span class="citation-date muted">{{ src.published_at }}</span>{% endif %}
+              </a>
+            {% endfor %}
+            </div>
+          </div>
+        {% endif %}
       </div>
     </div>
+
+    {# Hydrate the synthesis body as markdown. Runs on initial render and
+       after every HTMX swap of this partial — marked is loaded once by
+       market_index.html and stays globally available. #}
+    <script>
+      (function renderSynthesisInline() {
+        var src = document.getElementById('synthesis-src');
+        var out = document.getElementById('synthesis-body');
+        if (src && out && window.marked) {
+          out.innerHTML = window.marked.parse(src.textContent);
+        }
+      })();
+    </script>
   {% endif %}
 </div>
