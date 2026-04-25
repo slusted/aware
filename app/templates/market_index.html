@@ -6,7 +6,7 @@
   <button role="tab" class="tab active" data-tab="synthesis" id="tabbtn-synthesis"
           aria-selected="true" aria-controls="tab-synthesis">Market synthesis</button>
   <button role="tab" class="tab" data-tab="digest" id="tabbtn-digest"
-          aria-selected="false" aria-controls="tab-digest">Market digest</button>
+          aria-selected="false" aria-controls="tab-digest">Findings summary</button>
 </nav>
 
 {# ─── Market synthesis tab (Gemini Deep Research, spec 05) ──────── #}
@@ -66,21 +66,22 @@
   {% endif %}
 </section>
 
-{# ─── Market digest tab (daily Claude digest) ─────────────────────
-   Shows the latest digest inline; older ones collapse into a disclosure.
-   Detail pages at /market/{id} still exist for deep links from the
-   history list and external references. #}
+{# ─── Findings summary tab (daily Claude digest) ──────────────────
+   Shows the latest summary inline; older ones collapse into a
+   disclosure. Detail pages at /market/{id} still exist for deep links
+   from the history list and external references. The internal tab id
+   stays `digest` to avoid breaking any in-flight hash links. #}
 <section class="tab-panel" id="tab-digest" role="tabpanel" aria-labelledby="tabbtn-digest" hidden>
   <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-top:4px; margin-bottom:14px">
     <p class="muted" style="margin:0; max-width:640px">
-      The daily digest — one Claude call over the latest scan's findings plus
-      each competitor's current strategy review. Fast, cheap, emailed to the
-      team; grounded entirely in what our scanners surfaced.
+      The daily findings summary — one Claude call over the latest scan's
+      findings plus each competitor's current strategy review. Fast, cheap,
+      emailed to the team; grounded entirely in what our scanners surfaced.
     </p>
     <button id="regen-digest-btn" type="button" class="btn btn-ghost"
             style="flex-shrink:0"
-            title="LLM only — re-synthesize the daily market digest over existing findings + reviews">
-      Regenerate digest
+            title="LLM only — re-synthesize the findings summary over existing findings + reviews">
+      Regenerate summary
     </button>
   </div>
 
@@ -102,7 +103,7 @@
     <div class="panel">
       <div class="panel-body">
         <p class="muted" style="margin:0">
-          No digests yet. Click <strong>Regenerate digest</strong> above, or
+          No summaries yet. Click <strong>Regenerate summary</strong> above, or
           wait for the next scan.
         </p>
       </div>
@@ -112,7 +113,7 @@
   {% if digest_history %}
     <details style="margin-top:12px">
       <summary class="muted" style="cursor:pointer; font-size:12px">
-        Prior digests ({{ digest_history|length }})
+        Prior summaries ({{ digest_history|length }})
       </summary>
       <div class="panel" style="margin-top:8px">
         <table>
@@ -267,7 +268,7 @@
   })();
 </script>
 
-{# Hydrate the digest body as markdown — matches market_detail.html #}
+{# Hydrate the findings summary body as markdown — matches market_detail.html #}
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
   (function renderDigestBody() {

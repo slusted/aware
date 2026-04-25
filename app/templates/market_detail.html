@@ -2,7 +2,7 @@
 {% block title %}{{ report.title }}{% endblock %}
 {% block page_actions %}
   <button id="regen-digest-btn" type="button" class="btn btn-ghost"
-          title="LLM only — re-synthesize the market digest over existing findings + reviews">Regenerate digest</button>
+          title="LLM only — re-synthesize the findings summary over existing findings + reviews">Regenerate summary</button>
   {% if report.run_id %}<a href="/runs/{{ report.run_id }}" class="btn btn-ghost">View run</a>{% endif %}
 {% endblock %}
 
