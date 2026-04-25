@@ -12,7 +12,9 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from ..adapters import voyage as _voyage
 from ..models import UserPreferenceProfile, UserPreferenceVector
+from . import config as rcfg
 
 
 @dataclass(frozen=True)
@@ -31,7 +33,13 @@ class DimensionEntry:
 class UserProfile:
     """Complete preference profile for one user. `vector` is a nested
     dict: dimension → key → DimensionEntry. `cold_start` is the fast
-    path the scorer reads before spending time on lookups."""
+    path the scorer reads before spending time on lookups.
+
+    `taste_embedding` is the spec-08 centroid as a numpy float32 array,
+    L2-normalized so cosine = dot. None when the user has no engaged
+    embedded findings, or when the stored centroid was built with a
+    model that doesn't match the current EMBEDDING_MODEL.
+    """
     user_id: int
     cold_start: bool
     event_count_30d: int
@@ -39,6 +47,10 @@ class UserProfile:
     taste_doc: str | None
     schema_version: int
     vector: dict[str, dict[str, DimensionEntry]] = field(default_factory=dict)
+    # Type is np.ndarray | None but we avoid importing numpy at module
+    # load — that would force every consumer of UserProfile to depend on
+    # numpy. Centroid loading is gated on the column being non-NULL.
+    taste_embedding: object | None = None
 
     def dimension_weight(self, dimension: str, key: str) -> float:
         """Signed weight for a single (dim, key). 0.0 when missing —
@@ -101,6 +113,15 @@ def load_profile(db: Session, user_id: int) -> UserProfile:
             vector=vector,
         )
 
+    # Centroid: gate on model-match so a config bump silently disables
+    # stale rows until the next rollup picks up the new model.
+    centroid = None
+    if (
+        profile_row.taste_embedding is not None
+        and profile_row.taste_embedding_model == rcfg.EMBEDDING_MODEL
+    ):
+        centroid = _voyage.unpack(profile_row.taste_embedding)
+
     return UserProfile(
         user_id=user_id,
         cold_start=profile_row.cold_start,
@@ -109,4 +130,5 @@ def load_profile(db: Session, user_id: int) -> UserProfile:
         taste_doc=profile_row.taste_doc,
         schema_version=profile_row.schema_version,
         vector=vector,
+        taste_embedding=centroid,
     )

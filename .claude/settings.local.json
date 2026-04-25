@@ -98,7 +98,12 @@
       "Bash(curl -s -b /tmp/cookies -L -X POST --data \"agent=preview&window_days=30&brief=Custom+brief+body\" http://127.0.0.1:8000/api/runs/market-synthesis -o /dev/null -w \"%{http_code} %{url_effective}\\\\n\")",
       "Bash(git reset *)",
       "Bash(awk 'NR>=110 && NR<=170' /tmp/market.html)",
-      "Bash(gh pr *)"
+      "Bash(gh pr *)",
+      "Bash(python -c \"import numpy\")",
+      "Bash(python scripts/verify_semantic_ranking.py)",
+      "Bash(python -c \"import sys; print\\(sys.stdout.encoding\\)\")",
+      "Bash(python scripts/verify_preference_rollup.py)",
+      "Bash(python scripts/verify_seen_decay.py)"
     ]
   }
 }

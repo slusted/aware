@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Iterable
 
+from ..adapters import voyage as _voyage
 from ..models import Finding
 from . import config as rcfg
 
@@ -55,16 +56,23 @@ def default_score(
     *,
     now: datetime | None = None,
     seen_count: int = 0,
+    user_centroid: object | None = None,
 ) -> float:
-    """Materiality + recency − seen-decay stand-in (spec 07). Used until
-    spec 03's real scorer is wired in. Deterministic; same input → same
-    output.
+    """Materiality + recency − seen-decay (+ optional embedding match).
+    Stand-in scorer until spec 03's real one lands. Deterministic; same
+    input → same output.
 
     `seen_count` is the number of prior view/open events the user fired
     for this finding OUTSIDE the trailing exclusion window (default 60
     min, see config). Views inside the window are treated as "current
     session" and don't count — otherwise within-session scrolling would
     reshuffle the list.
+
+    `user_centroid` is the spec-08 taste portrait — a pre-normalized
+    numpy float32 array. When provided alongside a finding embedding
+    that matches the current model, this adds a `EMBEDDING_WEIGHT *
+    cosine` term. Either side missing → term contributes 0 silently
+    so today's behaviour holds.
     """
     now = now or datetime.utcnow()
     materiality = finding.materiality or 0.0
@@ -75,7 +83,23 @@ def default_score(
     )
     capped = min(max(seen_count, 0), rcfg.STANDIN_SEEN_DECAY_MAX_VIEWS)
     seen_penalty = rcfg.STANDIN_SEEN_DECAY_PER_VIEW * capped
-    return materiality + recency - seen_penalty
+
+    embedding_match = 0.0
+    if (
+        user_centroid is not None
+        and finding.embedding is not None
+        and finding.embedding_model == rcfg.EMBEDDING_MODEL
+    ):
+        finding_vec = _voyage.unpack(finding.embedding)
+        if finding_vec is not None:
+            # Both vectors L2-normalized at write time → cosine = dot.
+            try:
+                cos = float((user_centroid * finding_vec).sum())  # type: ignore[operator]
+            except Exception:
+                cos = 0.0
+            embedding_match = rcfg.EMBEDDING_WEIGHT * cos
+
+    return materiality + recency - seen_penalty + embedding_match
 
 
 # ── Title normalization + Jaccard ───────────────────────────────────
@@ -289,19 +313,25 @@ def present(
     score_fn: Callable[[Finding], float] | None = None,
     now: datetime | None = None,
     seen_count_by_id: dict[int, int] | None = None,
+    user_centroid: object | None = None,
     mmr_window: int | None = None,
     mmr_lambda: float | None = None,
     jaccard_threshold: float | None = None,
 ) -> list[ClusterCard]:
     """Cluster near-duplicates, then diversify the top of the list.
 
-    `score_fn` defaults to `default_score` — materiality + recency − seen-decay.
-    Once spec 03's ranker lands, callers pass a lookup into the Scored map.
+    `score_fn` defaults to `default_score` — materiality + recency − seen-decay
+    + optional embedding match (spec 08). Once spec 03's ranker lands, callers
+    pass a lookup into the Scored map.
 
     `seen_count_by_id` maps finding.id → number of prior view/open events
     outside the exclusion window (spec 07). Threaded into the default
     scorer only; when a caller supplies its own `score_fn`, this param is
     ignored — the custom scorer owns its math.
+
+    `user_centroid` is the spec-08 taste portrait (numpy float32, pre-normalized).
+    Threaded into the default scorer only. Callers without a profile pass None
+    and the embedding term silently contributes 0.
     """
     if not findings:
         return []
@@ -310,9 +340,15 @@ def present(
 
     if score_fn is None:
         seen_map = seen_count_by_id or {}
+        _centroid = user_centroid
 
         def _score(f: Finding, _now: datetime = _now) -> float:
-            return default_score(f, now=_now, seen_count=seen_map.get(f.id, 0))
+            return default_score(
+                f,
+                now=_now,
+                seen_count=seen_map.get(f.id, 0),
+                user_centroid=_centroid,
+            )
         score_fn = _score
 
     clustered = cluster(findings, score_fn=score_fn, jaccard_threshold=jaccard_threshold)

@@ -43,6 +43,22 @@ TAVILY_CREDITS_PER_DEPTH = {
 }
 
 
+# Voyage AI — USD per 1M tokens. https://docs.voyageai.com/docs/pricing
+# voyage-3-lite is what spec 08 uses. Other rows are here so a model swap
+# in app/ranker/config.py reflects in cost telemetry without code changes.
+VOYAGE: dict[str, float] = {
+    "voyage-3-lite": 0.02,
+    "voyage-3": 0.06,
+    "voyage-3-large": 0.18,
+    "_default": 0.02,
+}
+
+
+def voyage_cost(model: str, input_tokens: int) -> float:
+    rate = VOYAGE.get(model, VOYAGE["_default"])
+    return input_tokens / 1_000_000 * rate
+
+
 def _pick(model: str) -> dict[str, float]:
     if model in CLAUDE:
         return CLAUDE[model]

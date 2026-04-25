@@ -17,6 +17,7 @@ MANAGED_KEYS: dict[str, str] = {
     "SERPER_API_KEY":      "Serper (Google News, optional)",
     "ZENROWS_API_KEY":     "ZenRows (primary paid scraper — premium proxy + JS render, used first for every URL)",
     "SCRAPINGBEE_API_KEY": "ScrapingBee (secondary paid proxy fallback for Cloudflare-protected pages)",
+    "VOYAGE_API_KEY":      "Voyage AI (embeddings for semantic ranking — spec 08)",
     "GMAIL_USER":          "Gmail account for digest emails",
     "GMAIL_APP_PASSWORD":  "Gmail app password (IMAP/SMTP)",
 }
@@ -119,6 +120,11 @@ def _refresh_module_captures(name: str, value: str) -> None:
             # Null the adapter's cached client so the next call re-reads the env.
             from .adapters import gemini_research as _gem
             _gem._client = None
+        elif name == "VOYAGE_API_KEY":
+            # Same lazy-init pattern — null the cache so the next embed
+            # call instantiates a fresh voyageai.Client with the new key.
+            from .adapters import voyage as _voyage
+            _voyage._client = None
         # SERPER_API_KEY is read at call time by SerperProvider — nothing cached.
     except Exception as e:
         print(f"[env_keys] refresh failed for {name}: {e}")

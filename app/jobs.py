@@ -438,6 +438,7 @@ def _scan_and_review_one(comp_dict: dict, topics: list, memory: dict,
 
         from app.signals.extract import classify as _classify
         from app.signals.llm_classify import classify_and_summarize as _llm_cs
+        from app.signals.embed import embed_finding_text as _embed
         # First pass: filter to the findings we'll actually save (dedup on
         # hash). We do this before LLM calls so we never pay for a finding
         # we're about to skip. Classification + summary happens in one
@@ -454,31 +455,31 @@ def _scan_and_review_one(comp_dict: dict, topics: list, memory: dict,
             to_enrich.append((f, h))
 
         # Second pass: fan out LLM calls in parallel. Each call returns
-        # signal_type + materiality + summary together.
-        enriched: dict[str, tuple[str, float, dict, str | None]] = {}
+        # signal_type + materiality + summary together. The embedding
+        # call is independent so we run it in the same worker — keeps
+        # parallelism and total wall time the same.
+        enriched: dict[str, tuple[str, float, dict, str | None, bytes | None, str | None]] = {}
         if to_enrich:
             from concurrent.futures import ThreadPoolExecutor
             def _one(item):
                 f, h = item
                 llm = _llm_cs(f, name)
                 if llm is not None:
-                    return h, (llm["signal_type"], llm["materiality"],
-                               llm["payload"], llm["summary"])
-                # Fallback to deterministic regex classifier; no summary.
-                st, mat, payload = _classify(f)
-                return h, (st, mat, payload, None)
+                    st, mat, payload, summary = (
+                        llm["signal_type"], llm["materiality"],
+                        llm["payload"], llm["summary"])
+                else:
+                    # Fallback to deterministic regex classifier; no summary.
+                    st, mat, payload = _classify(f)
+                    summary = None
+                emb_bytes, emb_model = _embed(f.get("title"), summary, f.get("content"))
+                return h, (st, mat, payload, summary, emb_bytes, emb_model)
             with ThreadPoolExecutor(max_workers=min(8, len(to_enrich))) as pool:
                 for h, tup in pool.map(_one, to_enrich):
                     enriched[h] = tup
 
-        to_save: list[tuple[dict, str, str, float, dict]] = []
-        summaries: dict[str, str | None] = {}
         for f, h in to_enrich:
-            st, mat, payload, summary = enriched[h]
-            to_save.append((f, h, st, mat, payload))
-            summaries[h] = summary
-
-        for f, h, st, mat, payload in to_save:
+            st, mat, payload, summary, emb_bytes, emb_model = enriched[h]
             db.add(FindingModel(
                 run_id=run_id,
                 competitor=name,
@@ -487,7 +488,7 @@ def _scan_and_review_one(comp_dict: dict, topics: list, memory: dict,
                 title=f.get("title"),
                 url=f.get("url"),
                 content=f.get("content") or "",
-                summary=summaries.get(h),
+                summary=summary,
                 hash=h,
                 search_provider=f.get("search_provider"),
                 score=_coerce_score(f.get("relevance")),
@@ -496,6 +497,8 @@ def _scan_and_review_one(comp_dict: dict, topics: list, memory: dict,
                 materiality=mat,
                 payload=payload,
                 matched_keyword=f.get("matched_keyword"),
+                embedding=emb_bytes,
+                embedding_model=emb_model,
             ))
             _emit_material_event(db, run_id, f, c.id, st, mat)
         db.commit()
@@ -598,6 +601,7 @@ def run_scan_job(triggered_by: str = "schedule", freshness_days: int | None = No
                 if cust_findings:
                     from app.signals.extract import classify as _classify
                     from app.signals.llm_classify import classify_and_summarize as _llm_cs
+                    from app.signals.embed import embed_finding_text as _embed
                     for f in cust_findings:
                         if db.query(FindingModel).filter(
                             FindingModel.hash == f["hash"]
@@ -611,6 +615,7 @@ def run_scan_job(triggered_by: str = "schedule", freshness_days: int | None = No
                         else:
                             st, mat, payload = _classify(f)
                             summary = None
+                        emb_bytes, emb_model = _embed(f.get("title"), summary, f.get("content"))
                         db.add(FindingModel(
                             run_id=run.id,
                             competitor=f["competitor"],
@@ -628,6 +633,8 @@ def run_scan_job(triggered_by: str = "schedule", freshness_days: int | None = No
                             materiality=mat,
                             payload=payload,
                             matched_keyword=f.get("matched_keyword"),
+                            embedding=emb_bytes,
+                            embedding_model=emb_model,
                         ))
                     db.commit()
                     all_findings.extend(cust_findings)
@@ -985,6 +992,7 @@ def run_customer_scan_job(triggered_by: str = "manual",
             if cust_findings:
                 from app.signals.extract import classify as _classify
                 from app.signals.llm_classify import classify_and_summarize as _llm_cs
+                from app.signals.embed import embed_finding_text as _embed
                 for f in cust_findings:
                     if db.query(FindingModel).filter(
                         FindingModel.hash == f["hash"]
@@ -998,6 +1006,7 @@ def run_customer_scan_job(triggered_by: str = "manual",
                     else:
                         st, mat, payload = _classify(f)
                         summary = None
+                    emb_bytes, emb_model = _embed(f.get("title"), summary, f.get("content"))
                     db.add(FindingModel(
                         run_id=run.id,
                         competitor=f["competitor"],
@@ -1015,6 +1024,8 @@ def run_customer_scan_job(triggered_by: str = "manual",
                         materiality=mat,
                         payload=payload,
                         matched_keyword=f.get("matched_keyword"),
+                        embedding=emb_bytes,
+                        embedding_model=emb_model,
                     ))
                 db.commit()
                 print(f"[customer-scan] {len(cust_findings)} findings saved")

@@ -1215,12 +1215,24 @@ def _stream_query(db, user, filters):
         )
         seen_count_by_id = {fid: int(n) for fid, n in rows if fid is not None}
 
+    # Per-user taste centroid (docs/ranker/08-semantic-ranking.md). When
+    # set, `default_score` adds `EMBEDDING_WEIGHT * cosine` to every
+    # finding's score. None = cold-start or model mismatch — scorer
+    # silently degrades to spec-07 behaviour.
+    from .ranker.preferences import load_profile as _load_profile
+    user_centroid = _load_profile(db, user.id).taste_embedding
+
     # Cluster near-duplicates and apply MMR diversity to the top slots
     # (docs/ranker/06-cluster-diversity.md). Pure post-processing — DB
     # query shape is untouched. `lead_findings()` stamps `_cluster_size`
     # on each returned Finding so the template can render the "+N more"
     # chip without restructuring.
-    cards = _present_clusters(findings, now=now, seen_count_by_id=seen_count_by_id)
+    cards = _present_clusters(
+        findings,
+        now=now,
+        seen_count_by_id=seen_count_by_id,
+        user_centroid=user_centroid,
+    )
     findings = _lead_findings(cards)
 
     views: dict[int, SignalView] = {}
