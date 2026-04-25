@@ -992,6 +992,24 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
 }
 .flip-toggle:hover { background: rgba(0, 0, 0, 0.05); color: var(--text, #222); }
 
+/* Spec 09 — collapse-and-remove animation for handled cards.
+   Triggered after a successful pin or hide; the card shrinks its
+   height to 0 while fading out, so the cards below visibly slide
+   up to fill the gap. JS removes the element on transitionend. */
+.signal-card.is-removing {
+  transition:
+    max-height 0.25s ease,
+    opacity 0.2s ease,
+    margin 0.25s ease,
+    transform 0.25s ease;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-12%);
+  margin-top: 0;
+  margin-bottom: 0;
+  pointer-events: none;
+}
+
 /* Spec 09 — follow-up question echo on the competitor profile expand panel. */
 .follow-up-question {
   background: rgba(201, 150, 58, 0.08);
