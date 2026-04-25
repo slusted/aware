@@ -7,6 +7,7 @@
 {% if findings %}
   {% for f in findings %}
     {% set view = views.get(f.id) %}
+    {% set view_count = (view_counts.get(f.id, 0) if view_counts is defined else 0) %}
     {% include "_stream_card.html" %}
   {% endfor %}
 {% elif window == 0 and not has_more %}
