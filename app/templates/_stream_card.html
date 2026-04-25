@@ -133,10 +133,10 @@
     <textarea class="signal-card-back-textarea"
               maxlength="500"
               rows="3"
-              placeholder="Ask a follow-up about this finding (optional)"></textarea>
+              placeholder="Ask a follow-up about this finding (optional)">{{ view.question if view and view.question else '' }}</textarea>
     <div class="signal-card-back-row">
       <button type="button" class="btn-card-back is-primary"
-              data-flip-action="submit">Pin</button>
+              data-flip-action="submit">{% if view and view.question %}Pin & ask{% else %}Pin{% endif %}</button>
       <button type="button" class="btn-card-back is-cancel"
               data-flip-action="cancel">Cancel</button>
     </div>

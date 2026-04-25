@@ -150,11 +150,27 @@ check("non-existent finding returns 404", r.status_code == 404)
 # ── §2 — Question side effects ─────────────────────────────────────
 section("Question endpoint side effects")
 
-q_text = "How does this compare to LinkedIn's hire last quarter?"
+q_text = "How does this compare to LinkedIns hire last quarter"
 r = client.post(f"/partials/finding/{FIDS['f1']}/question",
                 data={"question": q_text})
 check("valid question returns 200", r.status_code == 200,
       f"got {r.status_code}: {r.text[:100]}")
+# Re-rendered card markup must echo the question in the textarea so a
+# subsequent flip can show + edit the prior text. Question deliberately
+# contains no special chars so we can substring-match the raw HTML.
+import re as _re
+ta_match = _re.search(
+    r'<textarea[^>]*signal-card-back-textarea[^>]*>([^<]*)</textarea>',
+    r.text,
+)
+check("re-rendered card prefills textarea with stored question",
+      ta_match is not None and ta_match.group(1).strip() == q_text,
+      f"got {ta_match.group(1) if ta_match else '(no textarea)'!r}")
+# And the primary button label flips to "Pin & ask" so the user sees
+# pressing it will re-submit (or update) the question.
+check("primary button label is 'Pin & ask' when question stored",
+      ">Pin &amp; ask<" in r.text or ">Pin & ask<" in r.text,
+      "label should say 'Pin & ask' on cards with stored question")
 
 with Session(engine) as s:
     sv = (

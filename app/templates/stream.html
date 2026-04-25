@@ -171,12 +171,23 @@
     card.style.setProperty('--swipe-right-opacity', 0);
   };
 
+  // Re-evaluate the primary button's label from current textarea content.
+  // Called after flips and after edits — covers the case where the
+  // textarea is server-prefilled with a stored question (no input event
+  // fires on initial render).
+  const syncFlipLabel = (card) => {
+    const ta = card.querySelector('.signal-card-back-textarea');
+    const primary = card.querySelector('[data-flip-action="submit"]');
+    if (ta && primary) {
+      primary.textContent = ta.value.trim() ? 'Pin & ask' : 'Pin';
+    }
+  };
+
   const flipToFront = (card) => {
     card.classList.remove('is-flipped');
-    const ta = card.querySelector('.signal-card-back-textarea');
-    if (ta) ta.value = '';
-    const primary = card.querySelector('[data-flip-action="submit"]');
-    if (primary) primary.textContent = 'Pin';
+    // Deliberately do NOT clear the textarea: if the user typed and
+    // hit Cancel we preserve their work, and for cards with a stored
+    // question the textarea always shows the canonical value.
     const back = card.querySelector('.signal-card-back');
     if (back) back.setAttribute('aria-hidden', 'true');
   };
@@ -185,6 +196,7 @@
     card.classList.add('is-flipped');
     const back = card.querySelector('.signal-card-back');
     if (back) back.setAttribute('aria-hidden', 'false');
+    syncFlipLabel(card);
   };
 
   // Collapse the card's height to zero, fade it out, then remove from DOM.
