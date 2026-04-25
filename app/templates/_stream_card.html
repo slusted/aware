@@ -71,6 +71,15 @@
               aria-controls="card-{{ f.id }}-expanded"
               title="Show details">›</button>
     </span>
+    {% else %}
+    {# Spec 09: desktop pin path — flip the card to reveal pin / ask-follow-up
+       actions. On mobile this duplicates the swipe-right gesture. Hidden when
+       the partial is rendered read-only on the competitor profile. #}
+    <span class="card-actions flip-actions">
+      <button type="button" class="btn-mini flip-toggle"
+              aria-label="Pin or ask follow-up"
+              title="Pin or ask follow-up">↻</button>
+    </span>
     {% endif %}
   </header>
 
@@ -91,6 +100,13 @@
 
   {% if expandable %}
   <div id="card-{{ f.id }}-expanded" class="signal-card-expanded" hidden>
+    {% if view and view.question %}
+    {# Spec 09: surface the user's pinned-with-question on the competitor
+       profile so the question is visible alongside the finding. #}
+    <div class="follow-up-question">
+      <strong>Asked:</strong> &ldquo;{{ view.question }}&rdquo;
+    </div>
+    {% endif %}
     <div class="provenance">
       <span><strong>URL:</strong> {% if f.url %}<a href="{{ f.url }}" target="_blank" rel="noopener" class="mono">{{ f.url[:90] }}</a>{% else %}—{% endif %}</span>
       <span><strong>Topic:</strong> {{ f.topic or '—' }}</span>
@@ -109,5 +125,45 @@
     <footer class="signal-card-foot muted">Snoozed until {{ view.snoozed_until.strftime('%b %d') }}</footer>
   {% endif %}
   </div>{# /signal-card-content #}
+
+  {% if not expandable %}
+  {# Spec 09: back-of-card actions. Hidden behind .is-flipped on the
+     wrapper article. Three primary actions: Pin, Ask follow-up, Cancel.
+     The Ask path expands an inline textarea before submit. #}
+  <div class="signal-card-back" aria-hidden="true">
+    <div class="signal-card-back-inner">
+      <button type="button"
+              class="btn-card-back is-primary"
+              data-flip-action="pin"
+              hx-post="/partials/stream_view/{{ f.id }}"
+              hx-vals='{"state":"pinned"}'
+              hx-target="#card-{{ f.id }}"
+              hx-swap="outerHTML">Pin / save</button>
+      <button type="button"
+              class="btn-card-back"
+              data-flip-action="ask">Ask follow-up</button>
+      <button type="button"
+              class="btn-card-back is-cancel"
+              data-flip-action="cancel">Cancel</button>
+
+      <form class="signal-card-ask"
+            hx-post="/partials/finding/{{ f.id }}/question"
+            hx-target="#card-{{ f.id }}"
+            hx-swap="outerHTML"
+            hidden>
+        <textarea name="question"
+                  maxlength="500"
+                  rows="3"
+                  placeholder="What would you like to know about this finding?"
+                  required></textarea>
+        <div class="signal-card-ask-row">
+          <button type="submit" class="btn-card-back is-primary">Send</button>
+          <button type="button" class="btn-card-back is-cancel"
+                  data-flip-action="ask-cancel">Back</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
   </div>{# /signal-card-inner #}
 </article>

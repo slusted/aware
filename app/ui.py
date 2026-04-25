@@ -184,13 +184,34 @@ def competitor_profile(competitor_id: int, request: Request, db: Session = Depen
         .limit(10)
         .all()
     )
-    findings = (
-        db.query(Finding)
-        .filter(Finding.competitor == c.name)
-        .order_by(Finding.created_at.desc())
+    # Spec 09: pinned-by-current-user findings float to the top, then
+    # everything else by recency. Hidden (state='dismissed') findings are
+    # excluded — same model the stream uses by default.
+    from sqlalchemy import case, and_, or_
+    pinned_priority = case((SignalView.state == "pinned", 0), else_=1)
+    findings_q = (
+        db.query(Finding, SignalView)
+        .outerjoin(
+            SignalView,
+            and_(
+                SignalView.finding_id == Finding.id,
+                SignalView.user_id == user.id,
+            ),
+        )
+        .filter(
+            Finding.competitor == c.name,
+            or_(SignalView.state.is_(None), SignalView.state != "dismissed"),
+        )
+        .order_by(pinned_priority, Finding.created_at.desc())
         .limit(30)
-        .all()
     )
+    findings_with_views = findings_q.all()
+    findings = [row[0] for row in findings_with_views]
+    # Map finding_id -> SignalView so the template can render the user's
+    # pin state + question echo on each card.
+    views_by_finding = {
+        row[0].id: row[1] for row in findings_with_views if row[1] is not None
+    }
     # Per-provider aggregate so the user can see at a glance which provider
     # delivered the most results and how relevant they were for this competitor.
     since = datetime.utcnow() - timedelta(days=30)
@@ -307,7 +328,9 @@ def competitor_profile(competitor_id: int, request: Request, db: Session = Depen
 
     return templates.TemplateResponse(request, "competitor_profile.html", {
         "user": user, "c": c, "latest": latest, "history": history,
-        "findings": findings, "provider_breakdown": provider_breakdown,
+        "findings": findings,
+        "views_by_finding": views_by_finding,
+        "provider_breakdown": provider_breakdown,
         "momentum": momentum,
         "positioning": positioning,
         "positioning_history": positioning_history,
@@ -1289,6 +1312,76 @@ def partial_stream_list(
         "filters": filters,
         "has_more": has_more,
         "logos": _build_logo_map(db, findings),
+    })
+
+
+@router.post("/partials/finding/{finding_id}/question", response_class=HTMLResponse)
+async def partial_finding_question(
+    finding_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Capture a follow-up question on a finding (spec 09).
+
+    Side effects, in one transaction:
+      1. Upsert SignalView with state='pinned' and question=<text>.
+         Asking a question implies pinning — see spec 09 §Open Questions §1.
+      2. Append a UserSignalEvent of type 'pin' with meta.via='swipe_flip'
+         and meta.question_chars=<len>. Question text deliberately stays
+         on SignalView, not the event log — the log is meant to be
+         minimal append-only events, not user-authored content.
+
+    Returns the re-rendered card via the same template the swipe
+    pin/dismiss path uses, so HTMX swap targets are identical.
+    """
+    form = await request.form()
+    question = (form.get("question") or "").strip()
+    if not question:
+        raise HTTPException(400, "question must not be empty")
+    if len(question) > 500:
+        raise HTTPException(400, "question must be 500 chars or fewer")
+
+    f = db.get(Finding, finding_id)
+    if not f:
+        raise HTTPException(404, "finding not found")
+
+    now = datetime.utcnow()
+    existing = (
+        db.query(SignalView)
+        .filter(SignalView.user_id == user.id, SignalView.finding_id == finding_id)
+        .first()
+    )
+    if existing:
+        existing.state = "pinned"
+        existing.question = question
+        existing.snoozed_until = None
+        existing.updated_at = now
+        v = existing
+    else:
+        v = SignalView(
+            user_id=user.id,
+            finding_id=finding_id,
+            state="pinned",
+            question=question,
+            updated_at=now,
+        )
+        db.add(v)
+
+    db.add(UserSignalEvent(
+        user_id=user.id,
+        finding_id=finding_id,
+        event_type="pin",
+        value=None,
+        source="stream",
+        meta={"via": "swipe_flip", "question_chars": len(question)},
+        ts=now,
+    ))
+    db.commit()
+    return templates.TemplateResponse(request, "_stream_card.html", {
+        "f": f,
+        "view": v,
+        "logos": _build_logo_map(db, [f]),
     })
 
 

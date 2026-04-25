@@ -71,7 +71,7 @@
       <label class="filter-label" style="margin-left:16px">
         <input type="checkbox" name="include_dismissed" value="1"
                {% if filters.include_dismissed %}checked{% endif %}>
-        Show dismissed
+        Show hidden
       </label>
 
       {# Down-weight stale: hidden "0" always posts so unchecking is observable;
@@ -147,8 +147,12 @@
 })();
 </script>
 
-{# Mobile swipe: left = dismiss, right = pin (material insight). Hits the same
-   per-user SignalView endpoint the action buttons use, so judgments stay local. #}
+{# Spec 09 — Mobile swipe + flip-to-pin.
+   Left swipe past commit threshold = hide (state=dismissed).
+   Right swipe past commit threshold = flip the card to reveal back-of-card
+   actions (pin / ask follow-up / cancel). The actual pin / question hit
+   the SignalView and question endpoints via HTMX from the back of the card.
+   The desktop ↻ button on each card triggers the same flip. #}
 <script>
 (() => {
   const list = document.getElementById('stream-list');
@@ -167,12 +171,31 @@
     card.style.setProperty('--swipe-right-opacity', 0);
   };
 
+  const flipToFront = (card) => {
+    card.classList.remove('is-flipped');
+    const ask = card.querySelector('.signal-card-ask');
+    if (ask) {
+      ask.hidden = true;
+      const ta = ask.querySelector('textarea');
+      if (ta) ta.value = '';
+    }
+    const back = card.querySelector('.signal-card-back');
+    if (back) back.setAttribute('aria-hidden', 'true');
+  };
+
+  const flipToBack = (card) => {
+    card.classList.add('is-flipped');
+    const back = card.querySelector('.signal-card-back');
+    if (back) back.setAttribute('aria-hidden', 'false');
+  };
+
   list.addEventListener('touchstart', (e) => {
     if (!mq.matches || e.touches.length !== 1) return;
     const card = e.target.closest('.signal-card');
     if (!card) return;
-    // Let taps on action buttons fall through unchanged.
+    // Don't intercept touches on action buttons or while the card is flipped.
     if (e.target.closest('.card-actions')) return;
+    if (card.classList.contains('is-flipped')) return;
     const t = e.touches[0];
     active = { card, startX: t.clientX, startY: t.clientY, dx: 0, locked: null };
   }, { passive: true });
@@ -209,19 +232,65 @@
     reset(card);
     if (locked !== 'h' || Math.abs(dx) < COMMIT_PX) return;
     const id = card.id.replace('card-', '');
-    const state = dx > 0 ? 'pinned' : 'dismissed';
-    if (window.htmx) {
-      htmx.ajax('POST', '/partials/stream_view/' + id, {
-        target: '#card-' + id,
-        swap: 'outerHTML',
-        values: { state: state }
-      });
+    if (dx < 0) {
+      // Left = hide. Single round-trip; the partial endpoint also styles
+      // the card 'dismissed' so the user sees the action landed.
+      if (window.htmx) {
+        htmx.ajax('POST', '/partials/stream_view/' + id, {
+          target: '#card-' + id,
+          swap: 'outerHTML',
+          values: { state: 'dismissed' }
+        });
+      }
+    } else {
+      // Right = flip to back-of-card actions. No DB write yet — the user
+      // still has to pick Pin or Ask, or Cancel back out.
+      flipToBack(card);
     }
   };
 
   list.addEventListener('touchend', end);
   list.addEventListener('touchcancel', () => {
     if (active) { reset(active.card); active = null; }
+  });
+
+  // Desktop ↻ button — only path to pinning when there's no touch.
+  list.addEventListener('click', (e) => {
+    const flipBtn = e.target.closest('.flip-toggle');
+    if (flipBtn) {
+      const card = flipBtn.closest('.signal-card');
+      if (card) flipToBack(card);
+      return;
+    }
+    const action = e.target.closest('[data-flip-action]');
+    if (!action) return;
+    const card = action.closest('.signal-card');
+    if (!card) return;
+    const kind = action.dataset.flipAction;
+    if (kind === 'cancel') {
+      flipToFront(card);
+    } else if (kind === 'ask') {
+      // Reveal the textarea form; collapse the three top-level buttons.
+      const back = card.querySelector('.signal-card-back-inner');
+      const ask = card.querySelector('.signal-card-ask');
+      if (back && ask) {
+        ask.hidden = false;
+        const ta = ask.querySelector('textarea');
+        if (ta) ta.focus();
+        back.classList.add('is-asking');
+      }
+    } else if (kind === 'ask-cancel') {
+      const back = card.querySelector('.signal-card-back-inner');
+      const ask = card.querySelector('.signal-card-ask');
+      if (back && ask) {
+        ask.hidden = true;
+        const ta = ask.querySelector('textarea');
+        if (ta) ta.value = '';
+        back.classList.remove('is-asking');
+      }
+    }
+    // 'pin' is a hx-post button — HTMX swaps in the new card markup,
+    // which doesn't have .is-flipped, so the front naturally returns.
   });
 })();
 </script>

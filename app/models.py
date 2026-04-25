@@ -471,6 +471,11 @@ class SignalView(Base):
     finding_id: Mapped[int] = mapped_column(ForeignKey("findings.id"), index=True)
     state: Mapped[str] = mapped_column(String(16))  # seen | pinned | dismissed | snoozed
     snoozed_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Optional follow-up question the user typed when pinning via the
+    # spec-09 swipe flip. Living on SignalView (not user_signal_events)
+    # because it's user-authored content tied to the (user, finding)
+    # pair, not an immutable event. Capped at 500 chars in the route.
+    question: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
