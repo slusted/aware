@@ -268,15 +268,24 @@
   })();
 </script>
 
-{# Hydrate the findings summary body as markdown — matches market_detail.html #}
+{# Hydrate inline markdown bodies after marked loads. Both the findings
+   summary panel (digest-body) and the market synthesis ready card
+   (synthesis-body) live above this script tag, so the partial's own
+   inline render fires before marked is global on first paint — this
+   pass is the one that actually paints them. The partial keeps its
+   own render call for HTMX swaps after marked is already loaded. #}
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-  (function renderDigestBody() {
-    var src = document.getElementById('digest-src');
-    var out = document.getElementById('digest-body');
-    if (src && out && window.marked) {
-      out.innerHTML = window.marked.parse(src.textContent);
+  (function renderInlineMarkdown() {
+    function paint(srcId, outId) {
+      var src = document.getElementById(srcId);
+      var out = document.getElementById(outId);
+      if (src && out && window.marked) {
+        out.innerHTML = window.marked.parse(src.textContent);
+      }
     }
+    paint('digest-src', 'digest-body');
+    paint('synthesis-src', 'synthesis-body');
   })();
 </script>
 {% endblock %}
