@@ -211,23 +211,44 @@
     setTimeout(finish, 900);
   };
 
-  // POST + animate. Returns the fetch promise so submit handlers can wait
-  // before removing — never remove the card optimistically; if the request
-  // fails the card stays and the user can retry.
-  const postAndRemove = (card, url, body) => {
+  // Shared fetch helper. Resolves to the response text on 2xx, throws
+  // otherwise. Both call sites guard so the card only changes state on
+  // confirmed success.
+  const postFinding = (url, body) => {
     return fetch(url, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams(body).toString(),
-    }).then((r) => {
+    }).then(async (r) => {
       if (!r.ok) throw new Error('http ' + r.status);
-      removeCard(card);
-    }).catch(() => {
-      // Keep the card; flip back to front so the user can try again.
-      flipToFront(card);
+      return r.text();
     });
   };
+
+  // Hide path: collapse the card out of the stream (cards below slide up).
+  const postAndRemove = (card, url, body) =>
+    postFinding(url, body)
+      .then(() => removeCard(card))
+      .catch(() => flipToFront(card));
+
+  // Pin path: leave the card in place but swap in the re-rendered markup
+  // (now carrying state-pinned, the question echo if any, etc.) so the
+  // user sees the action landed without losing their place in the list.
+  const postAndReplace = (card, url, body) =>
+    postFinding(url, body)
+      .then((html) => {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = html.trim();
+        const replacement = wrapper.firstElementChild;
+        if (replacement) {
+          card.replaceWith(replacement);
+        } else {
+          // No markup back — best-effort flip-to-front.
+          flipToFront(card);
+        }
+      })
+      .catch(() => flipToFront(card));
 
   list.addEventListener('touchstart', (e) => {
     if (!mq.matches || e.touches.length !== 1) return;
@@ -325,15 +346,16 @@
       const id = card.id.replace('card-', '');
       const ta = card.querySelector('.signal-card-back-textarea');
       const question = ta ? ta.value.trim() : '';
-      // Pin (with or without question) collapses the card out of the
-      // stream just like dismiss does — the user has handled it. The
-      // pinned card resurfaces on the competitor profile (spec 09 §UI).
+      // Pin keeps the card in the stream — it's a positive signal, not
+      // "I'm done with this". The re-rendered markup carries state-pinned
+      // styling and the user's natural ranking/recency does the rest.
+      // (Hide is the path that collapses cards out, not pin.)
       if (question) {
-        postAndRemove(card, '/partials/finding/' + id + '/question',
-                      { question: question });
+        postAndReplace(card, '/partials/finding/' + id + '/question',
+                       { question: question });
       } else {
-        postAndRemove(card, '/partials/stream_view/' + id,
-                      { state: 'pinned' });
+        postAndReplace(card, '/partials/stream_view/' + id,
+                       { state: 'pinned' });
       }
     }
   });
