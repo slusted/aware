@@ -4,6 +4,11 @@ preference vector (docs/ranker/02-preference-rollup.md).
 Pure arithmetic, no LLM. Every run is deterministic for the same input
 and idempotent (truncate-and-rewrite per user). Dropping the vector
 table is safe: the next call reconstructs it from events.
+
+Spec 08 also computes a per-user taste embedding here — a signed-weight
+sum of engaged-finding embeddings, L2-normalized and stored on the
+profile. Same lookback, same decay, same EVENT_WEIGHTS map: one pass
+over events does both.
 """
 from __future__ import annotations
 
@@ -14,6 +19,7 @@ from typing import NamedTuple
 
 from sqlalchemy.orm import Session
 
+from ..adapters import voyage as _voyage
 from ..models import Finding, UserPreferenceProfile, UserPreferenceVector, UserSignalEvent
 from . import config as rcfg
 
@@ -132,6 +138,12 @@ def rebuild_user_preferences(
     event_count_30d = 0
     ln2 = math.log(2.0)
 
+    # Lazy numpy import — keeps the rollup importable in test envs that
+    # don't have numpy (rare, but the rest of the rollup is pure stdlib).
+    _np = None
+    centroid_sum = None
+    centroid_contributions = 0
+
     for event, finding in rows:
         events_considered += 1
         if event.ts >= cutoff_30d:
@@ -151,6 +163,25 @@ def rebuild_user_preferences(
 
         for dk in _finding_dim_keys(finding):
             acc.contribute(dk, decayed, event.ts)
+
+        # Centroid contribution. Only signed events contribute, and only
+        # when the finding has a current-model embedding. Mismatched
+        # embedding_model means the row is stale (model bumped after it
+        # was embedded) — skip rather than mix dimensions.
+        if (
+            decayed != 0.0
+            and finding.embedding is not None
+            and finding.embedding_model == rcfg.EMBEDDING_MODEL
+        ):
+            vec = _voyage.unpack(finding.embedding)
+            if vec is None:
+                continue
+            if _np is None:
+                import numpy as _np_mod  # type: ignore[import-not-found]
+                _np = _np_mod
+                centroid_sum = _np.zeros(rcfg.EMBEDDING_DIM, dtype=_np.float32)
+            centroid_sum = centroid_sum + decayed * vec  # type: ignore[operator]
+            centroid_contributions += 1
 
     # Onboarding seed has special dimension routing — meta.topics and
     # meta.competitors are arrays of keys to credit directly, no Finding
@@ -201,6 +232,19 @@ def rebuild_user_preferences(
         ))
         keys_written += 1
 
+    # Finalize the centroid: L2-normalize the signed-weighted sum. A zero-
+    # length sum (no signed engaged-finding embeddings, or perfectly
+    # cancelling positives and negatives) → NULL centroid, scorer's
+    # embedding term silently disables.
+    centroid_blob: bytes | None = None
+    centroid_model: str | None = None
+    if centroid_sum is not None and _np is not None:
+        norm = float(_np.linalg.norm(centroid_sum))
+        if norm > 0.0:
+            normalized = (centroid_sum / norm).astype(_np.float32, copy=False)
+            centroid_blob = _voyage.pack(normalized)
+            centroid_model = rcfg.EMBEDDING_MODEL
+
     profile = db.get(UserPreferenceProfile, user_id)
     cold = event_count_30d < rcfg.COLD_START_THRESHOLD
     if profile is None:
@@ -210,12 +254,20 @@ def rebuild_user_preferences(
             event_count_30d=event_count_30d,
             last_computed_at=now,
             schema_version=rcfg.SCHEMA_VERSION,
+            taste_embedding=centroid_blob,
+            taste_embedding_count=centroid_contributions,
+            taste_embedding_model=centroid_model,
+            taste_embedding_updated_at=now if centroid_blob is not None else None,
         ))
     else:
         profile.cold_start = cold
         profile.event_count_30d = event_count_30d
         profile.last_computed_at = now
         profile.schema_version = rcfg.SCHEMA_VERSION
+        profile.taste_embedding = centroid_blob
+        profile.taste_embedding_count = centroid_contributions
+        profile.taste_embedding_model = centroid_model
+        profile.taste_embedding_updated_at = now if centroid_blob is not None else None
         # taste_doc is deliberately untouched — spec 04 owns it.
 
     db.commit()
@@ -224,4 +276,5 @@ def rebuild_user_preferences(
         "events_considered": events_considered,
         "keys_written": keys_written,
         "event_count_30d": event_count_30d,
+        "centroid_contributions": centroid_contributions,
     }

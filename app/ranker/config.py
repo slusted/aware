@@ -182,3 +182,35 @@ STANDIN_RECENCY_HALFLIFE_DAYS: float = 7.0
 STANDIN_SEEN_DECAY_PER_VIEW: float = 0.25
 STANDIN_SEEN_DECAY_MAX_VIEWS: int = 3
 STANDIN_SEEN_DECAY_EXCLUDE_MINUTES: int = 60
+
+
+# ── Embedding / semantic ranking (spec 08) ───────────────────────────
+# Voyage AI is the embedding provider; the adapter
+# (app/adapters/voyage.py) reads VOYAGE_API_KEY at call time. When the
+# key is unset, both finding-side embedding and centroid build silently
+# no-op and the scorer's embedding term contributes 0.
+
+# Model name passed to the Voyage SDK. Must agree with EMBEDDING_DIM
+# below — a mismatch means the adapter rejects the response and logs
+# `dim_mismatch`. Bumping this constant invalidates every existing
+# Finding.embedding row (model recorded per-row); rerun the backfill
+# script to refresh.
+EMBEDDING_MODEL: str = "voyage-3-lite"
+EMBEDDING_DIM: int = 512
+
+# Safety cap before sending to Voyage. The model's real context is
+# higher; this limit matches roughly the title + summary + content cap
+# we already truncate to in summarize.py.
+EMBEDDING_INPUT_CHAR_CAP: int = 8192
+
+# Additive scorer term: `embedding_match = EMBEDDING_WEIGHT * cosine`.
+# Picked slightly above the spec-03 materiality_boost (0.5) since
+# semantic match is a richer signal than a global quality score, but
+# bounded so a single term can't dominate the additive total.
+EMBEDDING_WEIGHT: float = 0.6
+
+# The centroid uses the same EVENT_WEIGHTS map the structured-dimension
+# rollup uses — every signed event with an embedded finding contributes
+# (positives pull toward, negatives push away). No separate event filter
+# lives here; if EVENT_WEIGHTS says it counts, it counts toward the
+# centroid too. See docs/ranker/08-semantic-ranking.md §Centroid.

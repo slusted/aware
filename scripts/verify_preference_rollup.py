@@ -120,7 +120,10 @@ check("user_preferences_vector has all expected columns", vec_cols == expected,
 
 profile_cols = {c["name"] for c in insp.get_columns("user_preference_profile")}
 expected = {"user_id", "taste_doc", "cold_start", "event_count_30d",
-            "last_computed_at", "schema_version"}
+            "last_computed_at", "schema_version",
+            # Spec 08 — semantic-ranking centroid storage.
+            "taste_embedding", "taste_embedding_count",
+            "taste_embedding_model", "taste_embedding_updated_at"}
 check("user_preference_profile has all expected columns", profile_cols == expected,
       f"diff: {profile_cols ^ expected}")
 

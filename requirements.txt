@@ -25,3 +25,9 @@ google-play-scraper>=1.2.0
 # Article extraction — fetches pages ourselves instead of paying Tavily /extract.
 # Paid scrapers (ZenRows, ScrapingBee) are HTTP-only; trafilatura does local extraction.
 trafilatura>=1.12
+
+# Semantic ranking (docs/ranker/08-semantic-ranking.md). voyageai pulls numpy
+# transitively, but pin explicitly so the rollup's centroid math doesn't depend
+# on transitive availability.
+voyageai>=0.3.0
+numpy>=1.26.0

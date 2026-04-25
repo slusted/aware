@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, Integer, Float, DateTime, Text, JSON, ForeignKey, Boolean, UniqueConstraint, Index, text
+from sqlalchemy import String, Integer, Float, DateTime, Text, JSON, ForeignKey, Boolean, UniqueConstraint, Index, LargeBinary, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
@@ -168,6 +168,13 @@ class Finding(Base):
     # yet for this scan. This is a stronger "was this useful" proxy than
     # raw materiality, which only grades signal-type potential.
     digest_threat_level: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    # Semantic-ranking embedding (docs/ranker/08-semantic-ranking.md).
+    # 512 float32s packed via numpy.tobytes(). NULL = not yet embedded
+    # (failed API call, missing key, or pre-spec-08 row not yet backfilled).
+    # `embedding_model` records which model produced the bytes so a model
+    # bump can invalidate stale rows without a destructive migration.
+    embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class Report(Base):
@@ -570,6 +577,16 @@ class UserPreferenceProfile(Base):
     # cached vectors (config.py). Rollup compares stored vs. current and
     # forces a rebuild when they differ.
     schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Semantic-ranking taste centroid (docs/ranker/08-semantic-ranking.md).
+    # Signed-weighted L2-normalized sum of engaged-finding embeddings,
+    # packed as float32 bytes. NULL = no embedded engagement yet (cold
+    # for semantic purposes — structured-dimension scoring still applies).
+    # `taste_embedding_model` must match the current EMBEDDING_MODEL for
+    # the centroid to be usable; mismatches silently drop the embedding term.
+    taste_embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    taste_embedding_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    taste_embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    taste_embedding_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class SavedFilter(Base):
