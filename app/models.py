@@ -100,13 +100,17 @@ class Run(Base):
     __tablename__ = "runs"
     id: Mapped[int] = mapped_column(primary_key=True)
     kind: Mapped[str] = mapped_column(String(32))  # scan, discovery, prune, reply_check
-    status: Mapped[str] = mapped_column(String(32), default="pending")  # pending, running, ok, error
+    # queued, running, cancelling, cancelled, ok, error (legacy: pending — unused)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
     triggered_by: Mapped[str] = mapped_column(String(32), default="schedule")  # schedule, manual, api
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     findings_count: Mapped[int] = mapped_column(Integer, default=0)
     report_id: Mapped[int | None] = mapped_column(ForeignKey("reports.id"), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Args persisted at enqueue time so the drainer can dispatch the job
+    # later without losing the trigger params. Today: scan stores {"days": int|None}.
+    job_args: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=dict)
 
     events: Mapped[list["RunEvent"]] = relationship(back_populates="run", cascade="all, delete-orphan")
 

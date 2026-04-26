@@ -1,7 +1,7 @@
 """chat_sessions + chat_messages
 
-Revision ID: w9l3m4n5o6p7
-Revises: v8k2l3m4n5o6
+Revision ID: x0m4n5o6p7q8
+Revises: w9l3m4n5o6p7
 Create Date: 2026-04-26 00:00:00.000000
 
 Tables for the agentic chat surface (docs/chat/01-chat.md). One row per
@@ -12,8 +12,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = 'w9l3m4n5o6p7'
-down_revision = 'v8k2l3m4n5o6'
+revision = 'x0m4n5o6p7q8'
+down_revision = 'w9l3m4n5o6p7'
 branch_labels = None
 depends_on = None
 

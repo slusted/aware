@@ -298,12 +298,30 @@ def _log(db, run: Run, msg: str, level: str = "info"):
         pass
 
 
-def _start_run(kind: str, triggered_by: str = "schedule") -> tuple[Run, object]:
+def _start_run(
+    kind: str,
+    triggered_by: str = "schedule",
+    run_id: int | None = None,
+) -> tuple[Run, object]:
+    """Either create a new running Run, or attach to an existing row that the
+    drainer already flipped to 'running'. Cron / direct callers pass no
+    run_id and get the legacy create-and-run path. Queue-dispatched callers
+    pass the row's id so we don't insert a duplicate."""
     db = SessionLocal()
-    run = Run(kind=kind, status="running", triggered_by=triggered_by)
-    db.add(run)
-    db.commit()
-    db.refresh(run)
+    if run_id is not None:
+        run = db.get(Run, run_id)
+        if run is None:
+            # Defensive: drainer should never call us with a missing id, but
+            # falling back to a fresh row is safer than a NoneType crash.
+            run = Run(kind=kind, status="running", triggered_by=triggered_by)
+            db.add(run)
+            db.commit()
+            db.refresh(run)
+    else:
+        run = Run(kind=kind, status="running", triggered_by=triggered_by)
+        db.add(run)
+        db.commit()
+        db.refresh(run)
     return run, db
 
 
@@ -313,6 +331,160 @@ def _finish_run(db, run: Run, status: str = "ok", error: str | None = None):
     run.error = error
     db.commit()
     db.close()
+
+
+# ── Run queue ────────────────────────────────────────────────────
+# Single-slot DB-backed queue. Trigger endpoints insert a row with
+# status='queued'; the drainer (registered by app/scheduler.py) wakes
+# every few seconds, picks the oldest queued row when nothing is
+# running, flips it to 'running', and dispatches the matching job
+# function on a worker thread. See docs/runs/01-run-queue.md.
+
+# Soft cap on queued+running rows; trigger endpoints return 429 above it.
+RUN_QUEUE_MAX = int(os.environ.get("RUN_QUEUE_MAX", "10"))
+
+
+def queue_depth(db) -> int:
+    """Number of currently-queued runs (waiting + about-to-run). Excludes
+    the running/cancelling row itself."""
+    return (
+        db.query(Run)
+        .filter(Run.status == "queued")
+        .count()
+    )
+
+
+def queue_position(db, run_id: int) -> int:
+    """1-based FIFO position of a queued run. Returns 0 if the run isn't
+    queued (e.g. already picked up). Cheap: one indexed count."""
+    row = db.get(Run, run_id)
+    if row is None or row.status != "queued":
+        return 0
+    return (
+        db.query(Run)
+        .filter(Run.status == "queued", Run.id <= run_id)
+        .count()
+    )
+
+
+def is_anything_in_flight(db) -> bool:
+    return (
+        db.query(Run)
+        .filter(Run.status.in_(["running", "cancelling"]))
+        .first()
+        is not None
+    )
+
+
+def enqueue_run(
+    db,
+    kind: str,
+    *,
+    triggered_by: str = "manual",
+    job_args: dict | None = None,
+) -> Run:
+    """Insert a queued Run row + an initial RunEvent. Returns the row.
+    Caller is responsible for the queue-cap check (so the endpoint can
+    return 429 before this is invoked)."""
+    run = Run(
+        kind=kind,
+        status="queued",
+        triggered_by=triggered_by,
+        job_args=dict(job_args or {}),
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    db.add(
+        RunEvent(
+            run_id=run.id,
+            level="info",
+            message=f"queued ({kind})"
+            + (f" args={dict(job_args)}" if job_args else ""),
+        )
+    )
+    db.commit()
+    return run
+
+
+def _dispatch_queued_run(run_id: int, kind: str, args: dict, triggered_by: str) -> None:
+    """Worker-thread entrypoint. The drainer has already flipped the row to
+    'running' and committed; we just call the matching job function with
+    `run_id=` so _start_run reuses the row. Errors flip the row to 'error'
+    via the job's own try/finally — but if dispatch itself fails (unknown
+    kind, import error), we mark the row error here so it doesn't sit
+    'running' forever."""
+    try:
+        if kind == "scan":
+            run_scan_job(triggered_by, args.get("days"), run_id=run_id)
+        elif kind == "discovery":
+            run_discovery_job(run_id=run_id)
+        elif kind == "market_digest":
+            run_market_digest_job(triggered_by, run_id=run_id)
+        else:
+            raise ValueError(f"queue dispatch: unknown run kind {kind!r}")
+    except Exception as e:
+        # Job functions own their own error path; this only fires if the
+        # dispatch itself blew up before _start_run took over.
+        tb = traceback.format_exc()
+        db = SessionLocal()
+        try:
+            row = db.get(Run, run_id)
+            if row and row.status in ("queued", "running", "cancelling"):
+                row.status = "error"
+                row.error = f"dispatch failed: {e}"
+                row.finished_at = datetime.utcnow()
+                db.add(
+                    RunEvent(
+                        run_id=run_id,
+                        level="error",
+                        message=f"dispatch failed: {e}\n{tb}",
+                    )
+                )
+                db.commit()
+        finally:
+            db.close()
+
+
+def drain_run_queue() -> None:
+    """APScheduler entrypoint. Runs every few seconds. If nothing's running,
+    picks the oldest queued row, flips it to 'running', and hands it off to
+    a worker thread. max_instances=1 on the scheduler job ensures only one
+    drainer tick is in flight at a time."""
+    db = SessionLocal()
+    try:
+        if is_anything_in_flight(db):
+            return
+        nxt = (
+            db.query(Run)
+            .filter(Run.status == "queued")
+            .order_by(Run.id.asc())
+            .first()
+        )
+        if not nxt:
+            return
+        nxt.status = "running"
+        db.add(
+            RunEvent(
+                run_id=nxt.id,
+                level="info",
+                message="drainer picked up",
+            )
+        )
+        db.commit()
+        kind = nxt.kind
+        args = dict(nxt.job_args or {})
+        triggered_by = nxt.triggered_by
+        run_id = nxt.id
+    finally:
+        db.close()
+
+    threading.Thread(
+        target=_dispatch_queued_run,
+        args=(run_id, kind, args, triggered_by),
+        daemon=True,
+        name=f"run-{run_id}-{kind}",
+    ).start()
 
 
 def _compute_freshness(db, explicit: int | None) -> int:
@@ -521,7 +693,11 @@ def _scan_and_review_one(comp_dict: dict, topics: list, memory: dict,
     return out
 
 
-def run_scan_job(triggered_by: str = "schedule", freshness_days: int | None = None):
+def run_scan_job(
+    triggered_by: str = "schedule",
+    freshness_days: int | None = None,
+    run_id: int | None = None,
+):
     """Per-competitor pipeline, then market summary:
       1. For each competitor (in parallel): scan → save findings → synthesize review
       2. Stuff fresh reviews into memory so the market digest has synthesized context
@@ -530,8 +706,11 @@ def run_scan_job(triggered_by: str = "schedule", freshness_days: int | None = No
 
     Competitor pages go live as each worker completes; the market digest is the
     final synthesis across all of them.
+
+    `run_id` is supplied by the queue drainer so we re-use the existing row;
+    cron / direct callers pass nothing and get a fresh row.
     """
-    run, db = _start_run("scan", triggered_by)
+    run, db = _start_run("scan", triggered_by, run_id=run_id)
     token = current_run_id.set(run.id)
     try:
         from service import load_config, build_digest
@@ -733,7 +912,7 @@ def _finding_row_to_dict(f: Finding) -> dict:
     }
 
 
-def run_market_digest_job(triggered_by: str = "manual"):
+def run_market_digest_job(triggered_by: str = "manual", run_id: int | None = None):
     """Regenerate the market digest from existing findings — no new scraping.
 
     Uses the most recent completed scan's findings if available, otherwise
@@ -741,8 +920,11 @@ def run_market_digest_job(triggered_by: str = "manual"):
     current competitor reviews + context briefs so the digest reads the same
     synthesized view a scan would have. Writes a Report row and logs progress
     as a Run with kind='market_digest' so the live panel + /runs show it.
+
+    `run_id` is supplied by the queue drainer when this job is run via
+    enqueue; direct callers omit it.
     """
-    run, db = _start_run("market_digest", triggered_by)
+    run, db = _start_run("market_digest", triggered_by, run_id=run_id)
     # Cache primitives so the finally block never touches an expired ORM row
     # after _finish_run closed the session.
     run_id = run.id
@@ -1091,8 +1273,8 @@ def run_reply_check_job():
         current_run_id.reset(token)
 
 
-def run_discovery_job():
-    run, db = _start_run("discovery", "manual")
+def run_discovery_job(run_id: int | None = None):
+    run, db = _start_run("discovery", "manual", run_id=run_id)
     token = current_run_id.set(run.id)
     try:
         from service import load_config
