@@ -6,7 +6,7 @@
   <title>{% block title %}Competitor Watch{% endblock %}</title>
   <link rel="preconnect" href="https://rsms.me/">
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
-  <link rel="stylesheet" href="/static/style.css?v=synthesis-1">
+  <link rel="stylesheet" href="/static/style.css?v=chat-1">
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head>
 <body>
@@ -29,6 +29,10 @@
       <a href="/stream" class="nav-item {% if path.startswith('/stream') %}active{% endif %}">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12M2 8h12M2 12h8"/></svg>
         Stream
+      </a>
+      <a href="/chat" class="nav-item {% if path.startswith('/chat') %}active{% endif %}">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4.5C2 3.7 2.7 3 3.5 3h9c.8 0 1.5.7 1.5 1.5v5c0 .8-.7 1.5-1.5 1.5H7L4 13v-2H3.5C2.7 11 2 10.3 2 9.5z"/></svg>
+        Chat
       </a>
       <a href="/company" class="nav-item {% if path.startswith('/company') %}active{% endif %}">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 14V5l5-3 5 3v9"/><path d="M6 14v-4h4v4M3 14h10"/></svg>

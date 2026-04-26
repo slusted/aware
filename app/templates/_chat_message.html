@@ -1,0 +1,71 @@
+{# One message row. Used both at server-render time (existing rows) and
+   mirrored client-side by chat.js when streaming new rows. Keep markup
+   shapes 1:1 with the JS so re-renders look identical. #}
+{% if msg.role == "user" %}
+  <div class="chat-msg chat-msg-user" data-msg-id="{{ msg.id }}">
+    <div class="chat-bubble chat-bubble-user">{{ msg.content }}</div>
+  </div>
+
+{% elif msg.role == "assistant" %}
+  <div class="chat-msg chat-msg-assistant" data-msg-id="{{ msg.id }}">
+    <div class="chat-bubble chat-bubble-assistant">
+      <div class="chat-md" data-md-src="{{ msg.content }}">{{ msg.content }}</div>
+      {% if msg.cost_usd is not none %}
+        <div class="chat-msg-meta muted">
+          {{ msg.input_tokens or 0 }} in · {{ msg.output_tokens or 0 }} out
+          {% if msg.cache_read_tokens %}· {{ msg.cache_read_tokens }} cache hit{% endif %}
+          · ${{ '%.4f'|format(msg.cost_usd) }}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+{% elif msg.role == "tool_use" %}
+  {% set pl = msg.tool_payload %}
+  {% set status = pl.get('confirmation_status', 'auto') %}
+  <div class="chat-tool-card chat-tool-{{ status }}"
+       data-msg-id="{{ msg.id }}"
+       data-tool-use-id="{{ pl.get('id') }}"
+       data-tool-name="{{ pl.get('name') }}">
+    {% if pl.get('requires_confirmation') and status == 'pending' %}
+      <div class="chat-tool-confirm">
+        <div class="chat-tool-confirm-text">
+          {{ pl.get('confirmation_summary') or 'Run ' + pl.get('name', '') + '?' }}
+        </div>
+        <div class="chat-tool-confirm-actions">
+          <button type="button" class="btn chat-confirm-btn" data-decision="confirm">Confirm</button>
+          <button type="button" class="btn-ghost chat-confirm-btn" data-decision="cancel">Cancel</button>
+        </div>
+      </div>
+    {% else %}
+      <details class="chat-tool-details" {% if status == 'cancelled' %}{% else %}{% endif %}>
+        <summary>
+          <span class="chat-tool-name">⚙ {{ pl.get('name') }}</span>
+          {% if status == 'confirmed' %}<span class="muted">· confirmed</span>
+          {% elif status == 'cancelled' %}<span class="muted">· cancelled</span>
+          {% endif %}
+        </summary>
+        <pre class="chat-tool-json">{{ pl.get('input') | tojson(indent=2) }}</pre>
+      </details>
+    {% endif %}
+  </div>
+
+{% elif msg.role == "tool_result" %}
+  {% set pl = msg.tool_payload %}
+  <div class="chat-tool-result {% if pl.get('is_error') %}chat-tool-error{% endif %}"
+       data-msg-id="{{ msg.id }}"
+       data-tool-use-id="{{ pl.get('tool_use_id') }}">
+    <details class="chat-tool-details">
+      <summary>
+        <span class="chat-tool-name">↳ result</span>
+        {% if pl.get('is_error') %}<span style="color:var(--err)">· error</span>{% endif %}
+      </summary>
+      <pre class="chat-tool-json">{{ pl.get('output') | tojson(indent=2) }}</pre>
+    </details>
+  </div>
+
+{% elif msg.role == "error" %}
+  <div class="chat-msg chat-msg-error" data-msg-id="{{ msg.id }}">
+    <div class="chat-bubble chat-bubble-error">{{ msg.content }}</div>
+  </div>
+{% endif %}

@@ -61,6 +61,10 @@ KNOWN_SKILLS: dict[str, tuple[str, str]] = {
         "discover_competitors.md",
         "Drives the 'Discover new competitors' tool-use loop on Manage Watchlist — surfaces up to 8 candidate competitors with verified homepages and cited evidence. Placeholders: {{our_company}}, {{our_industry}}, {{existing_list}}, {{dismissed_list}}, {{hint}}.",
     ),
+    "chat_system": (
+        "chat_system.md",
+        "System prompt for the Chat surface — drives the agentic console with read-tools over the watch's own data and a curated set of write-tools that wrap UI buttons. Placeholders: {{our_company}}, {{our_industry}}, {{tool_catalog}}.",
+    ),
 }
 
 

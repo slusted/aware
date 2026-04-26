@@ -607,3 +607,63 @@ class SavedFilter(Base):
     spec: Mapped[dict] = mapped_column(JSON, default=dict)  # {signal_types, competitor_ids, min_materiality, since_days, sources}
     visibility: Mapped[str] = mapped_column(String(16), default="private")  # private | team
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ChatSession(Base):
+    """One conversation, owned by one user. Append-only at the message
+    level. Sessions can be archived (status='archived') but never row-
+    deleted in the happy path so the cost ledger and tool-call audit
+    stay intact."""
+    __tablename__ = "chat_sessions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), default="New chat")
+    # "active" | "archived"
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    # Frozen at creation so a model swap mid-conversation doesn't silently change behaviour.
+    model: Mapped[str] = mapped_column(String(64), default="claude-sonnet-4-6")
+    total_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ChatMessage(Base):
+    """One message in a session, ordered by id (monotonic per session).
+
+    role='user' rows carry user input. role='assistant' rows carry the
+    model's text. role='tool_use' rows record a tool call the model
+    requested. role='tool_result' rows record what came back. Tool turns
+    are their own rows (rather than nested on the assistant message)
+    so the audit trail and re-render stay uniform.
+    """
+    __tablename__ = "chat_messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"), index=True
+    )
+    # "user" | "assistant" | "tool_use" | "tool_result" | "error"
+    role: Mapped[str] = mapped_column(String(16), index=True)
+    # User/assistant text content. Empty for pure tool turns.
+    content: Mapped[str] = mapped_column(Text, default="")
+    # For role='tool_use': {"id": str, "name": str, "input": dict, "requires_confirmation": bool, "confirmation_status": "pending"|"confirmed"|"cancelled"}
+    # For role='tool_result': {"tool_use_id": str, "output": <json>, "is_error": bool}
+    tool_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Per-turn cost accounting. Populated on assistant rows; null otherwise.
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cache_read_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cache_write_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # SDK stop reason on assistant rows: "end_turn" | "tool_use" | "max_tokens" | "stop_sequence". Null otherwise.
+    stop_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_chat_messages_session_id_id", "session_id", "id"),
+    )

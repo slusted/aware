@@ -14,7 +14,7 @@ from sqlalchemy import func as _func
 
 from .auth import SESSION_COOKIE, lookup_session
 from .deps import get_db, get_current_user
-from .models import Run, Finding, Competitor, CompetitorReport, PositioningSnapshot, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter, DeepResearchReport, UserSignalEvent, MarketSynthesisReport, CompetitorCandidate
+from .models import Run, Finding, Competitor, CompetitorReport, PositioningSnapshot, Report, UsageEvent, CompetitorMetric, SignalView, SavedFilter, DeepResearchReport, UserSignalEvent, MarketSynthesisReport, CompetitorCandidate, ChatSession, ChatMessage
 from . import scheduler
 from .ranker.present import present as _present_clusters, lead_findings as _lead_findings
 from .routes.signal_events import emit_shown_events
@@ -88,6 +88,100 @@ def company_page(request: Request, db: Session = Depends(get_db), user=Depends(g
 @router.get("/customer", response_class=HTMLResponse)
 def customer_page(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
     return _context_page(request, db, user, scope="customer", title="Customer")
+
+
+CHAT_EXAMPLE_PROMPTS = [
+    "What's new with Ashby this week?",
+    "Which competitors are accelerating right now?",
+    "Summarise the latest market synthesis.",
+    "Run a fresh market digest.",
+]
+
+
+@router.get("/chat", response_class=HTMLResponse)
+def chat_index(
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    sessions = (
+        db.query(ChatSession)
+        .filter(ChatSession.user_id == user.id, ChatSession.status == "active")
+        .order_by(ChatSession.updated_at.desc())
+        .limit(50)
+        .all()
+    )
+    return templates.TemplateResponse(request, "chat_index.html", {
+        "user": user,
+        "sessions": sessions,
+        "active_id": None,
+        "anthropic_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "example_prompts": CHAT_EXAMPLE_PROMPTS,
+    })
+
+
+@router.post("/chat/new")
+async def chat_new(
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Create an empty session and redirect into it with the typed prompt
+    in a query param. Persisting + sending the first message is the
+    browser's job (POST /api/chat/{id}/messages via chat.js), so the SSE
+    stream is in the same request as the user clicking Send — no
+    "first turn never fires" race."""
+    from urllib.parse import quote
+
+    form = await request.form()
+    first_message = (form.get("first_message") or "").strip()
+    session = ChatSession(user_id=user.id, title="New chat")
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    target = f"/chat/{session.id}"
+    if first_message:
+        target += f"?initial={quote(first_message)}"
+    return RedirectResponse(target, status_code=303)
+
+
+@router.get("/chat/{session_id}", response_class=HTMLResponse)
+def chat_session_page(
+    session_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    session = db.get(ChatSession, session_id)
+    if not session or session.user_id != user.id:
+        raise HTTPException(404, "session not found")
+
+    messages = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.session_id == session.id)
+        .order_by(ChatMessage.id.asc())
+        .all()
+    )
+    sessions = (
+        db.query(ChatSession)
+        .filter(ChatSession.user_id == user.id, ChatSession.status == "active")
+        .order_by(ChatSession.updated_at.desc())
+        .limit(50)
+        .all()
+    )
+    has_pending = any(
+        m.role == "tool_use"
+        and (m.tool_payload or {}).get("requires_confirmation")
+        and (m.tool_payload or {}).get("confirmation_status") == "pending"
+        for m in messages
+    )
+    return templates.TemplateResponse(request, "chat_session.html", {
+        "user": user,
+        "session": session,
+        "messages": messages,
+        "sessions": sessions,
+        "has_pending": has_pending,
+    })
 
 
 def _context_page(request, db, user, *, scope: str, title: str):
