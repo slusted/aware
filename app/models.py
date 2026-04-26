@@ -629,7 +629,78 @@ class ChatSession(Base):
     total_cache_read_tokens: Mapped[int] = mapped_column(Integer, default=0)
     total_cache_write_tokens: Mapped[int] = mapped_column(Integer, default=0)
     total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    # Set when a session was kicked off by a schedule (docs/chat/02-scheduled-
+    # questions.md). NULL for normal user-initiated sessions. Drives the
+    # "from schedule" badge and per-schedule run-history queries.
+    scheduled_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chat_schedules.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    # Set when a session was forked from another (currently only by the
+    # reply-to-converse flow — a recognised recipient replies to a
+    # scheduled-question email and we copy the original session's
+    # messages into a fresh session owned by the replier). NULL for
+    # normal sessions and for the original scheduled-run session itself.
+    forked_from_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chat_sessions.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ChatSchedule(Base):
+    """A recurring chat question.
+
+    One schedule = one prompt + one cron + N recipient emails. Owned
+    by a user; the *scheduled* run executes as that user (same role,
+    same tool catalog). Reply-driven follow-ups fork into per-replier
+    sessions (see docs/chat/02-scheduled-questions.md).
+
+    Hard-deleted on user request — schedules are config, not history.
+    The per-run ChatSession rows that referenced this schedule retain
+    their messages (FK is ON DELETE SET NULL) and stay accessible from
+    /chat as plain conversations.
+    """
+    __tablename__ = "chat_schedules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+
+    title: Mapped[str] = mapped_column(String(255))
+    # User-authored prompt. Supports {{since}} (ISO timestamp of the previous
+    # successful run, defaulting to 7 days ago on the first run) and {{now}}.
+    prompt: Mapped[str] = mapped_column(Text)
+
+    # APScheduler cron expression in five-field form:
+    # "minute hour day_of_month month day_of_week", e.g. "0 8 * * mon".
+    cron: Mapped[str] = mapped_column(String(64))
+
+    # Recipient email addresses. JSON list (typically <10 entries, edited as a
+    # unit, never queried by individual address — reply auth checks against
+    # users.email instead). Capped at CHAT_SCHEDULE_MAX_RECIPIENTS in the form.
+    recipient_emails: Mapped[list] = mapped_column(JSON, default=list)
+
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+
+    # Updated after each run (success or failure). Substituted into {{since}}
+    # on the next run. NULL on a brand-new schedule.
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # ChatSession id from the most recent run (success or failure).
+    last_session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chat_sessions.id", ondelete="SET NULL"), nullable=True
+    )
+    # Overall run status. "ok" | "error" | "timeout" | "partial_email" |
+    # "no_email". NULL until the first run.
+    last_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Short error blurb when last_status != "ok". Capped at 500 chars.
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Per-recipient delivery outcome from the last run.
+    # {"alice@x.com": "ok", "bob@x.com": "error: smtp 550", ...}
+    last_recipient_status: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

@@ -1,7 +1,7 @@
 """app_review_sources + app_reviews + review_themes
 
-Revision ID: y1n5o6p7q8r9
-Revises: x0m4n5o6p7q8
+Revision ID: z2o6p7q8r9s0
+Revises: y1n5o6p7q8r9
 Create Date: 2026-04-27 00:00:00.000000
 
 Tables for the app-store reviews VoC pipeline (docs/voc/01-app-reviews.md).
@@ -20,8 +20,8 @@ import sqlalchemy as sa
 from sqlalchemy import inspect
 
 
-revision = 'y1n5o6p7q8r9'
-down_revision = 'x0m4n5o6p7q8'
+revision = 'z2o6p7q8r9s0'
+down_revision = 'y1n5o6p7q8r9'
 branch_labels = None
 depends_on = None
 

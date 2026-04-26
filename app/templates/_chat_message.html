@@ -68,4 +68,7 @@
   <div class="chat-msg chat-msg-error" data-msg-id="{{ msg.id }}">
     <div class="chat-bubble chat-bubble-error">{{ msg.content }}</div>
   </div>
+
+{% elif msg.role == "notification" %}
+  {% include "_chat_notification.html" %}
 {% endif %}

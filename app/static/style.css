@@ -2249,6 +2249,52 @@ a.btn-ghost.landing-cta:hover { background: var(--bg-raised); }
 .chat-tool-error {
   border-color: rgba(239, 68, 68, 0.4);
 }
+
+/* Job-completion notifications — neither user nor assistant. A
+   distinct full-width row with a left-edge accent stroke and a link
+   to the relevant report page. */
+.chat-msg-notification { justify-content: stretch; }
+.chat-notification {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent, #6c63ff);
+  border-radius: var(--r);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.chat-notification-failed {
+  border-left-color: var(--err, #ef4444);
+  background: rgba(239, 68, 68, 0.04);
+}
+.chat-notification-icon {
+  flex: 0 0 auto;
+  font-size: 16px;
+  line-height: 1.2;
+  color: var(--accent, #6c63ff);
+}
+.chat-notification-failed .chat-notification-icon { color: var(--err, #ef4444); }
+.chat-notification-body { flex: 1; min-width: 0; }
+.chat-notification-text { color: var(--text); }
+.chat-notification-link {
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.chat-notification-error {
+  margin-top: 4px;
+  color: var(--err, #ef4444);
+  font-size: 12px;
+  word-break: break-word;
+}
+.chat-notification-meta {
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
 .chat-input-form {
   display: flex;
   gap: 8px;

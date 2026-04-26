@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Schedules · Chat{% endblock %}
+
+{% block page_actions %}
+  <a href="/chat" class="btn-ghost">← Chat</a>
+  <a href="/chat/schedules/new" class="btn">+ New schedule</a>
+{% endblock %}
+
+{% block content %}
+
+<p class="muted" style="margin-top:0; max-width:720px">
+  Standing questions the agent runs on a cadence and emails to your team.
+  Use <code>{{ '{{since}}' }}</code> in a prompt to scope the agent to
+  what's new since the previous run.
+</p>
+
+{% if not schedules %}
+  <div class="panel">
+    <div class="panel-body">
+      <h2 style="margin-top:0">No schedules yet</h2>
+      <p class="muted" style="max-width:60ch">
+        Create one to have the agent answer a question on a recurring basis
+        — weekly competitor digest, daily pricing watch, monthly ATS deep-dive.
+        The answer goes to every recipient on the schedule, and recognised
+        recipients can reply by email to start a private follow-up thread.
+      </p>
+      <p><a href="/chat/schedules/new" class="btn">Create your first schedule</a></p>
+    </div>
+  </div>
+{% else %}
+  <div class="panel">
+    <table class="schedules-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Title</th>
+          <th>Cadence</th>
+          <th>Recipients</th>
+          <th>Last run</th>
+          <th>Follow-ups (7d)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for d in schedules %}
+        {% set s = d.row %}
+        <tr data-schedule-id="{{ s.id }}">
+          <td style="vertical-align:top; padding-top:14px">
+            {% if not s.enabled %}
+              <span title="Disabled" style="color:var(--text-muted)">○</span>
+            {% elif s.last_status == 'ok' %}
+              <span title="Last run ok" style="color:var(--ok)">✓</span>
+            {% elif s.last_status in ('error', 'timeout', 'partial_email', 'no_email') %}
+              <span title="Last run had a problem" style="color:var(--warn)">⚠</span>
+            {% else %}
+              <span title="Never run" style="color:var(--text-muted)">—</span>
+            {% endif %}
+          </td>
+          <td style="vertical-align:top">
+            <div style="font-weight:500">{{ s.title }}</div>
+            <div class="muted" style="font-size:12px; max-width:48ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">
+              {{ s.prompt }}
+            </div>
+            {% if s.last_session_id %}
+              <div style="font-size:11px; margin-top:4px">
+                <a href="/chat/{{ s.last_session_id }}" class="muted">Last conversation →</a>
+              </div>
+            {% endif %}
+          </td>
+          <td style="vertical-align:top">
+            {% if d.preset == 'daily_8am' %}<span class="pill">Daily 08:00</span>
+            {% elif d.preset == 'weekly_mon' %}<span class="pill">Mon 08:00</span>
+            {% elif d.preset == 'monthly_1st' %}<span class="pill">Monthly 1st</span>
+            {% else %}<code style="font-size:11px">{{ s.cron }}</code>{% endif %}
+          </td>
+          <td style="vertical-align:top; max-width:240px">
+            {% for r in d.recipients %}
+              <div style="font-size:12px">
+                {{ r.email }}
+                {% if r.can_reply %}
+                  <span class="muted" title="Matches a user account — can reply by email">· can reply</span>
+                {% else %}
+                  <span class="muted" title="Not a user account — send-only">· send-only</span>
+                {% endif %}
+              </div>
+            {% endfor %}
+            {% if s.last_recipient_status %}
+              {% set failed = [] %}
+              {% for addr, st in s.last_recipient_status.items() %}
+                {% if st != 'ok' and st != 'no_email' %}{% set _ = failed.append(addr) %}{% endif %}
+              {% endfor %}
+              {% if failed %}
+                <div style="font-size:11px; color:var(--warn); margin-top:4px">
+                  {{ failed|length }} send failed last run
+                </div>
+              {% endif %}
+            {% endif %}
+          </td>
+          <td style="vertical-align:top">
+            {% if s.last_run_at %}
+              <div style="font-size:12px">{{ s.last_run_at.strftime('%Y-%m-%d %H:%M') }} UTC</div>
+              {% if s.last_status %}
+                <div class="muted" style="font-size:11px">{{ s.last_status }}</div>
+              {% endif %}
+              {% if s.last_error %}
+                <div style="font-size:11px; color:var(--err); max-width:32ch">{{ s.last_error }}</div>
+              {% endif %}
+            {% else %}
+              <span class="muted" style="font-size:12px">never</span>
+            {% endif %}
+          </td>
+          <td style="vertical-align:top; text-align:center">
+            {{ d.follow_ups_7d }}
+          </td>
+          <td style="vertical-align:top; text-align:right; white-space:nowrap">
+            <button type="button" class="btn-ghost run-btn" style="font-size:12px">Run now</button>
+            <a href="/chat/schedules/{{ s.id }}/edit" class="btn-ghost" style="font-size:12px">Edit</a>
+            <button type="button" class="btn-ghost toggle-btn" style="font-size:12px">
+              {{ 'Disable' if s.enabled else 'Enable' }}
+            </button>
+            <button type="button" class="btn-ghost delete-btn" style="font-size:12px; color:var(--err)">×</button>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+<p class="muted" style="font-size:11px; margin-top:18px">
+  Replies to scheduled-question emails route through
+  <a href="/admin/notifications">Admin → Notifications</a>. The IMAP poller
+  must be enabled for follow-ups to land. Minimum cron interval:
+  {{ min_interval_minutes }} minutes. Maximum recipients per schedule:
+  {{ max_recipients }}.
+</p>
+
+<script>
+document.querySelectorAll('tr[data-schedule-id]').forEach(function (row) {
+  var id = row.dataset.scheduleId;
+
+  row.querySelector('.run-btn').addEventListener('click', async function () {
+    this.disabled = true; var orig = this.textContent; this.textContent = 'Running…';
+    try {
+      var resp = await fetch('/api/chat/schedules/' + id + '/run', {method: 'POST'});
+      var data = await resp.json().catch(function () { return {}; });
+      if (resp.ok) {
+        location.reload();
+      } else {
+        alert('Run failed: ' + (data.detail || resp.status));
+        this.disabled = false; this.textContent = orig;
+      }
+    } catch (e) {
+      alert('Network error: ' + e.message);
+      this.disabled = false; this.textContent = orig;
+    }
+  });
+
+  row.querySelector('.toggle-btn').addEventListener('click', async function () {
+    this.disabled = true;
+    try {
+      var resp = await fetch('/api/chat/schedules/' + id + '/toggle', {method: 'POST'});
+      if (resp.ok) location.reload();
+      else { alert('Toggle failed: ' + resp.status); this.disabled = false; }
+    } catch (e) {
+      alert('Network error: ' + e.message); this.disabled = false;
+    }
+  });
+
+  row.querySelector('.delete-btn').addEventListener('click', async function () {
+    if (!confirm('Delete this schedule? The conversations it created will stay accessible.')) return;
+    this.disabled = true;
+    try {
+      var resp = await fetch('/api/chat/schedules/' + id, {method: 'DELETE'});
+      if (resp.ok || resp.status === 204) location.reload();
+      else { alert('Delete failed: ' + resp.status); this.disabled = false; }
+    } catch (e) {
+      alert('Network error: ' + e.message); this.disabled = false;
+    }
+  });
+});
+</script>
+
+{% endblock %}

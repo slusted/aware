@@ -17,6 +17,18 @@
       <button type="button" id="chat-rename-btn" class="btn-mini" title="Rename this conversation">Rename</button>
     </div>
     <div class="chat-header-meta muted">
+      {% if session.scheduled_id %}
+        <a href="/chat/schedules/{{ session.scheduled_id }}/edit"
+           class="pill" style="text-decoration:none"
+           title="From a scheduled question">from schedule</a>
+        <span aria-hidden="true">·</span>
+      {% endif %}
+      {% if session.forked_from_id %}
+        <a href="/chat/{{ session.forked_from_id }}"
+           class="pill" style="text-decoration:none"
+           title="Forked from another conversation">forked</a>
+        <span aria-hidden="true">·</span>
+      {% endif %}
       <span id="chat-cost">${{ '%.4f'|format(session.total_cost_usd or 0) }}</span>
       <span aria-hidden="true">·</span>
       <span>{{ session.model }}</span>
@@ -28,6 +40,16 @@
       {% include "_chat_message.html" %}
     {% endfor %}
   </div>
+
+  {# Poll for chat-triggered jobs (deep research) that finished while
+     the page is open. Server returns 204 when nothing's new — HTMX
+     no-ops the swap. New rows append at the end of the thread. #}
+  <div id="chat-notifications-poller"
+       hx-get="/api/chat/{{ session.id }}/notifications"
+       hx-trigger="every 15s"
+       hx-swap="beforeend"
+       hx-target="#chat-thread"
+       style="display:none"></div>
 
   <form id="chat-input-form" class="chat-input-form" data-session-id="{{ session.id }}">
     <textarea id="chat-input" name="text" rows="2"

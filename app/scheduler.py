@@ -200,6 +200,20 @@ def start():
                 "expected 'min hour dow'. Skipping weekly theme synthesis."
             )
 
+    # Chat-schedule + reply-poll registration is gated behind the
+    # docs/chat/02 migration. Wrapped so a half-applied migration or
+    # missing table can't take down the whole web process at boot —
+    # the rest of the scheduler (daily scan, run queue, momentum…)
+    # is unaffected and the chat surface is degradable.
+    try:
+        _register_chat_schedules(sched)
+    except Exception as e:
+        print(f"  [scheduler] chat-schedule registration failed (non-fatal): {e}", flush=True)
+    try:
+        _register_chat_reply_poll(sched)
+    except Exception as e:
+        print(f"  [scheduler] chat reply-poll registration failed (non-fatal): {e}", flush=True)
+
     sched.start()
     _scheduler = sched
     return sched
@@ -221,6 +235,138 @@ def next_run_at(job_id: str = "daily_scan"):
         return None
     job = _scheduler.get_job(job_id)
     return job.next_run_time if job else None
+
+
+# ---------- chat scheduled questions (docs/chat/02-scheduled-questions.md) --
+
+
+def _chat_schedule_job_id(schedule_id: int) -> str:
+    return f"chat_schedule_{schedule_id}"
+
+
+def _run_chat_schedule(schedule_id: int):
+    """Cron entrypoint for one ChatSchedule row. Runs the headless
+    chat turn end-to-end and fans out the email. All persistence
+    happens inside ``run_scheduled_question``; this wrapper exists so
+    APScheduler can hold a reference to a top-level function (lambdas
+    don't survive a re-register cleanly)."""
+    from .chat.scheduled import run_scheduled_question
+    try:
+        run_scheduled_question(schedule_id)
+    except Exception as e:
+        # Defensive — the runner already records failures into the
+        # schedule row, but a bug above that catch (e.g. import-time
+        # error) shouldn't take down the scheduler thread.
+        print(f"  [scheduler] chat_schedule {schedule_id} crashed: {e}", flush=True)
+
+
+def _register_chat_schedules(sched: AsyncIOScheduler) -> None:
+    """At boot: load every enabled ChatSchedule and add one cron job
+    per row. Call sites: scheduler.start (boot) and the schedules CRUD
+    routes (via :func:`register_schedule`) on create/update."""
+    from .db import SessionLocal
+    from .models import ChatSchedule
+    db = SessionLocal()
+    try:
+        rows = db.query(ChatSchedule).filter(ChatSchedule.enabled.is_(True)).all()
+    finally:
+        db.close()
+    for row in rows:
+        try:
+            _add_chat_schedule_job(sched, row.id, row.cron)
+        except Exception as e:
+            print(
+                f"  [scheduler] failed to register chat_schedule {row.id} "
+                f"with cron={row.cron!r}: {e}",
+                flush=True,
+            )
+
+
+def _add_chat_schedule_job(sched: AsyncIOScheduler, schedule_id: int, cron: str):
+    """Add or replace one chat-schedule job. ``cron`` is in the
+    standard five-field form (``min hour dom month dow``)."""
+    trigger = CronTrigger.from_crontab(cron)
+    sched.add_job(
+        _run_chat_schedule,
+        trigger,
+        id=_chat_schedule_job_id(schedule_id),
+        args=(schedule_id,),
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+
+def register_schedule(schedule_id: int) -> bool:
+    """Public: re-register one schedule's job after a CRUD edit. Reads
+    the row from DB so the call site doesn't have to pass cron text.
+    Returns True when a job was added or replaced, False when noop
+    (scheduler not running, schedule disabled or missing)."""
+    if not _scheduler or not _scheduler.running:
+        return False
+    from .db import SessionLocal
+    from .models import ChatSchedule
+    db = SessionLocal()
+    try:
+        row = db.get(ChatSchedule, schedule_id)
+    finally:
+        db.close()
+    if not row or not row.enabled:
+        # Nothing to register; if a stale job exists from a previous
+        # enabled state, drop it.
+        unregister_schedule(schedule_id)
+        return False
+    try:
+        _add_chat_schedule_job(_scheduler, row.id, row.cron)
+        return True
+    except Exception as e:
+        print(
+            f"  [scheduler] register_schedule({schedule_id}) failed: {e}",
+            flush=True,
+        )
+        return False
+
+
+def unregister_schedule(schedule_id: int) -> bool:
+    """Public: drop the cron job for a schedule. Called on disable
+    and on delete. Returns True if a job was removed."""
+    if not _scheduler or not _scheduler.running:
+        return False
+    job_id = _chat_schedule_job_id(schedule_id)
+    if _scheduler.get_job(job_id) is None:
+        return False
+    _scheduler.remove_job(job_id)
+    return True
+
+
+# ---------- chat reply poll -------------------------------------------------
+
+
+def _run_chat_reply_poll():
+    from .chat.replies import poll_replies
+    try:
+        poll_replies()
+    except Exception as e:
+        print(f"  [scheduler] chat_reply_poll crashed: {e}", flush=True)
+
+
+def _register_chat_reply_poll(sched: AsyncIOScheduler) -> None:
+    """One recurring job that polls IMAP for replies to scheduled-
+    question emails. Interval comes from ``CHAT_REPLY_POLL_MINUTES``
+    (default 5). Stays registered even when no schedules exist — it's
+    a no-op when SMTP/IMAP credentials are missing."""
+    interval = int(os.environ.get("CHAT_REPLY_POLL_MINUTES", "5") or "5")
+    if interval < 1:
+        interval = 1
+    sched.add_job(
+        _run_chat_reply_poll,
+        IntervalTrigger(minutes=interval),
+        id="chat_reply_poll",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,
+    )
 
 
 def schedule_incremental_rebuild(user_id: int) -> bool:

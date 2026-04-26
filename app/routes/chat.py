@@ -15,14 +15,23 @@ from __future__ import annotations
 
 from typing import Optional
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..chat import agent as chat_agent
+from ..chat.notifications import discover_completed_research
 from ..deps import get_current_user, get_db
 from ..models import ChatMessage, ChatSession, User
+
+
+templates = Jinja2Templates(
+    directory=str(Path(__file__).parent.parent / "templates")
+)
 
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -176,6 +185,30 @@ def rename_session(
     session.title = title[:255]
     db.commit()
     return {"id": session.id, "title": session.title}
+
+
+@router.get("/{session_id}/notifications", response_class=HTMLResponse)
+def poll_notifications(
+    session_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """HTMX-polled endpoint. Returns rendered HTML for any newly-
+    completed background jobs (currently DeepResearchReport only) that
+    were triggered from this session. Returns 204 No Content when
+    nothing is new — HTMX treats that as a no-op swap."""
+    session = _get_session_or_404(db, user, session_id)
+    new_rows = discover_completed_research(db, session.id)
+    if not new_rows:
+        return Response(status_code=204)
+    parts = [
+        templates.get_template("_chat_notification.html").render(
+            {"request": request, "msg": row}
+        )
+        for row in new_rows
+    ]
+    return HTMLResponse("\n".join(parts))
 
 
 @router.delete("/{session_id}", status_code=204)

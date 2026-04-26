@@ -605,7 +605,7 @@ def settings_home(request: Request, user=Depends(get_current_user)):
 def settings_keys(request: Request, user=Depends(get_current_user)):
     from . import env_keys as _env_keys
     return templates.TemplateResponse(request, "settings_keys.html", {
-        "user": user, "keys": _env_keys.status(),
+        "user": user, "keys": _env_keys.status(category="engine"),
     })
 
 
