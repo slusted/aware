@@ -5,9 +5,14 @@
 {% include "_settings_nav.html" %}
 
 <p class="muted" style="margin-top:0; max-width:720px">
-  Keys are stored in <code>.env</code> in the project root. Updates here apply
-  immediately — no restart needed for Tavily, Serper, Claude, or Gmail keys.
-  Values are never shown in full after saving; only a masked preview.
+  Engine API keys — model and search infrastructure the agent calls.
+  Stored in <code>.env</code> on the project root. Updates apply immediately
+  for Tavily, Serper, and Claude — no restart needed. Values are never
+  shown in full after saving; only a masked preview.
+</p>
+<p class="muted" style="margin-top:0; font-size:12px">
+  Looking for email settings? They moved to
+  <a href="/admin/notifications">Admin → Notifications</a>.
 </p>
 
 <div class="panel">

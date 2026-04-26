@@ -9,17 +9,61 @@ import os
 from pathlib import Path
 
 # Keys the UI is allowed to manage. Anything else is rejected at the route.
-MANAGED_KEYS: dict[str, str] = {
-    "ANTHROPIC_API_KEY":   "Claude (analysis, per-competitor reviews, briefs)",
-    "GEMINI_API_KEY":      "Gemini Deep Research (per-competitor on-demand deep dives)",
-    "BRAVE_API_KEY":       "Brave Search (primary news provider — independent index, leads fan-out)",
-    "TAVILY_API_KEY":      "Tavily (page-content extraction; secondary in news fan-out)",
-    "SERPER_API_KEY":      "Serper (Google News, optional)",
-    "ZENROWS_API_KEY":     "ZenRows (primary paid scraper — premium proxy + JS render, used first for every URL)",
-    "SCRAPINGBEE_API_KEY": "ScrapingBee (secondary paid proxy fallback for Cloudflare-protected pages)",
-    "VOYAGE_API_KEY":      "Voyage AI (embeddings for semantic ranking — spec 08)",
-    "GMAIL_USER":          "Gmail account for digest emails",
-    "GMAIL_APP_PASSWORD":  "Gmail app password (IMAP/SMTP)",
+#
+# `category` controls where each key surfaces in the UI:
+#   - "engine"        → /settings/keys (model + search infrastructure)
+#   - "notifications" → /admin/notifications (mail transport + reply poll)
+#
+# Storage path is identical for both — same .env file, same in-process
+# refresh — only the rendering split differs (docs/chat/02-scheduled-
+# questions.md §"Settings & admin placement").
+MANAGED_KEYS: dict[str, dict] = {
+    "ANTHROPIC_API_KEY": {
+        "category": "engine",
+        "description": "Claude (analysis, per-competitor reviews, briefs)",
+        "required": True,
+    },
+    "GEMINI_API_KEY": {
+        "category": "engine",
+        "description": "Gemini Deep Research (per-competitor on-demand deep dives)",
+    },
+    "BRAVE_API_KEY": {
+        "category": "engine",
+        "description": "Brave Search (primary news provider — independent index, leads fan-out)",
+    },
+    "TAVILY_API_KEY": {
+        "category": "engine",
+        "description": "Tavily (page-content extraction; secondary in news fan-out)",
+        "required": True,
+    },
+    "SERPER_API_KEY": {
+        "category": "engine",
+        "description": "Serper (Google News, optional)",
+    },
+    "ZENROWS_API_KEY": {
+        "category": "engine",
+        "description": "ZenRows (primary paid scraper — premium proxy + JS render, used first for every URL)",
+    },
+    "SCRAPINGBEE_API_KEY": {
+        "category": "engine",
+        "description": "ScrapingBee (secondary paid proxy fallback for Cloudflare-protected pages)",
+    },
+    "VOYAGE_API_KEY": {
+        "category": "engine",
+        "description": "Voyage AI (embeddings for semantic ranking — spec 08)",
+    },
+    "GMAIL_USER": {
+        "category": "notifications",
+        "description": "Gmail address used to send digests, scheduled-question emails, and to receive replies via IMAP.",
+    },
+    "GMAIL_APP_PASSWORD": {
+        "category": "notifications",
+        "description": "Gmail App Password (16-char). Requires 2FA on the Gmail account; generate at myaccount.google.com/apppasswords.",
+    },
+    "CHAT_REPLY_POLL_MINUTES": {
+        "category": "notifications",
+        "description": "How often to poll Gmail for replies to scheduled-question emails. Default 5 minutes. Restart the app for a change to take effect.",
+    },
 }
 
 ENV_PATH = Path(os.environ.get("ENV_PATH", ".env"))
@@ -130,17 +174,23 @@ def _refresh_module_captures(name: str, value: str) -> None:
         print(f"[env_keys] refresh failed for {name}: {e}")
 
 
-def status() -> list[dict]:
-    """Shape for /settings/keys — one row per managed key with a masked hint."""
+def status(category: str | None = None) -> list[dict]:
+    """Shape for /settings/keys and /admin/notifications — one row per
+    managed key with a masked hint. Filter by ``category`` to scope to
+    one tab; pass None for everything (used by the JSON list endpoint
+    so external callers don't have to know about the split)."""
     out = []
-    for name, desc in MANAGED_KEYS.items():
+    for name, meta in MANAGED_KEYS.items():
+        if category is not None and meta.get("category") != category:
+            continue
         val = os.environ.get(name, "")
         out.append({
             "name": name,
-            "description": desc,
+            "description": meta.get("description", ""),
+            "category": meta.get("category", "engine"),
             "set": bool(val),
             "hint": _mask(val),
-            "required": name in ("ANTHROPIC_API_KEY", "TAVILY_API_KEY"),
+            "required": bool(meta.get("required", False)),
         })
     return out
 

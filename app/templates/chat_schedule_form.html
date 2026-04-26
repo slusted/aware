@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit schedule' if schedule else 'New schedule' }} · Chat{% endblock %}
+
+{% block page_actions %}
+  <a href="/chat/schedules" class="btn-ghost">← Schedules</a>
+{% endblock %}
+
+{% block content %}
+
+{% if error %}
+  <div class="auth-error" style="margin-bottom:16px">{{ error }}</div>
+{% endif %}
+
+<form method="post"
+      action="{{ '/chat/schedules/' ~ schedule.id ~ '/edit' if schedule else '/chat/schedules' }}"
+      style="max-width:760px">
+
+  <div class="panel">
+    <div style="padding:16px; display:grid; gap:14px">
+
+      <label>
+        <div style="font-weight:500; margin-bottom:4px">Title</div>
+        <input type="text" name="title" required maxlength="255"
+               value="{{ form.title }}"
+               placeholder="Weekly competitor summary"
+               style="width:100%">
+      </label>
+
+      <label>
+        <div style="font-weight:500; margin-bottom:4px">Prompt</div>
+        <textarea name="prompt" rows="6" required style="width:100%; font-family:inherit"
+                  placeholder="Summarise what's new with our top competitors since {{ '{{since}}' }}…"
+        >{{ form.prompt }}</textarea>
+        <div class="muted" style="font-size:11px; margin-top:4px">
+          Use <code>{{ '{{since}}' }}</code> for the previous run's timestamp
+          (defaults to 7 days ago on the first run) and
+          <code>{{ '{{now}}' }}</code> for the current time. The agent uses
+          these to scope its searches.
+        </div>
+      </label>
+
+      <div>
+        <div style="font-weight:500; margin-bottom:4px">Schedule</div>
+        <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center">
+          {% for key, label, expr in presets %}
+            <label style="display:flex; align-items:center; gap:6px; font-weight:normal">
+              <input type="radio" name="preset" value="{{ key }}"
+                     {% if form.preset == key %}checked{% endif %}
+                     data-cron="{{ expr }}">
+              {{ label }}
+            </label>
+          {% endfor %}
+          <label style="display:flex; align-items:center; gap:6px; font-weight:normal">
+            <input type="radio" name="preset" value="custom"
+                   {% if form.preset == 'custom' %}checked{% endif %}>
+            Custom
+          </label>
+        </div>
+        <input type="text" name="cron" id="cron-field"
+               value="{{ form.cron }}"
+               placeholder="min hour day_of_month month day_of_week — e.g. 0 8 * * mon"
+               style="width:100%; font-family:monospace; margin-top:8px"
+               {% if form.preset != 'custom' %}readonly{% endif %}>
+        <div class="muted" style="font-size:11px; margin-top:4px">
+          Five-field cron. Minimum interval: {{ min_interval_minutes }} minutes.
+        </div>
+      </div>
+
+      <label>
+        <div style="font-weight:500; margin-bottom:4px">
+          Recipients
+          <span class="muted" style="font-weight:normal; font-size:11px">
+            — one per line, or comma-separated. Up to {{ max_recipients }}.
+          </span>
+        </div>
+        <textarea name="recipients" rows="4" style="width:100%; font-family:monospace"
+                  placeholder="alice@example.com&#10;bob@example.com">{{ form.recipients_text }}</textarea>
+        <div class="muted" style="font-size:11px; margin-top:4px">
+          Recipients whose address matches a user account here can reply by
+          email to start a private follow-up thread with the agent. Others
+          are send-only.
+        </div>
+      </label>
+
+      <label style="display:flex; align-items:center; gap:8px">
+        <input type="checkbox" name="enabled" {% if form.enabled %}checked{% endif %}>
+        <span>Enabled — fire on the cron schedule above</span>
+      </label>
+
+      <div style="display:flex; gap:8px; padding-top:6px">
+        <button type="submit" class="btn">
+          {{ 'Save changes' if schedule else 'Create schedule' }}
+        </button>
+        <a href="/chat/schedules" class="btn-ghost">Cancel</a>
+      </div>
+    </div>
+  </div>
+</form>
+
+<script>
+// When a preset radio is selected, lock the cron field to its expression
+// (still submitted, but read-only). When "Custom" is picked, unlock so
+// the user can type any five-field cron.
+(function () {
+  var cronField = document.getElementById('cron-field');
+  document.querySelectorAll('input[name="preset"]').forEach(function (radio) {
+    radio.addEventListener('change', function () {
+      if (radio.value === 'custom') {
+        cronField.removeAttribute('readonly');
+        cronField.focus();
+      } else {
+        cronField.setAttribute('readonly', 'readonly');
+        if (radio.dataset.cron) cronField.value = radio.dataset.cron;
+      }
+    });
+  });
+})();
+</script>
+
+{% endblock %}

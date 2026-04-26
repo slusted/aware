@@ -17,6 +17,18 @@
       <button type="button" id="chat-rename-btn" class="btn-mini" title="Rename this conversation">Rename</button>
     </div>
     <div class="chat-header-meta muted">
+      {% if session.scheduled_id %}
+        <a href="/chat/schedules/{{ session.scheduled_id }}/edit"
+           class="pill" style="text-decoration:none"
+           title="From a scheduled question">from schedule</a>
+        <span aria-hidden="true">·</span>
+      {% endif %}
+      {% if session.forked_from_id %}
+        <a href="/chat/{{ session.forked_from_id }}"
+           class="pill" style="text-decoration:none"
+           title="Forked from another conversation">forked</a>
+        <span aria-hidden="true">·</span>
+      {% endif %}
       <span id="chat-cost">${{ '%.4f'|format(session.total_cost_usd or 0) }}</span>
       <span aria-hidden="true">·</span>
       <span>{{ session.model }}</span>

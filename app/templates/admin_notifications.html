@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Notifications · Admin{% endblock %}
+
+{% block content %}
+
+<p class="muted" style="margin-top:0; max-width:720px">
+  Email transport for digests, scheduled-question emails, and inbound
+  replies. Engine API keys (Claude, Brave, Tavily, …) live at
+  <a href="/settings/keys">Settings → API keys</a>.
+</p>
+
+<h2 style="margin-top:24px">Mail account</h2>
+<p class="muted" style="font-size:12px; max-width:720px">
+  Uses Gmail SMTP for outbound and IMAP for inbound replies. Requires
+  2-factor auth on the Gmail account; the password below is a 16-character
+  <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">App Password</a>,
+  not the account password itself. Stored in <code>.env</code>; values
+  are never shown in full after saving.
+</p>
+
+<div class="panel">
+  <table>
+    <thead><tr><th>Variable</th><th>Purpose</th><th>Status</th><th>Value</th><th></th></tr></thead>
+    <tbody>
+    {% for k in mail_keys %}
+      <tr class="key-row" data-name="{{ k.name }}">
+        <td class="mono" style="font-size:12px">{{ k.name }}</td>
+        <td class="muted" style="max-width:380px">{{ k.description }}</td>
+        <td>
+          {% if k.set %}<span class="pill ok">configured</span>
+          {% else %}<span class="pill">not set</span>{% endif %}
+        </td>
+        <td class="mono muted" style="font-size:12px">{{ k.hint or '—' }}</td>
+        <td style="text-align:right; white-space:nowrap">
+          <button type="button" class="btn-ghost edit-btn" style="font-size:12px">
+            {{ 'Update' if k.set else 'Set' }}
+          </button>
+          {% if k.set %}
+          <button type="button" class="btn-ghost clear-btn" style="font-size:12px; color:var(--err); margin-left:4px">
+            Clear
+          </button>
+          {% endif %}
+        </td>
+      </tr>
+      <tr class="edit-row" id="edit-{{ k.name }}" style="display:none">
+        <td colspan="5" style="background:var(--bg); padding:14px 16px">
+          <div style="display:flex; gap:8px; align-items:center; max-width:720px">
+            <input type="password" class="key-input" placeholder="Paste new value"
+                   autocomplete="off" style="flex:1">
+            <button type="button" class="save-btn">Save</button>
+            <button type="button" class="btn-ghost cancel-btn">Cancel</button>
+          </div>
+          <div class="muted" style="font-size:11px; margin-top:6px">
+            Saved to <code>.env</code> and applied in-process immediately.
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h3 style="margin-top:20px">Test send</h3>
+<p class="muted" style="font-size:12px; max-width:720px">
+  Fire a one-off email to confirm credentials end-to-end without waiting
+  for a scheduled run.
+</p>
+<div class="panel">
+  <div style="padding:14px 16px; display:flex; gap:8px; align-items:center; max-width:720px">
+    <input type="email" id="test-send-to" placeholder="recipient@example.com"
+           style="flex:1" autocomplete="off">
+    <button type="button" id="test-send-btn">Send test</button>
+  </div>
+  <div id="test-send-result" class="muted" style="padding:0 16px 14px; font-size:12px"></div>
+</div>
+
+<h2 style="margin-top:32px">Inbound polling</h2>
+<p class="muted" style="font-size:12px; max-width:720px">
+  Recognised recipients can reply to a scheduled-question email and the
+  agent will reply back with a follow-up answer. The poller scans the
+  Gmail inbox on the interval below.
+</p>
+
+<div class="panel">
+  <div style="padding:14px 16px">
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+      {% if poll_state.registered %}
+        <span class="pill ok">enabled</span>
+      {% else %}
+        <span class="pill error">not registered</span>
+      {% endif %}
+      {% if not poll_state.imap_configured %}
+        <span class="pill" style="color:var(--warn)">credentials missing</span>
+      {% endif %}
+      <span class="muted" style="font-size:12px">
+        last poll:
+        {% if poll_state.last_poll_at %}
+          {{ poll_state.last_poll_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC
+        {% else %}
+          never
+        {% endif %}
+      </span>
+      <span class="muted" style="font-size:12px">
+        next:
+        {% if poll_state.next_run_at %}
+          {{ poll_state.next_run_at.strftime('%H:%M:%S') }}
+        {% else %}
+          —
+        {% endif %}
+      </span>
+      <button type="button" id="poll-now-btn" class="btn-ghost" style="margin-left:auto; font-size:12px">
+        Poll now
+      </button>
+    </div>
+    {% if poll_state.last_error %}
+      <div style="margin-top:8px; font-size:12px; color:var(--err)">
+        Last error: {{ poll_state.last_error }}
+      </div>
+    {% endif %}
+    <div class="muted" style="margin-top:8px; font-size:12px">
+      Last poll routed {{ poll_state.last_processed }} repl{{ 'y' if poll_state.last_processed == 1 else 'ies' }}
+      and skipped {{ poll_state.last_skipped }}.
+      Total since boot: {{ poll_state.total_processed }}.
+    </div>
+    <div id="poll-now-result" class="muted" style="margin-top:6px; font-size:12px"></div>
+  </div>
+</div>
+
+<script>
+// Inline-edit row pattern, copied verbatim from settings_keys.html so
+// the two pages stay visually identical when editing a key. Same
+// backend (/api/settings/keys/{name} PUT/DELETE) — admin role gate
+// already lives there.
+document.querySelectorAll('.key-row').forEach(function (row) {
+  var name = row.dataset.name;
+  var editRow = document.getElementById('edit-' + name);
+  var input   = editRow.querySelector('.key-input');
+
+  row.querySelector('.edit-btn').addEventListener('click', function () {
+    editRow.style.display = editRow.style.display === 'none' ? 'table-row' : 'none';
+    if (editRow.style.display !== 'none') input.focus();
+  });
+  editRow.querySelector('.cancel-btn').addEventListener('click', function () {
+    editRow.style.display = 'none'; input.value = '';
+  });
+  editRow.querySelector('.save-btn').addEventListener('click', async function () {
+    var v = input.value.trim();
+    if (!v) { alert('Value is empty'); return; }
+    this.disabled = true; this.textContent = 'Saving…';
+    var resp = await fetch('/api/settings/keys/' + name, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value: v}),
+    });
+    if (resp.ok) location.reload();
+    else { alert('Failed: ' + resp.status + '\n' + await resp.text()); this.disabled = false; this.textContent = 'Save'; }
+  });
+
+  var clearBtn = row.querySelector('.clear-btn');
+  if (clearBtn) clearBtn.addEventListener('click', async function () {
+    if (!confirm('Clear ' + name + '?')) return;
+    var resp = await fetch('/api/settings/keys/' + name, {method: 'DELETE'});
+    if (resp.ok || resp.status === 204) location.reload();
+    else alert('Failed: ' + resp.status);
+  });
+});
+
+document.getElementById('test-send-btn').addEventListener('click', async function () {
+  var to = document.getElementById('test-send-to').value.trim();
+  var out = document.getElementById('test-send-result');
+  out.textContent = '';
+  out.style.color = '';
+  if (!to) { out.textContent = 'Enter a recipient email.'; out.style.color = 'var(--err)'; return; }
+  this.disabled = true; this.textContent = 'Sending…';
+  try {
+    var resp = await fetch('/api/admin/notifications/test-send', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({to: to}),
+    });
+    var data = await resp.json().catch(function () { return {}; });
+    if (resp.ok) {
+      out.textContent = 'Sent to ' + (data.sent_to || to) + '.';
+      out.style.color = 'var(--ok)';
+    } else {
+      out.textContent = 'Failed: ' + (data.detail || resp.status);
+      out.style.color = 'var(--err)';
+    }
+  } catch (e) {
+    out.textContent = 'Network error: ' + e.message;
+    out.style.color = 'var(--err)';
+  } finally {
+    this.disabled = false; this.textContent = 'Send test';
+  }
+});
+
+document.getElementById('poll-now-btn').addEventListener('click', async function () {
+  var out = document.getElementById('poll-now-result');
+  out.textContent = '';
+  this.disabled = true; this.textContent = 'Polling…';
+  try {
+    var resp = await fetch('/api/admin/notifications/poll-now', {method: 'POST'});
+    var data = await resp.json().catch(function () { return {}; });
+    if (resp.ok && data.ok) {
+      out.textContent = 'Poll complete: ' + data.processed + ' processed, ' + data.skipped + ' skipped.';
+      setTimeout(function () { location.reload(); }, 600);
+    } else {
+      out.textContent = 'Poll error: ' + (data.error || data.detail || resp.status);
+      out.style.color = 'var(--err)';
+    }
+  } catch (e) {
+    out.textContent = 'Network error: ' + e.message;
+    out.style.color = 'var(--err)';
+  } finally {
+    this.disabled = false; this.textContent = 'Poll now';
+  }
+});
+</script>
+
+{% endblock %}
