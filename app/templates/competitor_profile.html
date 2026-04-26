@@ -55,6 +55,8 @@
           aria-selected="false" aria-controls="tab-positioning">Positioning</button>
   <button role="tab" class="tab" data-tab="findings" id="tabbtn-findings"
           aria-selected="false" aria-controls="tab-findings">Findings</button>
+  <button role="tab" class="tab" data-tab="app-reviews" id="tabbtn-app-reviews"
+          aria-selected="false" aria-controls="tab-app-reviews">App reviews</button>
   <button role="tab" class="tab" data-tab="research" id="tabbtn-research"
           aria-selected="false" aria-controls="tab-research">Research</button>
 </nav>
@@ -274,6 +276,11 @@
 {% endif %}
 </section>
 
+<section class="tab-panel" id="tab-app-reviews" role="tabpanel" aria-labelledby="tabbtn-app-reviews" hidden>
+  {% include "_app_review_themes.html" %}
+  {% include "_app_review_samples.html" %}
+</section>
+
 <section class="tab-panel" id="tab-research" role="tabpanel" aria-labelledby="tabbtn-research" hidden>
   {# Status card renders the whole active surface — empty state, running,
      failed, or the full report when ready. HTMX swaps this in place on
@@ -353,7 +360,7 @@
 
 <script>
   (function initTabs() {
-    var TABS = ['review', 'momentum', 'positioning', 'findings', 'research'];
+    var TABS = ['review', 'momentum', 'positioning', 'findings', 'app-reviews', 'research'];
     var buttons = document.querySelectorAll('.tabs .tab');
     var panels  = document.querySelectorAll('.tab-panel');
 

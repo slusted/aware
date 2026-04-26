@@ -421,6 +421,15 @@ def _dispatch_queued_run(run_id: int, kind: str, args: dict, triggered_by: str) 
             run_discovery_job(run_id=run_id)
         elif kind == "market_digest":
             run_market_digest_job(triggered_by, run_id=run_id)
+        elif kind == "ingest_app_reviews":
+            run_ingest_app_reviews_job(triggered_by, run_id=run_id)
+        elif kind == "synthesise_voc_themes":
+            run_voc_themes_job(
+                competitor_id=args.get("competitor_id"),
+                triggered_by=triggered_by,
+                force=bool(args.get("force", False)),
+                run_id=run_id,
+            )
         else:
             raise ValueError(f"queue dispatch: unknown run kind {kind!r}")
     except Exception as e:
@@ -2097,6 +2106,160 @@ def run_momentum_job(country: str = "au", triggered_by: str = "schedule"):
         ok_count = len(summary.get("competitors", []))
         err_count = len(summary.get("errors", []))
         _log(db, run, f"momentum: {ok_count} competitors collected, {err_count} errors")
+        _finish_run(db, run, "ok")
+    except Exception as e:
+        tb = traceback.format_exc()
+        _log(db, run, f"ERROR: {e}\n{tb}", "error")
+        _finish_run(db, run, "error", str(e))
+    finally:
+        current_run_id.reset(token)
+
+
+def run_ingest_app_reviews_job(triggered_by: str = "schedule",
+                               run_id: int | None = None):
+    """Daily ingest pass: pull latest reviews from every enabled
+    AppReviewSource and upsert into app_reviews. Zero LLM cost; the
+    synthesis pass (run_voc_themes_job) is what reads the corpus.
+    Spec: docs/voc/01-app-reviews.md."""
+    from .app_reviews import ingest_all
+    run, db = _start_run("ingest_app_reviews", triggered_by, run_id=run_id)
+    token = current_run_id.set(run.id)
+    try:
+        from service import load_config
+        try:
+            config = load_config()
+        except Exception:
+            config = {}
+        with _StreamToRunEvents(run.id) as _tee, contextlib.redirect_stdout(_tee):
+            print("[app-reviews] ingest sweep")
+            result = ingest_all(db, config=config)
+            print(
+                f"[app-reviews] sources={result.sources_processed} "
+                f"failed={result.sources_failed} "
+                f"inserted={result.rows_inserted} "
+                f"skipped_dedup={result.rows_skipped_dedup}"
+            )
+        db.add(RunEvent(
+            run_id=run.id,
+            level="material",
+            message=(
+                f"[material] app-reviews ingest · "
+                f"{result.sources_processed} sources · "
+                f"{result.rows_inserted} new reviews · "
+                f"{result.rows_skipped_dedup} dedup skips"
+            ),
+            meta={
+                "sources_processed": result.sources_processed,
+                "sources_failed": result.sources_failed,
+                "rows_inserted": result.rows_inserted,
+                "rows_skipped_dedup": result.rows_skipped_dedup,
+            },
+        ))
+        db.commit()
+        _finish_run(db, run, "ok")
+    except Exception as e:
+        tb = traceback.format_exc()
+        _log(db, run, f"ERROR: {e}\n{tb}", "error")
+        _finish_run(db, run, "error", str(e))
+    finally:
+        current_run_id.reset(token)
+
+
+def run_voc_themes_job(competitor_id: int | None = None,
+                       triggered_by: str = "schedule",
+                       force: bool = False,
+                       run_id: int | None = None):
+    """Weekly synthesis pass: for each eligible competitor, take the recent
+    review corpus + current themes and ask Haiku for an updated theme set
+    plus a per-theme diff. Findings emit only on emergence or material shift.
+
+    competitor_id=None  → sweep every active competitor with ≥1 enabled source.
+    competitor_id=N     → run for one competitor (admin manual trigger).
+    force=True          → bypass the ≥10-reviews-in-60d guard (manual only).
+    Spec: docs/voc/01-app-reviews.md."""
+    from .voc_themes import synthesise_all, synthesise_for_competitor
+    from .models import Competitor
+    run, db = _start_run("synthesise_voc_themes", triggered_by, run_id=run_id)
+    token = current_run_id.set(run.id)
+    try:
+        from service import load_config
+        try:
+            config = load_config()
+        except Exception:
+            config = {}
+
+        with _StreamToRunEvents(run.id) as _tee, contextlib.redirect_stdout(_tee):
+            if competitor_id is not None:
+                comp = db.get(Competitor, competitor_id)
+                if comp is None:
+                    raise ValueError(f"competitor {competitor_id} not found")
+                print(f"[voc-themes] synthesise for {comp.name!r} (force={force})")
+                per = synthesise_for_competitor(
+                    db, comp, config=config, run_id=run.id, force=force,
+                )
+                if per.skipped_reason:
+                    print(f"[voc-themes] skipped: {per.skipped_reason}")
+                else:
+                    print(
+                        f"[voc-themes] {comp.name}: themes_total={per.themes_total} "
+                        f"new={per.new} shifted={per.shifted} dropped={per.dropped} "
+                        f"findings={per.findings_emitted}"
+                    )
+                db.add(RunEvent(
+                    run_id=run.id,
+                    level="material",
+                    message=(
+                        f"[material] voc-themes · {comp.name} · "
+                        f"{per.themes_total} themes · "
+                        f"{per.findings_emitted} findings emitted"
+                    ),
+                    meta={
+                        "competitor_id": comp.id,
+                        "competitor_name": comp.name,
+                        "themes_total": per.themes_total,
+                        "new": per.new,
+                        "shifted": per.shifted,
+                        "dropped": per.dropped,
+                        "findings_emitted": per.findings_emitted,
+                        "skipped_reason": per.skipped_reason,
+                    },
+                ))
+            else:
+                print("[voc-themes] sweep all eligible competitors")
+                sweep = synthesise_all(db, config=config, run_id=run.id)
+                print(
+                    f"[voc-themes] processed={sweep.competitors_processed} "
+                    f"skipped={sweep.competitors_skipped} "
+                    f"findings_emitted={sweep.findings_emitted}"
+                )
+                for per in sweep.per_competitor:
+                    if per.skipped_reason:
+                        print(
+                            f"[voc-themes] - {per.competitor_name}: "
+                            f"skipped ({per.skipped_reason})"
+                        )
+                        continue
+                    print(
+                        f"[voc-themes] - {per.competitor_name}: "
+                        f"themes={per.themes_total} new={per.new} "
+                        f"shifted={per.shifted} dropped={per.dropped} "
+                        f"findings={per.findings_emitted}"
+                    )
+                db.add(RunEvent(
+                    run_id=run.id,
+                    level="material",
+                    message=(
+                        f"[material] voc-themes sweep · "
+                        f"{sweep.competitors_processed} competitors · "
+                        f"{sweep.findings_emitted} findings emitted"
+                    ),
+                    meta={
+                        "competitors_processed": sweep.competitors_processed,
+                        "competitors_skipped": sweep.competitors_skipped,
+                        "findings_emitted": sweep.findings_emitted,
+                    },
+                ))
+            db.commit()
         _finish_run(db, run, "ok")
     except Exception as e:
         tb = traceback.format_exc()

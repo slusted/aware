@@ -1,0 +1,48 @@
+{# Recent app-store review samples for the competitor profile.
+   Receives: review_recent_samples, review_sample_to_theme, c. #}
+{% if review_recent_samples %}
+<div class="panel">
+  <div class="panel-header">
+    <h2>Recent reviews</h2>
+    <span class="muted" style="font-size:11px">
+      Latest {{ review_recent_samples|length }} ingested · drill in via the theme cards above
+    </span>
+  </div>
+  <div class="panel-body">
+    <div class="review-sample-list">
+      {% for r in review_recent_samples %}
+        {% set theme = review_sample_to_theme.get(r.id) %}
+        <div class="review-sample">
+          <div class="review-sample-meta muted">
+            {% if r.rating %}
+              <span class="review-rating" title="{{ r.rating }}/5">
+                {% for _ in range(r.rating) %}★{% endfor %}{% for _ in range(5 - r.rating) %}☆{% endfor %}
+              </span>
+            {% endif %}
+            <span style="margin-left:6px">
+              {% if r.posted_at %}{{ r.posted_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}
+            </span>
+            {% if r.store == 'apple' %}
+              <span class="chip" style="margin-left:6px">App Store</span>
+            {% elif r.store == 'play' %}
+              <span class="chip" style="margin-left:6px">Play Store</span>
+            {% endif %}
+            {% if r.author %}
+              <span style="margin-left:6px">· {{ r.author }}</span>
+            {% endif %}
+          </div>
+          {% if r.title %}
+            <div class="review-sample-title"><strong>{{ r.title }}</strong></div>
+          {% endif %}
+          <div class="review-sample-body">{{ r.body }}</div>
+          {% if theme %}
+            <div class="review-sample-theme muted">
+              theme: <em>{{ theme.label }}</em>
+            </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}

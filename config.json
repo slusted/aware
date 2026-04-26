@@ -33,6 +33,13 @@
       ]
     }
   },
+  "app_reviews": {
+    "enabled": true,
+    "ingest_max_pages": 10,
+    "synthesise_max_reviews": 200,
+    "shift_threshold_pct": 50,
+    "max_themes_per_competitor": 8
+  },
   "customer_watch": {
     "enabled": true,
     "subreddits": [

@@ -30,6 +30,7 @@ SIGNAL_TYPES = [
     ("price_change",   "Pricing"),
     ("messaging_shift","Messaging"),
     ("voc_mention",    "VoC"),
+    ("voc_theme",      "VoC themes"),
     ("news",           "News"),
     ("momentum_point", "Momentum"),
     ("other",          "Other"),
@@ -431,6 +432,48 @@ def competitor_profile(competitor_id: int, request: Request, db: Session = Depen
     )
     research_gemini_key_set = bool(os.environ.get("GEMINI_API_KEY", "").strip())
 
+    # ── App-store reviews — sources + themes + recent samples ─────────
+    from .models import AppReview, AppReviewSource, ReviewTheme
+    app_sources = (
+        db.query(AppReviewSource)
+        .filter(AppReviewSource.competitor_id == c.id)
+        .order_by(AppReviewSource.store, AppReviewSource.country)
+        .all()
+    )
+    review_themes = (
+        db.query(ReviewTheme)
+        .filter(ReviewTheme.competitor_id == c.id)
+        .order_by(ReviewTheme.status.asc(), ReviewTheme.volume_30d.desc())
+        .all()
+    )
+    review_themes_active = [t for t in review_themes if t.status == "active"]
+    review_themes_dormant = [t for t in review_themes if t.status == "dormant"]
+    review_total_count = (
+        db.query(func.count(AppReview.id))
+        .filter(AppReview.competitor_id == c.id)
+        .scalar()
+        or 0
+    )
+    review_recent_samples = (
+        db.query(AppReview)
+        .filter(AppReview.competitor_id == c.id)
+        .order_by(
+            AppReview.posted_at.desc().nullslast(),
+            AppReview.ingested_at.desc(),
+        )
+        .limit(20)
+        .all()
+    )
+    sample_to_theme: dict[int, ReviewTheme] = {}
+    if review_themes_active:
+        for t in review_themes_active:
+            for sid_str in (t.sample_review_ids or []):
+                try:
+                    sid = int(sid_str)
+                except (TypeError, ValueError):
+                    continue
+                sample_to_theme.setdefault(sid, t)
+
     return templates.TemplateResponse(request, "competitor_profile.html", {
         "user": user, "c": c, "latest": latest, "history": history,
         "findings": findings,
@@ -444,6 +487,12 @@ def competitor_profile(competitor_id: int, request: Request, db: Session = Depen
         "research_history": research_history,
         "research_in_flight": research_in_flight,
         "research_gemini_key_set": research_gemini_key_set,
+        "app_sources": app_sources,
+        "review_themes_active": review_themes_active,
+        "review_themes_dormant": review_themes_dormant,
+        "review_total_count": review_total_count,
+        "review_recent_samples": review_recent_samples,
+        "review_sample_to_theme": sample_to_theme,
     })
 
 
@@ -526,12 +575,24 @@ def admin_competitor_new(request: Request, candidate_id: int | None = None,
 
 
 @router.get("/admin/competitors/{competitor_id}/edit", response_class=HTMLResponse)
-def admin_competitor_edit(competitor_id: int, request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def admin_competitor_edit(competitor_id: int, request: Request,
+                          app_source: str | None = None,
+                          db: Session = Depends(get_db),
+                          user=Depends(get_current_user)):
     c = db.get(Competitor, competitor_id)
     if not c:
         raise HTTPException(404)
+    from .models import AppReviewSource
+    app_sources = (
+        db.query(AppReviewSource)
+        .filter(AppReviewSource.competitor_id == c.id)
+        .order_by(AppReviewSource.store, AppReviewSource.country)
+        .all()
+    )
     return templates.TemplateResponse(request, "admin_competitor_edit.html", {
         "user": user, "c": c,
+        "app_sources": app_sources,
+        "app_source_msg": app_source,
     })
 
 
