@@ -483,6 +483,109 @@ def _h_run_deep_research(
     }
 
 
+def _h_add_competitor(
+    db: Session,
+    user: User,
+    *,
+    name: str,
+    **_: Any,
+) -> dict:
+    """Add a new competitor to the watchlist. Hands the bare name to the
+    autofill agent, which does its own search+fetch tool-use loop to
+    populate every field, then writes the row. Same path as the New
+    Competitor form on /admin/competitors/new."""
+    name = (name or "").strip()
+    if not name:
+        return {"error": "competitor name is required"}
+
+    existing = (
+        db.query(Competitor)
+        .filter(Competitor.name.ilike(name))
+        .first()
+    )
+    if existing and existing.active:
+        return {
+            "error": f"competitor {existing.name!r} is already on the watchlist (id={existing.id}).",
+            "competitor_id": existing.id,
+            "url": f"/competitors/{existing.id}",
+        }
+
+    cfg_path = os.environ.get("CONFIG_PATH", "config.json")
+    try:
+        with open(cfg_path, encoding="utf-8") as _f:
+            cfg = json.load(_f)
+    except Exception:
+        cfg = {}
+    company = cfg.get("company", "our company")
+    industry = cfg.get("industry", "our industry")
+
+    try:
+        from ..competitor_autofill import autofill as _autofill
+        result = _autofill(name, company, industry)
+    except Exception as e:
+        return {"error": f"autofill failed: {type(e).__name__}: {e}"}
+
+    data = result.get("data") or {}
+
+    if existing:
+        # Re-activate + merge in any newly-discovered fields rather than
+        # creating a duplicate. Same posture the admin form takes.
+        existing.active = True
+        for field in (
+            "category", "threat_angle", "homepage_domain",
+            "app_store_id", "play_package", "trends_keyword",
+        ):
+            v = data.get(field)
+            if v and not getattr(existing, field, None):
+                setattr(existing, field, v)
+        for field in ("keywords", "subreddits", "careers_domains", "newsroom_domains"):
+            current = list(getattr(existing, field, None) or [])
+            for item in data.get(field) or []:
+                if item and item not in current:
+                    current.append(item)
+            setattr(existing, field, current)
+        db.commit()
+        return {
+            "reactivated": True,
+            "competitor_id": existing.id,
+            "name": existing.name,
+            "category": existing.category,
+            "homepage_domain": existing.homepage_domain,
+            "url": f"/competitors/{existing.id}",
+        }
+
+    comp = Competitor(
+        name=name,
+        category=data.get("category"),
+        threat_angle=data.get("threat_angle"),
+        keywords=list(data.get("keywords") or []),
+        subreddits=list(data.get("subreddits") or []),
+        careers_domains=list(data.get("careers_domains") or []),
+        newsroom_domains=list(data.get("newsroom_domains") or []),
+        homepage_domain=data.get("homepage_domain"),
+        app_store_id=data.get("app_store_id"),
+        play_package=data.get("play_package"),
+        trends_keyword=data.get("trends_keyword"),
+        min_relevance_score=data.get("min_relevance_score"),
+        social_score_multiplier=data.get("social_score_multiplier"),
+        source="manual",
+        active=True,
+    )
+    db.add(comp)
+    db.commit()
+    db.refresh(comp)
+    return {
+        "added": True,
+        "competitor_id": comp.id,
+        "name": comp.name,
+        "category": comp.category,
+        "homepage_domain": comp.homepage_domain,
+        "threat_angle": comp.threat_angle,
+        "keywords": comp.keywords or [],
+        "url": f"/competitors/{comp.id}",
+    }
+
+
 def _h_run_market_synthesis(
     db: Session, user: User, *, agent: str = "preview", window_days: int = 30, **_: Any
 ) -> dict:
@@ -658,6 +761,34 @@ TOOLS: list[Tool] = [
         },
         handler=_h_get_skill_body,
         requires_role="viewer",
+    ),
+    Tool(
+        name="add_competitor",
+        description=(
+            "Add a new competitor to the watchlist by name. The autofill agent "
+            "researches the company (search + fetch) and populates category, "
+            "homepage, threat angle, keywords, subreddits, and careers/newsroom "
+            "domains automatically — the user can edit any field afterwards at "
+            "/admin/competitors/{id}/edit. Takes ~10–30 seconds."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Competitor's brand or company name, e.g. 'Ashby' or 'Greenhouse'.",
+                },
+            },
+            "required": ["name"],
+            "additionalProperties": False,
+        },
+        handler=_h_add_competitor,
+        requires_role="analyst",
+        requires_confirmation=True,
+        confirmation_summary=lambda i: (
+            f"Add {i.get('name', '?')!r} to the watchlist? The autofill agent "
+            "will research the company and populate the fields (~10–30s, ~$0.10–0.30)."
+        ),
     ),
     Tool(
         name="run_market_digest",
