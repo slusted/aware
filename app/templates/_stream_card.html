@@ -45,6 +45,14 @@
         +{{ cluster_size - 1 }} more source{{ 's' if cluster_size - 1 != 1 else '' }}
       </span>
     {% endif %}
+    {# Debug: ?explain=1 surfaces the spec-08 semantic contribution. Only
+       renders when the centroid + finding embedding produced a value. #}
+    {% if explain is defined and explain and f._semantic_contribution is defined %}
+      <span class="semantic-chip{% if f._semantic_contribution < 0 %} is-neg{% endif %}"
+            title="cosine={{ '%.3f' % f._semantic_cosine }} × EMBEDDING_WEIGHT → score delta">
+        sem {{ '%+.2f' % f._semantic_contribution }}
+      </span>
+    {% endif %}
     {% if f.published_at %}
       <span class="time muted" title="When the page itself says it was published">
         published {{ f.published_at.strftime('%b %d, %Y') }}

@@ -1077,6 +1077,10 @@ def _parse_stream_filters(params: dict) -> dict:
         "include_dismissed": (params.get("include_dismissed") or "") == "1",
         "downweight_stale": downweight_stale,
         "window": window,
+        # Debug toggle: surface per-card scorer contributions on each
+        # rendered card. Cheap pre-spec-03 visibility into semantic ranking
+        # — uses the same centroid/embedding the scorer already loaded.
+        "explain": (params.get("explain") or "") == "1",
     }
 
 
@@ -1262,6 +1266,26 @@ def _stream_query(db, user, filters):
     )
     findings = _lead_findings(cards)
 
+    # Debug: stamp per-card semantic contribution when ?explain=1. Mirrors
+    # the math in default_score so the chip the template shows = exactly
+    # what the scorer added. Skipped silently when the centroid or the
+    # finding's embedding is missing (chip won't render either).
+    if filters.get("explain") and findings and user_centroid is not None:
+        from .adapters import voyage as _voyage
+        for f in findings:
+            if (
+                f.embedding is not None
+                and f.embedding_model == _rcfg.EMBEDDING_MODEL
+            ):
+                vec = _voyage.unpack(f.embedding)
+                if vec is not None:
+                    try:
+                        cos = float((user_centroid * vec).sum())
+                    except Exception:
+                        cos = 0.0
+                    f._semantic_contribution = _rcfg.EMBEDDING_WEIGHT * cos
+                    f._semantic_cosine = cos
+
     views: dict[int, SignalView] = {}
     if findings:
         ids = [f.id for f in findings]
@@ -1322,6 +1346,7 @@ def stream_page(
         "saved_filters": saved,
         "default_filter_id": user.default_filter_id,
         "logos": _build_logo_map(db, findings),
+        "explain": filters.get("explain", False),
     })
 
 
@@ -1346,6 +1371,7 @@ def partial_stream_list(
         "filters": filters,
         "has_more": has_more,
         "logos": _build_logo_map(db, findings),
+        "explain": filters.get("explain", False),
     })
 
 
