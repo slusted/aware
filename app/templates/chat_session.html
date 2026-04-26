@@ -41,6 +41,16 @@
     {% endfor %}
   </div>
 
+  {# Poll for chat-triggered jobs (deep research) that finished while
+     the page is open. Server returns 204 when nothing's new — HTMX
+     no-ops the swap. New rows append at the end of the thread. #}
+  <div id="chat-notifications-poller"
+       hx-get="/api/chat/{{ session.id }}/notifications"
+       hx-trigger="every 15s"
+       hx-swap="beforeend"
+       hx-target="#chat-thread"
+       style="display:none"></div>
+
   <form id="chat-input-form" class="chat-input-form" data-session-id="{{ session.id }}">
     <textarea id="chat-input" name="text" rows="2"
               placeholder="Ask anything about the watch — competitors, findings, market, runs."

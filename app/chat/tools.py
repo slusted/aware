@@ -376,7 +376,9 @@ def _h_get_skill_body(db: Session, user: User, *, name: str, **_: Any) -> dict:
 # ----- write handlers --------------------------------------------------------
 
 
-def _h_run_market_digest(db: Session, user: User, **_: Any) -> dict:
+def _h_run_market_digest(
+    db: Session, user: User, *, _session: "ChatSession | None" = None, **_: Any
+) -> dict:
     """Trigger the same job /api/runs/market-digest enqueues. Returns the
     queued metadata; the actual Run row is created inside the job."""
     in_flight = (
@@ -394,9 +396,10 @@ def _h_run_market_digest(db: Session, user: User, **_: Any) -> dict:
     from .. import jobs as _jobs
     import threading
 
+    tag = f"chat:{_session.id}" if _session is not None else f"chat:user-{user.id}"
     threading.Thread(
         target=_jobs.run_market_digest_job,
-        args=(f"chat:{user.id}",),
+        args=(tag,),
         name=f"chat-market-digest-{user.id}",
         daemon=True,
     ).start()
@@ -404,7 +407,13 @@ def _h_run_market_digest(db: Session, user: User, **_: Any) -> dict:
 
 
 def _h_run_deep_research(
-    db: Session, user: User, *, competitor: str | int, agent: str = "preview", **_: Any
+    db: Session,
+    user: User,
+    *,
+    competitor: str | int,
+    agent: str = "preview",
+    _session: "ChatSession | None" = None,
+    **_: Any,
 ) -> dict:
     if not os.environ.get("GEMINI_API_KEY", "").strip():
         return {"error": "GEMINI_API_KEY is not set. Add it on /settings/keys before running deep research."}
@@ -466,9 +475,10 @@ def _h_run_deep_research(
 
     import threading
 
+    tag = f"chat:{_session.id}" if _session is not None else f"chat:user-{user.id}"
     threading.Thread(
         target=run_deep_research_job,
-        args=(comp.id, report.id, agent_resolved, f"chat:{user.id}"),
+        args=(comp.id, report.id, agent_resolved, tag),
         name=f"chat-deep-research-{comp.id}",
         daemon=True,
     ).start()
@@ -587,7 +597,13 @@ def _h_add_competitor(
 
 
 def _h_run_market_synthesis(
-    db: Session, user: User, *, agent: str = "preview", window_days: int = 30, **_: Any
+    db: Session,
+    user: User,
+    *,
+    agent: str = "preview",
+    window_days: int = 30,
+    _session: "ChatSession | None" = None,
+    **_: Any,
 ) -> dict:
     if not os.environ.get("GEMINI_API_KEY", "").strip():
         return {"error": "GEMINI_API_KEY is not set. Add it on /settings/keys before running synthesis."}
@@ -603,9 +619,10 @@ def _h_run_market_synthesis(
     from .. import jobs as _jobs
     import threading
 
+    tag = f"chat:{_session.id}" if _session is not None else f"chat:user-{user.id}"
     threading.Thread(
         target=_jobs.run_market_synthesis_job,
-        args=(f"chat:{user.id}", agent_resolved, window, None),
+        args=(tag, agent_resolved, window, None),
         name=f"chat-market-synthesis-{user.id}",
         daemon=True,
     ).start()
@@ -883,17 +900,24 @@ def execute_tool(
     inputs: dict,
     db: Session,
     user: User,
+    session: ChatSession | None = None,
 ) -> tuple[Any, bool]:
     """Run a tool by name with the user's role enforced. Returns
     (output_payload, is_error). Truncation is applied here so every
-    handler benefits."""
+    handler benefits.
+
+    ``session`` is forwarded to handlers as a keyword. Write handlers
+    that kick off background jobs use it to tag the resulting Run with
+    ``triggered_by=f"chat:{session.id}"`` so the notifications poller
+    can wire completions back to the originating session.
+    """
     tool = get_tool(name)
     if tool is None:
         return {"error": f"unknown tool: {name!r}"}, True
     if _ROLE_RANK.get(user.role, 0) < _ROLE_RANK.get(tool.requires_role, 0):
         return {"error": f"tool {name!r} requires role {tool.requires_role}"}, True
     try:
-        raw = tool.handler(db, user, **(inputs or {}))
+        raw = tool.handler(db, user, _session=session, **(inputs or {}))
     except TypeError as e:
         return {"error": f"bad arguments to {name!r}: {e}"}, True
     except Exception as e:

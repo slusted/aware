@@ -1,0 +1,43 @@
+{# One job-completion notification bubble. Persisted as a ChatMessage
+   row with role='notification'; rendered both on initial page load
+   (via _chat_message.html role dispatch) and as the HTMX poller's
+   response when a fresh notification lands. Markup is identical in
+   both paths so the bubble looks the same. #}
+{% set pl = msg.tool_payload %}
+{% set status = pl.get('status', 'ready') %}
+{% set is_failed = status == 'failed' %}
+{% set comp_name = pl.get('competitor_name') or 'a competitor' %}
+{% set url = pl.get('url') or '' %}
+{% set finished = pl.get('finished_at') %}
+{% set kind = pl.get('kind', 'job') %}
+<div class="chat-msg chat-msg-notification" data-msg-id="{{ msg.id }}">
+  <div class="chat-notification {% if is_failed %}chat-notification-failed{% else %}chat-notification-ready{% endif %}"
+       data-kind="{{ kind }}"
+       data-ref-id="{{ pl.get('id') }}">
+    <div class="chat-notification-icon" aria-hidden="true">
+      {% if is_failed %}⚠{% else %}✓{% endif %}
+    </div>
+    <div class="chat-notification-body">
+      <div class="chat-notification-text">
+        {% if kind == 'deep_research_report' %}
+          {% if is_failed %}
+            Deep research on <strong>{{ comp_name }}</strong> failed.
+          {% else %}
+            Deep research on <strong>{{ comp_name }}</strong> is ready.
+          {% endif %}
+        {% else %}
+          A background job finished.
+        {% endif %}
+        {% if url %}
+          <a href="{{ url }}" class="chat-notification-link">Open report →</a>
+        {% endif %}
+      </div>
+      {% if is_failed and pl.get('error') %}
+        <div class="chat-notification-error">{{ pl.get('error') }}</div>
+      {% endif %}
+      {% if finished %}
+        <div class="chat-notification-meta muted">{{ finished }}</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
