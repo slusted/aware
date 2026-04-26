@@ -1,12 +1,7 @@
-{% if is_running %}
-  <button type="button" disabled title="A scan is already running — finish or view it first">
-    Scan running…
-  </button>
-{% else %}
-  <div class="scan-launcher" style="display:inline-flex; align-items:stretch">
+<div class="scan-launcher" style="display:inline-flex; align-items:stretch; position:relative">
     <button type="button" id="scan-go"
             style="border-top-right-radius:0; border-bottom-right-radius:0">
-      Run scan
+      Run scan{% if queued_count %} <span class="muted" style="margin-left:6px; font-size:11px">· {{ queued_count }} waiting</span>{% endif %}
     </button>
     <button type="button" id="scan-chev" aria-label="Scan options"
             style="border-top-left-radius:0; border-bottom-left-radius:0;
@@ -14,7 +9,8 @@
       <svg viewBox="0 0 10 6" width="9" height="6" fill="currentColor"><path d="M0 0l5 6 5-6z"/></svg>
     </button>
     <div id="scan-menu" role="menu"
-         style="display:none; position:absolute; top:52px; right:28px; z-index:20;
+         style="display:none; position:absolute; top:100%; right:0; z-index:20;
+                margin-top:4px;
                 background:var(--bg-raised); border:1px solid var(--border-strong);
                 border-radius:var(--r); min-width:220px; padding:4px;
                 box-shadow:0 8px 24px rgba(0,0,0,0.4)">
@@ -43,6 +39,7 @@
 
     function trigger(days) {
       var url = '/api/runs/scan' + (days ? '?days=' + days : '');
+      var prevText = go.textContent;
       go.disabled = chev.disabled = true;
       go.textContent = 'Queuing…';
       fetch(url, {method: 'POST'})
@@ -51,7 +48,7 @@
         .catch(err => {
           alert('Failed: ' + err);
           go.disabled = chev.disabled = false;
-          go.textContent = 'Run scan';
+          go.textContent = prevText;
         });
     }
 
@@ -73,4 +70,3 @@
     document.addEventListener('click', () => { menu.style.display = 'none'; });
   })();
   </script>
-{% endif %}

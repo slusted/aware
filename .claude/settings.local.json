@@ -103,7 +103,13 @@
       "Bash(python scripts/verify_semantic_ranking.py)",
       "Bash(python -c \"import sys; print\\(sys.stdout.encoding\\)\")",
       "Bash(python scripts/verify_preference_rollup.py)",
-      "Bash(python scripts/verify_seen_decay.py)"
+      "Bash(python scripts/verify_seen_decay.py)",
+      "Bash(python -c \"from app import jobs; print\\('jobs ok'\\); print\\('RUN_QUEUE_MAX', jobs.RUN_QUEUE_MAX\\); print\\('has drain_run_queue', hasattr\\(jobs, 'drain_run_queue'\\)\\); print\\('has enqueue_run', hasattr\\(jobs, 'enqueue_run'\\)\\); print\\('has queue_position', hasattr\\(jobs, 'queue_position'\\)\\)\")",
+      "Bash(python -c \"from app import scheduler; print\\('scheduler ok'\\); from app.routes import runs; print\\('runs route ok'\\); from app import ui; print\\('ui ok'\\); from app.models import Run; print\\('has job_args:', 'job_args' in [c.name for c in Run.__table__.columns]\\)\")",
+      "Bash(DATA_DIR=data python -m alembic current)",
+      "Bash(DATA_DIR=data python -m alembic heads)",
+      "Bash(DATA_DIR=data python -m alembic upgrade head)",
+      "Bash(python -m scripts.smoke_run_queue)"
     ]
   }
 }

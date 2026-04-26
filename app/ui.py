@@ -58,6 +58,11 @@ def dashboard(request: Request, db: Session = Depends(get_db), user=Depends(get_
     findings_today = db.query(func.count(Finding.id)).filter(Finding.created_at >= since).scalar() or 0
     competitor_count = db.query(func.count(Competitor.id)).filter(Competitor.active == True).scalar() or 0
     is_running = db.query(Run).filter(Run.status == "running").first() is not None
+    all_queued_ids = [
+        rid for (rid,) in
+        db.query(Run.id).filter(Run.status == "queued").order_by(Run.id.asc()).all()
+    ]
+    queue_positions = {rid: i + 1 for i, rid in enumerate(all_queued_ids)}
     cost_today = db.query(func.coalesce(func.sum(UsageEvent.cost_usd), 0.0)).filter(UsageEvent.ts >= since).scalar() or 0.0
 
     return templates.TemplateResponse(request, "dashboard.html", {
@@ -65,6 +70,8 @@ def dashboard(request: Request, db: Session = Depends(get_db), user=Depends(get_
         "last_run": last_run,
         "next_run_at": scheduler.next_run_at("daily_scan"),
         "is_running": is_running,
+        "queued_count": len(all_queued_ids),
+        "queue_positions": queue_positions,
         "findings_today": findings_today,
         "competitor_count": competitor_count,
         "recent_runs": recent_runs,
@@ -713,10 +720,19 @@ def runs_index(
         .all()
     )
     is_running = db.query(Run).filter(Run.status == "running").first() is not None
+    # 1-based FIFO position for every queued run, precomputed so the
+    # template doesn't issue N count queries.
+    all_queued_ids = [
+        rid for (rid,) in
+        db.query(Run.id).filter(Run.status == "queued").order_by(Run.id.asc()).all()
+    ]
+    queue_positions = {rid: i + 1 for i, rid in enumerate(all_queued_ids)}
     return templates.TemplateResponse(request, "runs_index.html", {
         "user": user,
         "runs": rows,
         "is_running": is_running,
+        "queued_count": len(all_queued_ids),
+        "queue_positions": queue_positions,
         "page": page,
         "total_pages": total_pages,
         "total": total,

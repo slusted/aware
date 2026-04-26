@@ -73,6 +73,19 @@ def start():
         replace_existing=True,
         misfire_grace_time=3600,
     )
+    # Run-queue drainer (spec docs/runs/01-run-queue.md). Wakes every 2s,
+    # picks the oldest queued Run when nothing is in flight, flips it to
+    # 'running' and dispatches on a worker thread. max_instances=1 is the
+    # critical bit — without it two ticks could race and double-dispatch.
+    sched.add_job(
+        jobs.drain_run_queue,
+        IntervalTrigger(seconds=2),
+        id="run_queue_drain",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=30,
+    )
     sched.add_job(
         jobs.run_reply_check_job,
         IntervalTrigger(minutes=reply_mins),

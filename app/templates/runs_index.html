@@ -7,13 +7,18 @@
 {% block content %}
 <div class="panel">
   <table>
-    <thead><tr><th>When</th><th>Kind</th><th>Status</th><th style="text-align:right">Findings</th><th>Duration</th><th>Trigger</th></tr></thead>
+    <thead><tr><th>When</th><th>Kind</th><th>Status</th><th style="text-align:right">Findings</th><th>Duration</th><th>Trigger</th><th>Actions</th></tr></thead>
     <tbody>
     {% for r in runs %}
       <tr>
         <td><a href="/runs/{{ r.id }}">{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</a></td>
         <td class="muted">{{ r.kind }}</td>
-        <td><span class="pill {{ r.status }}">{{ r.status }}</span></td>
+        <td>
+          <span class="pill {{ r.status }}">{{ r.status }}</span>
+          {% if r.status == 'queued' and queue_positions.get(r.id) %}
+            <span class="muted" style="font-size:11px; margin-left:4px">· position {{ queue_positions[r.id] }}</span>
+          {% endif %}
+        </td>
         <td style="text-align:right">{{ r.findings_count }}</td>
         <td class="muted">
           {% if r.finished_at %}
@@ -21,9 +26,16 @@
           {% else %}—{% endif %}
         </td>
         <td class="muted">{{ r.triggered_by }}</td>
+        <td>
+          {% if r.status in ('queued', 'running') %}
+            <button type="button" class="btn-ghost cancel-run-btn"
+                    data-run-id="{{ r.id }}" data-run-status="{{ r.status }}"
+                    style="padding:4px 10px; font-size:12px">Cancel</button>
+          {% endif %}
+        </td>
       </tr>
     {% else %}
-      <tr><td colspan="6" class="muted">No runs yet.</td></tr>
+      <tr><td colspan="7" class="muted">No runs yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>
@@ -50,4 +62,31 @@
   </div>
   {% endif %}
 </div>
+
+<script>
+(function () {
+  document.querySelectorAll('.cancel-run-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.getAttribute('data-run-id');
+      var status = btn.getAttribute('data-run-status');
+      var msg = status === 'queued'
+        ? 'Cancel queued run #' + id + '?'
+        : 'Cancel running run #' + id + '? The current step will finish, then it bails.';
+      if (!confirm(msg)) return;
+      btn.disabled = true;
+      btn.textContent = 'Cancelling…';
+      fetch('/api/runs/' + id + '/cancel', {method: 'POST'})
+        .then(function (r) {
+          if (!r.ok) return r.text().then(function (t) { return Promise.reject(t); });
+          setTimeout(function () { location.reload(); }, 400);
+        })
+        .catch(function (err) {
+          alert('Cancel failed: ' + err);
+          btn.disabled = false;
+          btn.textContent = 'Cancel';
+        });
+    });
+  });
+})();
+</script>
 {% endblock %}
