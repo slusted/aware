@@ -151,17 +151,19 @@ def _normalize(interaction: Any) -> dict:
         body_md = _extract_text(interaction)
         sources = _extract_sources(interaction)
         cost_usd = _extract_cost(interaction)
-        # Gemini says the interaction completed but we couldn't pull any
-        # body or citations out of the response. This is almost always a
-        # shape-drift issue (the SDK moved the fields). Flip to failed
-        # with a diagnostic dump so the UI shows something actionable
-        # instead of a blank "Report body is empty." panel.
-        if not body_md and not sources:
+        # Gemini says the interaction completed but we couldn't pull a
+        # body out of the response. A source-list-only result is useless
+        # to the user (they came for the dossier, not 38 redirect URLs)
+        # and indistinguishable from an extraction failure. Flip to
+        # failed with a diagnostic dump so the UI surfaces the response
+        # shape instead of silently storing a body-less "ready" report.
+        if not body_md:
             status = "failed"
             err = (
-                "Gemini returned a completed interaction but no body or "
-                "sources were extracted. The SDK response shape likely "
-                "drifted. Diagnostic dump (first few fields):\n"
+                "Gemini returned a completed interaction but no report "
+                "body was extracted ({} sources came through). The SDK "
+                "response shape likely drifted. Diagnostic dump:\n"
+                .format(len(sources))
                 + _debug_dump(interaction)
             )
 
@@ -186,16 +188,17 @@ def _extract_text(interaction: Any) -> str:
     (`{'text', 'type', 'annotations'}`) and some data/media
     (`{'type', 'data', 'mime_type', 'uri'}`). Text-typed blocks are
     concatenated in document order."""
-    # 1. outputs[*].text — the real path.
+    # 1. outputs[*] — the real path. Use _text_from so we tolerate items
+    # whose text lives under .content / .parts / a nested dict, not just a
+    # flat .text attribute. The original "outputs[*].text only" path missed
+    # a shape variant where the block carries text under a content wrapper
+    # and produced empty bodies even when sources extracted fine.
     outputs = _outputs_of(interaction)
     if outputs:
         chunks: list[str] = []
         for item in outputs:
-            if isinstance(item, dict):
-                t = item.get("text")
-            else:
-                t = getattr(item, "text", None)
-            if isinstance(t, str) and t.strip():
+            t = _text_from(item)
+            if t:
                 chunks.append(t)
         if chunks:
             return "\n\n".join(chunks).strip()
@@ -248,6 +251,14 @@ def _text_from(obj: Any) -> str:
     t = getattr(obj, "text", None)
     if isinstance(t, str) and t.strip():
         return t
+    # Typed-model variant: outputs items sometimes carry text under
+    # `.content` (an object with .text or .parts). Recurse before
+    # falling back to the parts/dict paths.
+    nested_attr = getattr(obj, "content", None)
+    if nested_attr is not None and not isinstance(nested_attr, str):
+        inner = _text_from(nested_attr)
+        if inner:
+            return inner
     parts = getattr(obj, "parts", None) or (obj if isinstance(obj, list) else None)
     if parts:
         chunks: list[str] = []
@@ -266,6 +277,13 @@ def _text_from(obj: Any) -> str:
             v = obj.get(k)
             if isinstance(v, str) and v.strip():
                 return v
+        # `content` sometimes wraps a nested object (e.g. {parts:[...]} or
+        # {text:"..."}); recurse rather than treating only the str form.
+        nested = obj.get("content")
+        if nested is not None and not isinstance(nested, str):
+            inner = _text_from(nested)
+            if inner:
+                return inner
     return ""
 
 

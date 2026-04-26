@@ -113,7 +113,8 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:49672/login)",
       "Bash(curl -s -i http://localhost:49672/chat)",
       "Bash(curl -s -i http://localhost:49672/setup)",
-      "Bash(curl -s -i -c /tmp/cookies.txt -X POST http://localhost:49672/setup --data-urlencode name=Admin --data-urlencode email=admin@local.test --data-urlencode password=testpass123)"
+      "Bash(curl -s -i -c /tmp/cookies.txt -X POST http://localhost:49672/setup --data-urlencode name=Admin --data-urlencode email=admin@local.test --data-urlencode password=testpass123)",
+      "Bash(xargs -I {} echo \"=== app/routes/{} ===\")"
     ]
   }
 }
