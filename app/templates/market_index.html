@@ -89,12 +89,30 @@
     <div class="panel">
       <div class="panel-header">
         <h2>{{ digest.title }}</h2>
-        <span class="muted" style="font-size:11px">
-          {{ digest.created_at.strftime('%Y-%m-%d %H:%M') }}
-          {% if digest.run_id %} · <a href="/runs/{{ digest.run_id }}">run #{{ digest.run_id }}</a>{% endif %}
-        </span>
       </div>
       <div class="panel-body">
+        <div class="brief-meta">
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Refreshed</span>
+            <span class="brief-meta-value">{{ digest.created_at.strftime('%b %d, %Y') }}</span>
+          </div>
+          {% if digest.run_id %}
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Run</span>
+            <span class="brief-meta-value"><a href="/runs/{{ digest.run_id }}">#{{ digest.run_id }}</a></span>
+          </div>
+          {% endif %}
+          {% if digest_model %}
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Model</span>
+            <span class="brief-meta-value mono">{{ digest_model }}</span>
+          </div>
+          {% endif %}
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Scope</span>
+            <span class="brief-meta-value">Market</span>
+          </div>
+        </div>
         <div id="digest-body" class="markdown research-body"></div>
         <script id="digest-src" type="text/plain">{{ digest.body_md }}</script>
       </div>

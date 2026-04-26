@@ -132,14 +132,7 @@
     {% set _minutes = (_duration_s / 60)|round(1) if _duration_s else 0 %}
     <div class="panel">
       <div class="panel-header">
-        <h2>Market synthesis · {{ s.started_at.strftime('%Y-%m-%d %H:%M') }}</h2>
-        <span class="muted" style="font-size:11px">
-          agent: {{ s.agent }}
-          {% if _minutes %} · {{ _minutes }} min{% endif %}
-          {% if s.cost_usd is not none %} · ${{ '%.2f'|format(s.cost_usd) }}{% endif %}
-          · {{ s.sources|length }} source{{ 's' if s.sources|length != 1 else '' }}
-          {% if s.run_id %} · <a href="/runs/{{ s.run_id }}">run #{{ s.run_id }}</a>{% endif %}
-        </span>
+        <h2>Market synthesis</h2>
         {% if _can_run %}
           <button id="synthesis-run-btn" type="button" class="btn-ghost"
                   style="margin-left:auto">Run new synthesis</button>
@@ -153,6 +146,44 @@
         {% endif %}
       </div>
       <div class="panel-body">
+        <div class="brief-meta">
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Refreshed</span>
+            <span class="brief-meta-value">{{ s.started_at.strftime('%b %d, %Y') }}</span>
+          </div>
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Agent</span>
+            <span class="brief-meta-value">{{ s.agent }}</span>
+          </div>
+          {% if s.model %}
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Model</span>
+            <span class="brief-meta-value mono">{{ s.model }}</span>
+          </div>
+          {% endif %}
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Sources</span>
+            <span class="brief-meta-value">{{ s.sources|length }} source{{ 's' if s.sources|length != 1 else '' }}</span>
+          </div>
+          {% if _minutes %}
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Duration</span>
+            <span class="brief-meta-value">{{ _minutes }} min</span>
+          </div>
+          {% endif %}
+          {% if s.cost_usd is not none %}
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Cost</span>
+            <span class="brief-meta-value">${{ '%.2f'|format(s.cost_usd) }}</span>
+          </div>
+          {% endif %}
+          {% if s.run_id %}
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Run</span>
+            <span class="brief-meta-value"><a href="/runs/{{ s.run_id }}">#{{ s.run_id }}</a></span>
+          </div>
+          {% endif %}
+        </div>
         {% if s.inputs_meta %}
           <p class="muted" style="font-size:12px; margin:0 0 14px">
             Built from {{ s.inputs_meta.get('findings_count', 0) }} findings

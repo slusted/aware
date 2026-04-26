@@ -771,10 +771,12 @@ def market_index(request: Request, db: Session = Depends(get_db), user=Depends(g
         latest_synthesis is not None
         and latest_synthesis.status in ("queued", "running")
     )
+    from analyzer import MODEL as _DIGEST_MODEL
     return templates.TemplateResponse(request, "market_index.html", {
         "user": user,
         "digest": latest_digest,
         "digest_history": digest_history,
+        "digest_model": _DIGEST_MODEL,
         "synthesis": latest_synthesis,
         "synthesis_history": synthesis_history,
         "synthesis_poll": synthesis_poll,
