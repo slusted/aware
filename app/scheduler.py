@@ -165,8 +165,19 @@ def start():
                 "expected 'min hour dow'. Skipping weekly synthesis."
             )
 
-    _register_chat_schedules(sched)
-    _register_chat_reply_poll(sched)
+    # Chat-schedule + reply-poll registration is gated behind the
+    # docs/chat/02 migration. Wrapped so a half-applied migration or
+    # missing table can't take down the whole web process at boot —
+    # the rest of the scheduler (daily scan, run queue, momentum…)
+    # is unaffected and the chat surface is degradable.
+    try:
+        _register_chat_schedules(sched)
+    except Exception as e:
+        print(f"  [scheduler] chat-schedule registration failed (non-fatal): {e}", flush=True)
+    try:
+        _register_chat_reply_poll(sched)
+    except Exception as e:
+        print(f"  [scheduler] chat reply-poll registration failed (non-fatal): {e}", flush=True)
 
     sched.start()
     _scheduler = sched
