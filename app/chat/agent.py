@@ -182,17 +182,27 @@ def _rebuild_messages(db: Session, session_id: int) -> list[dict]:
         )
         if not unresolved:
             break
-        # Look at trailing user-tool_result message (if any) to see
-        # whether it pairs every tool_use; if not, surface the gap by
-        # removing the assistant. With the current persistence order
-        # this should never trigger — we only call _rebuild_messages
-        # right before an API call when all results are present.
-        # Defensive: if it does fire, the next loop iteration will
-        # resurface the missing tool_use as a fresh model response.
         messages.pop()
         break
 
-    return messages
+    # Coalesce consecutive same-role messages. The Messages API enforces
+    # strict role alternation; the heal path naturally produces two
+    # back-to-back user messages — first the orphaned tool_result(s),
+    # then the user's new prompt — so merge them into one.
+    coalesced: list[dict] = []
+    for m in messages:
+        def _as_blocks(c):
+            if isinstance(c, list):
+                return list(c)
+            if isinstance(c, str):
+                return [{"type": "text", "text": c}]
+            return []
+        if coalesced and coalesced[-1].get("role") == m.get("role"):
+            coalesced[-1]["content"] = _as_blocks(coalesced[-1]["content"]) + _as_blocks(m["content"])
+        else:
+            coalesced.append({"role": m["role"], "content": _as_blocks(m["content"])})
+
+    return coalesced
 
 
 def _persist_message(
@@ -262,7 +272,18 @@ def _maybe_set_title(db: Session, session: ChatSession, first_user_text: str):
 
 
 def _pending_tool_uses(db: Session, session_id: int) -> list[ChatMessage]:
-    """Tool_use rows still awaiting user confirmation. Ordered oldest first."""
+    """Confirmable tool_use rows that still need action — either still
+    waiting for the user (confirmation_status='pending') or already
+    resolved by the user but not yet executed (status='confirmed' or
+    'cancelled', no matching tool_result row yet). Ordered oldest first.
+
+    Filtering by status='pending' alone was the original bug: by the
+    time the resume path runs, the confirm endpoint has already
+    flipped the row to 'confirmed' or 'cancelled', so a 'pending'
+    filter returned nothing and the handler never fired — leaving an
+    orphan tool_use that crashed the next API call with
+    "tool_use ids were found without tool_result blocks".
+    """
     rows = (
         db.query(ChatMessage)
         .filter(
@@ -272,11 +293,16 @@ def _pending_tool_uses(db: Session, session_id: int) -> list[ChatMessage]:
         .order_by(ChatMessage.id.asc())
         .all()
     )
-    out = []
+    out: list[ChatMessage] = []
     for r in rows:
         pl = r.tool_payload or {}
-        if pl.get("requires_confirmation") and pl.get("confirmation_status") == "pending":
-            out.append(r)
+        if not pl.get("requires_confirmation"):
+            continue
+        if pl.get("confirmation_status") not in ("pending", "confirmed", "cancelled"):
+            continue
+        if _has_tool_result(db, session_id, pl.get("id")):
+            continue
+        out.append(r)
     return out
 
 
@@ -326,22 +352,24 @@ def run_turn(
         })
         return
 
-    if user_text is not None:
-        text = user_text.strip()
-        if text:
-            _persist_message(db, session.id, role="user", content=text)
-            _maybe_set_title(db, session, text)
-
     yield _sse("turn_start", {"session_id": session.id})
 
     # Resume path: execute confirmed-but-unrun tool_uses and emit results
-    # before the next model call.
+    # BEFORE persisting any new user_text. The tool_result row needs to
+    # land directly after the orphan tool_use row in DB order so the
+    # rebuilder pairs them inside the same assistant turn — sliding a
+    # new user message between them would split the turn.
     pending = _pending_tool_uses(db, session.id)
+    pending_user_text: str | None = None
     for row in pending:
         pl = row.tool_payload or {}
         decision = pl.get("confirmation_status")
         if decision == "pending":
             # Still awaiting the user — bail; the UI will keep showing the card.
+            # Stash the new user_text so a follow-up resume doesn't lose it.
+            if user_text and user_text.strip():
+                _persist_message(db, session.id, role="user", content=user_text.strip())
+                _maybe_set_title(db, session, user_text.strip())
             yield _sse("waiting_for_confirmation", {"tool_use_id": pl.get("id")})
             return
         if _has_tool_result(db, session.id, pl.get("id")):
@@ -377,6 +405,16 @@ def run_turn(
                 "output": output,
                 "is_error": is_error,
             })
+
+    # Resume work is done — now safe to persist any new user message.
+    # Order matters: tool_result rows have to land before the new user
+    # text so the rebuild keeps them inside the assistant turn that
+    # owned the originating tool_use.
+    if user_text is not None:
+        text = user_text.strip()
+        if text:
+            _persist_message(db, session.id, role="user", content=text)
+            _maybe_set_title(db, session, text)
 
     system_text, tools = _render_system_prompt(user)
     anthropic_tools = tools_module.to_anthropic_schema(tools)
