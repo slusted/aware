@@ -572,6 +572,127 @@ def admin_usage(request: Request, db: Session = Depends(get_db), user=Depends(ge
     })
 
 
+@router.get("/admin/search-quality", response_class=HTMLResponse)
+def admin_search_quality(request: Request, days: int = 30, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """Per-source signal-quality dashboard. Surfaces the same metrics the
+    initial LinkedIn audit used so we can spot query leaks (URL host doesn't
+    match the source tag) and compare materiality across collectors over time."""
+    from urllib.parse import urlparse
+
+    days = max(1, min(int(days or 30), 365))
+    since = datetime.utcnow() - timedelta(days=days)
+
+    rows = (
+        db.query(
+            Finding.source, Finding.url, Finding.score, Finding.materiality,
+            Finding.signal_type, Finding.digest_threat_level,
+        )
+        .filter(Finding.created_at >= since)
+        .all()
+    )
+
+    # Bucket reddit/r/* into a single "reddit" group; everything else keeps
+    # its raw source so we can compare web/news/careers/etc. side by side.
+    def _group(src: str) -> str:
+        if not src:
+            return "(unknown)"
+        if src.startswith("reddit/"):
+            return "reddit"
+        return src
+
+    # Expected URL host per source — used to compute on-platform fidelity.
+    # If the source claims linkedin/reddit but the URL points elsewhere, the
+    # search query is leaking and the source tag is misleading. Returns None
+    # for sources where the check doesn't apply (web, careers, etc. legitimately
+    # span many hosts).
+    def _expected_host(src: str) -> str | None:
+        if src == "linkedin":
+            return "linkedin.com"
+        if src and src.startswith("reddit/"):
+            return "reddit.com"
+        return None
+
+    def _host(url: str | None) -> str:
+        if not url:
+            return ""
+        try:
+            h = (urlparse(url).netloc or "").lower()
+            return h[4:] if h.startswith("www.") else h
+        except Exception:
+            return ""
+
+    groups: dict[str, dict] = {}
+    for src, url, score, mat, sig, dlevel in rows:
+        g = _group(src)
+        d = groups.setdefault(g, {
+            "n": 0, "sum_rel": 0.0, "n_rel": 0, "sum_mat": 0.0, "n_mat": 0,
+            "hi_mat": 0, "digest_kept": 0, "digest_noise": 0,
+            "expected_host": _expected_host(src),
+            "on_platform": 0, "off_platform": 0,
+            "host_check_applies": False,
+            "off_hosts": {},
+            "signals": {},
+        })
+        d["n"] += 1
+        if score is not None:
+            d["sum_rel"] += float(score); d["n_rel"] += 1
+        if mat is not None:
+            d["sum_mat"] += float(mat); d["n_mat"] += 1
+            if mat >= 0.5:
+                d["hi_mat"] += 1
+        if dlevel in ("HIGH", "MEDIUM"):
+            d["digest_kept"] += 1
+        elif dlevel == "NOISE":
+            d["digest_noise"] += 1
+        d["signals"][sig or "(none)"] = d["signals"].get(sig or "(none)", 0) + 1
+
+        exp = _expected_host(src)
+        if exp:
+            d["host_check_applies"] = True
+            h = _host(url)
+            if h.endswith(exp):
+                d["on_platform"] += 1
+            else:
+                d["off_platform"] += 1
+                if h:
+                    d["off_hosts"][h] = d["off_hosts"].get(h, 0) + 1
+
+    table = []
+    for g, d in groups.items():
+        n = d["n"]
+        avg_rel = (d["sum_rel"] / d["n_rel"]) if d["n_rel"] else None
+        avg_mat = (d["sum_mat"] / d["n_mat"]) if d["n_mat"] else None
+        on_platform_pct = None
+        if d["host_check_applies"]:
+            total_hosts = d["on_platform"] + d["off_platform"]
+            on_platform_pct = (100.0 * d["on_platform"] / total_hosts) if total_hosts else None
+        top_signals = sorted(d["signals"].items(), key=lambda kv: -kv[1])[:3]
+        top_off_hosts = sorted(d["off_hosts"].items(), key=lambda kv: -kv[1])[:5]
+        table.append({
+            "group": g,
+            "n": n,
+            "avg_rel": avg_rel,
+            "avg_mat": avg_mat,
+            "hi_mat_pct": (100.0 * d["hi_mat"] / n) if n else 0.0,
+            "hi_mat_n": d["hi_mat"],
+            "digest_kept": d["digest_kept"],
+            "digest_noise": d["digest_noise"],
+            "on_platform_pct": on_platform_pct,
+            "on_platform": d["on_platform"],
+            "off_platform": d["off_platform"],
+            "off_hosts": top_off_hosts,
+            "top_signals": top_signals,
+        })
+    table.sort(key=lambda r: -r["n"])
+
+    return templates.TemplateResponse(request, "admin_search_quality.html", {
+        "user": user,
+        "days": days,
+        "table": table,
+        "windows": [7, 30, 90],
+    })
+
+
 @router.get("/runs", response_class=HTMLResponse)
 def runs_index(
     request: Request,

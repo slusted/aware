@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 style="margin-top:0">Search quality</h2>
+<p class="muted" style="margin-top:-8px; margin-bottom:16px">
+  Per-source signal quality. <strong>On-platform %</strong> is the host-fidelity check —
+  for <code>linkedin</code> and <code>reddit/*</code> sources it shows the share whose URL
+  actually lives on that platform. A low number means the search query is leaking and
+  pulling unrelated pages under that source tag.
+</p>
+
+<div style="margin-bottom:16px">
+  <span class="muted" style="font-size:0.85rem; margin-right:8px">Window:</span>
+  {% for w in windows %}
+    <a href="?days={{ w }}"
+       style="margin-right:8px; padding:4px 10px; border-radius:4px;
+              {% if w == days %}background:var(--accent, #2563eb); color:white;{% else %}border:1px solid var(--border, #d4d4d8); color:var(--text);{% endif %}
+              text-decoration:none; font-size:0.85rem">
+      {{ w }} days
+    </a>
+  {% endfor %}
+</div>
+
+<div class="panel">
+  <h2>By source</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Source</th>
+        <th style="text-align:right">Findings</th>
+        <th style="text-align:right">Avg relevance</th>
+        <th style="text-align:right">Avg materiality</th>
+        <th style="text-align:right">High-mat (≥0.5)</th>
+        <th style="text-align:right">On-platform</th>
+        <th>Top signal types</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in table %}
+      <tr>
+        <td><code>{{ r.group }}</code></td>
+        <td style="text-align:right">{{ r.n }}</td>
+        <td style="text-align:right">{% if r.avg_rel is not none %}{{ '%.3f' % r.avg_rel }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td style="text-align:right">{% if r.avg_mat is not none %}{{ '%.3f' % r.avg_mat }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td style="text-align:right">
+          {{ '%.1f' % r.hi_mat_pct }}%
+          <span class="muted" style="font-size:0.8rem">({{ r.hi_mat_n }})</span>
+        </td>
+        <td style="text-align:right">
+          {% if r.on_platform_pct is not none %}
+            {% set good = r.on_platform_pct >= 90 %}
+            <span style="color:{% if good %}var(--color-success, #16a34a){% else %}var(--color-danger, #dc2626){% endif %}; font-weight:500">
+              {{ '%.1f' % r.on_platform_pct }}%
+            </span>
+            <span class="muted" style="font-size:0.8rem">({{ r.on_platform }}/{{ r.on_platform + r.off_platform }})</span>
+          {% else %}
+            <span class="muted">n/a</span>
+          {% endif %}
+        </td>
+        <td class="muted" style="font-size:0.85rem">
+          {% for sig, n in r.top_signals %}{{ sig }} ({{ n }}){% if not loop.last %}, {% endif %}{% endfor %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted">No findings in this window yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% set leakers = table | selectattr('off_platform', 'gt', 0) | list %}
+{% if leakers %}
+<div class="panel">
+  <h2>Off-platform leaks</h2>
+  <p class="muted" style="margin-top:-8px; margin-bottom:12px; font-size:0.85rem">
+    Findings tagged with one of the social sources but whose URL lives elsewhere.
+    The top hosts below show where the leakage is going — useful for diagnosing
+    a query that's missing or misbinding its <code>site:</code> filter.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>Source tag</th>
+        <th style="text-align:right">Off-platform</th>
+        <th>Top wrong hosts</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in leakers %}
+        <tr>
+          <td><code>{{ r.group }}</code></td>
+          <td style="text-align:right">{{ r.off_platform }}</td>
+          <td class="muted" style="font-size:0.85rem">
+            {% for h, n in r.off_hosts %}{{ h }} ({{ n }}){% if not loop.last %}, {% endif %}{% endfor %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<p class="muted" style="font-size:0.8rem; margin-top:24px">
+  Materiality is the LLM-assigned 0.0–1.0 score from <code>signals/llm_classify.py</code>.
+  VoC mentions usually sit at the ~0.40 baseline; values ≥0.5 are signals the LLM
+  promoted on its own. <code>digest_threat_level</code> is intentionally omitted from this
+  view — the analyzer is not currently stamping findings, so the field is empty for now.
+</p>
+{% endblock %}
