@@ -1190,6 +1190,14 @@ def _parse_stream_filters(params: dict) -> dict:
         downweight_stale = False  # form submitted without the key → unchecked
     else:
         downweight_stale = True  # bare URL or legacy saved spec → default on
+    # Debug toggle: surface per-card scorer contributions on each rendered
+    # card. Same hidden-0 + checkbox-1 pattern as downweight_stale so the
+    # filter form can drive it (last value wins so the checkbox overrides
+    # the hidden when ticked).
+    ex_vals = params.getlist("explain") if is_form else [params.get("explain")]
+    ex_vals = [v for v in ex_vals if v is not None and v != ""]
+    explain = bool(ex_vals) and (ex_vals[-1] is True or ex_vals[-1] == "1")
+
     return {
         "competitor": (params.get("competitor") or "").strip() or None,
         "signal_types": [t for t in raw_types if t],
@@ -1198,10 +1206,7 @@ def _parse_stream_filters(params: dict) -> dict:
         "include_dismissed": (params.get("include_dismissed") or "") == "1",
         "downweight_stale": downweight_stale,
         "window": window,
-        # Debug toggle: surface per-card scorer contributions on each
-        # rendered card. Cheap pre-spec-03 visibility into semantic ranking
-        # — uses the same centroid/embedding the scorer already loaded.
-        "explain": (params.get("explain") or "") == "1",
+        "explain": explain,
     }
 
 

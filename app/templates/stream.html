@@ -82,6 +82,16 @@
                {% if filters.downweight_stale %}checked{% endif %}>
         Down-weight stale
       </label>
+
+      {# Debug: surface the spec-08 semantic ranking contribution as a
+         per-card chip. Pre-spec-03 explainability — same hidden-0 pattern
+         as Down-weight stale so unchecking is observable. #}
+      <label class="filter-label" style="margin-left:16px" title="Show each card's semantic ranking contribution (EMBEDDING_WEIGHT × cosine to your taste centroid).">
+        <input type="hidden" name="explain" value="0">
+        <input type="checkbox" name="explain" value="1"
+               {% if filters.explain %}checked{% endif %}>
+        Explain ranking
+      </label>
     </div>
 
   </form>
