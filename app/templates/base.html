@@ -66,6 +66,10 @@
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h12v10H2z"/><path d="M5 6h6M5 9h4"/></svg>
         Manage skills
       </a>
+      <a href="/admin/search-quality" class="nav-item {% if path.startswith('/admin/search-quality') %}active{% endif %}">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4"/><path d="M10 10l4 4"/></svg>
+        Search quality
+      </a>
       {% if user and user.role == 'admin' %}
       <a href="/admin/users" class="nav-item {% if path.startswith('/admin/users') %}active{% endif %}">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="2.5"/><path d="M3 14c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5"/></svg>

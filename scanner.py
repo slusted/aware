@@ -535,10 +535,13 @@ def scan_competitor(competitor: dict, topics: list[str], memory: dict) -> list[d
 
     # LinkedIn posts — professional commentary. Use snippet-only since
     # LinkedIn also frequently serves login walls.
+    # The site: clause MUST be parenthesized — without parens the OR binds
+    # loosely and Tavily returns non-LinkedIn results (audit found ~50% of
+    # rows came from indeed.com, totaljobs.com, etc.).
     linkedin_query = (
         f'"{name}" (recruiter OR employer OR job seeker) '
         f'(experience OR review OR switched OR compared) '
-        f'site:linkedin.com/posts OR site:linkedin.com/pulse'
+        f'(site:linkedin.com/posts OR site:linkedin.com/pulse)'
     )
     linkedin_results = search_tavily(
         linkedin_query,
