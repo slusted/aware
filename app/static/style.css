@@ -1224,6 +1224,30 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
   white-space: nowrap;
 }
 
+/* Debug chip surfaced by ?explain=1 — shows the spec-08 semantic
+   contribution per card (EMBEDDING_WEIGHT × cosine). Tinted accent for
+   positive lift, muted red for negative pull. Pre-spec-03 visibility
+   tool, expected to disappear once `reasons[]` lands. */
+.semantic-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  background: rgba(0, 122, 204, 0.08);
+  border: 1px solid rgba(0, 122, 204, 0.25);
+  border-radius: 10px;
+  padding: 1px 7px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.semantic-chip.is-neg {
+  color: var(--warn, #c0392b);
+  background: rgba(192, 57, 43, 0.08);
+  border-color: rgba(192, 57, 43, 0.25);
+}
+
 .btn-mini {
   background: transparent;
   border: 1px solid transparent;
