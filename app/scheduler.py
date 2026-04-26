@@ -165,6 +165,41 @@ def start():
                 "expected 'min hour dow'. Skipping weekly synthesis."
             )
 
+    # App-store reviews ingest (docs/voc/01-app-reviews.md). Daily, 2 hours
+    # before the main scan so the corpus is current by the time analysts
+    # arrive. Cheap (no LLM, plain RSS); a missed run loses nothing
+    # because Apple keeps ~500 reviews per app/country in the feed.
+    app_reviews_ingest_hour = (scan_hour - 2) % 24
+    sched.add_job(
+        jobs.run_ingest_app_reviews_job,
+        CronTrigger(hour=app_reviews_ingest_hour, minute=0),
+        id="app_reviews_ingest_daily",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
+    # VoC theme synthesis (docs/voc/01-app-reviews.md). Tuesday 04:00 local
+    # by default — after Monday's market synthesis so theme deltas are
+    # ready to feed next week's market view. One Haiku call per eligible
+    # competitor, total cost is in the cents.
+    # VOC_THEMES_CRON = "min hour day_of_week". Empty string disables.
+    vt_cron = os.environ.get("VOC_THEMES_CRON", "0 4 tue")
+    if vt_cron.strip():
+        try:
+            vmin, vhour, vdow = vt_cron.split()
+            sched.add_job(
+                jobs.run_voc_themes_job,
+                CronTrigger(minute=vmin, hour=vhour, day_of_week=vdow),
+                id="voc_themes_weekly",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
+        except ValueError:
+            print(
+                f"[scheduler] invalid VOC_THEMES_CRON={vt_cron!r}; "
+                "expected 'min hour dow'. Skipping weekly theme synthesis."
+            )
+
     # Chat-schedule + reply-poll registration is gated behind the
     # docs/chat/02 migration. Wrapped so a half-applied migration or
     # missing table can't take down the whole web process at boot —

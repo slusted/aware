@@ -738,3 +738,98 @@ class ChatMessage(Base):
     __table_args__ = (
         Index("ix_chat_messages_session_id_id", "session_id", "id"),
     )
+
+
+class AppReviewSource(Base):
+    """A single (competitor, store, app_id, country) tuple we ingest from.
+    Multiple sources per competitor are normal — typically one per country —
+    and they all roll up into one theme set per competitor. v1 stores
+    store='apple' only; the column exists so spec 02 can add 'play'
+    without a migration."""
+    __tablename__ = "app_review_sources"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    competitor_id: Mapped[int] = mapped_column(
+        ForeignKey("competitors.id"), index=True
+    )
+    store: Mapped[str] = mapped_column(String(16))             # "apple" | "play"
+    app_id: Mapped[str] = mapped_column(String(64))             # numeric for Apple, package name for Play
+    country: Mapped[str] = mapped_column(String(8), default="us")  # ISO 3166-1 alpha-2
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_ingested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_ingested_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("store", "app_id", "country", name="uq_app_source"),
+        Index("ix_app_source_competitor", "competitor_id", "enabled"),
+    )
+
+
+class AppReview(Base):
+    """Raw app-store review corpus. Append-only after ingest; no in-place
+    updates. Reviews never become findings on their own — only themes do."""
+    __tablename__ = "app_reviews"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[int] = mapped_column(
+        ForeignKey("app_review_sources.id"), index=True
+    )
+    competitor_id: Mapped[int] = mapped_column(
+        ForeignKey("competitors.id"), index=True
+    )
+    store: Mapped[str] = mapped_column(String(16))
+    store_review_id: Mapped[str] = mapped_column(String(128))
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1–5
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    body: Mapped[str] = mapped_column(Text)
+    author: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    lang: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    ingested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    # Set by the synthesis pass when this review was used as a sample for a
+    # theme. NULL means "not classified yet" — useful for the samples-tab
+    # filter and for an "uncovered reviews" diagnostic.
+    theme_id: Mapped[int | None] = mapped_column(
+        ForeignKey("review_themes.id"), nullable=True, index=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("store", "store_review_id", name="uq_review_storeid"),
+        Index("ix_review_competitor_posted", "competitor_id", "posted_at"),
+    )
+
+
+class ReviewTheme(Base):
+    """Rolling state per (competitor, theme). Updated in-place by the
+    synthesis pass. Volume and sentiment are recomputed every run; a row
+    only disappears via the dormant→active flip — we never delete."""
+    __tablename__ = "review_themes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    competitor_id: Mapped[int] = mapped_column(
+        ForeignKey("competitors.id"), index=True
+    )
+    label: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text, default="")
+    # "positive" | "negative" | "mixed"
+    sentiment: Mapped[str] = mapped_column(String(16), default="mixed")
+    # Trailing-30-day count, recomputed each run.
+    volume_30d: Mapped[int] = mapped_column(Integer, default=0)
+    # The 30-day count from the run before this one — used to render trend
+    # arrows and to drive the emit-finding rule (≥ shift_threshold_pct
+    # change vs prior, or sentiment polarity flip).
+    volume_prev_30d: Mapped[int] = mapped_column(Integer, default=0)
+    # Sample review ids the LLM picked as illustrative. JSON because the
+    # count varies (typically 3–5).
+    sample_review_ids: Mapped[list] = mapped_column(JSON, default=list)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # "active" | "dormant" — dormant when the synthesis pass dropped the
+    # theme. Kept for history; hidden by default on the profile.
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    last_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("runs.id"), nullable=True
+    )
+
+    __table_args__ = (
+        Index("ix_theme_competitor_status", "competitor_id", "status"),
+    )

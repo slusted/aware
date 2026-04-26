@@ -7,7 +7,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..deps import get_db, get_current_user, require_role
-from ..models import Competitor, CompetitorReport, PositioningSnapshot, Run, DeepResearchReport, CompetitorCandidate
+from ..models import (
+    Competitor, CompetitorReport, PositioningSnapshot, Run,
+    DeepResearchReport, CompetitorCandidate, AppReviewSource,
+)
 from ..schemas import CompetitorOut, CompetitorIn
 from ..config_sync import sync_db_to_config
 from .. import logos as logos_cache
@@ -572,3 +575,171 @@ def list_competitor_reports(
         }
         for r in rows
     ]
+
+
+# ── App-store review sources (docs/voc/01-app-reviews.md) ─────────────
+
+_VALID_STORES = {"apple"}  # spec 02 will add "play"
+
+
+@router.post("/{competitor_id}/app-sources")
+def add_app_source(
+    competitor_id: int,
+    store: str = Form(...),
+    app_id: str = Form(...),
+    country: str = Form("us"),
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin")),
+):
+    """Add an app-store review source for a competitor. Validates the
+    (store, app_id, country) tuple against the live RSS endpoint before
+    persisting — surfaces obvious typos at the form, not silently in the
+    next ingest run.
+
+    Redirects back to the competitor edit page with `?app_source=...`
+    so the template can render an inline result strip.
+    """
+    c = db.get(Competitor, competitor_id)
+    if not c:
+        raise HTTPException(404)
+
+    store_norm = (store or "").strip().lower()
+    app_id_norm = (app_id or "").strip()
+    country_norm = (country or "us").strip().lower() or "us"
+
+    if store_norm not in _VALID_STORES:
+        return RedirectResponse(
+            f"/admin/competitors/{competitor_id}/edit"
+            f"?app_source=err:store-not-supported#app-sources",
+            status_code=303,
+        )
+    if not app_id_norm:
+        return RedirectResponse(
+            f"/admin/competitors/{competitor_id}/edit"
+            f"?app_source=err:missing-app-id#app-sources",
+            status_code=303,
+        )
+
+    # Reject duplicates by the unique (store, app_id, country) tuple.
+    dupe = (
+        db.query(AppReviewSource)
+        .filter(
+            AppReviewSource.store == store_norm,
+            AppReviewSource.app_id == app_id_norm,
+            AppReviewSource.country == country_norm,
+        )
+        .first()
+    )
+    if dupe is not None:
+        return RedirectResponse(
+            f"/admin/competitors/{competitor_id}/edit"
+            f"?app_source=err:already-exists#app-sources",
+            status_code=303,
+        )
+
+    # Validate against the live feed.
+    if store_norm == "apple":
+        from ..app_reviews import validate_apple_source
+        ok, err = validate_apple_source(app_id_norm, country_norm)
+        if not ok:
+            import urllib.parse
+            msg = urllib.parse.quote(f"err:{err}"[:240])
+            return RedirectResponse(
+                f"/admin/competitors/{competitor_id}/edit"
+                f"?app_source={msg}#app-sources",
+                status_code=303,
+            )
+
+    src = AppReviewSource(
+        competitor_id=competitor_id,
+        store=store_norm,
+        app_id=app_id_norm,
+        country=country_norm,
+        enabled=True,
+    )
+    db.add(src)
+    db.commit()
+    return RedirectResponse(
+        f"/admin/competitors/{competitor_id}/edit?app_source=ok#app-sources",
+        status_code=303,
+    )
+
+
+@router.post("/{competitor_id}/app-sources/{src_id}/delete")
+def delete_app_source(
+    competitor_id: int,
+    src_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin")),
+):
+    """Hard-delete a source. The competitor's already-ingested reviews stay
+    (they reference the row by id, but ON DELETE behaviour for SQLite is
+    no-op without explicit FK pragmas — and we'd rather keep the corpus
+    than lose history because of a config change). The unique
+    (store, app_id, country) constraint frees up immediately so admin can
+    re-add with a corrected country code."""
+    src = db.get(AppReviewSource, src_id)
+    if src is None or src.competitor_id != competitor_id:
+        raise HTTPException(404)
+    db.delete(src)
+    db.commit()
+    return RedirectResponse(
+        f"/admin/competitors/{competitor_id}/edit#app-sources",
+        status_code=303,
+    )
+
+
+@router.post("/{competitor_id}/app-sources/{src_id}/toggle")
+def toggle_app_source(
+    competitor_id: int,
+    src_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin")),
+):
+    """Flip enabled on/off without losing the row. Useful for pausing a
+    flaky country feed without forgetting the app id."""
+    src = db.get(AppReviewSource, src_id)
+    if src is None or src.competitor_id != competitor_id:
+        raise HTTPException(404)
+    src.enabled = not src.enabled
+    db.commit()
+    return RedirectResponse(
+        f"/admin/competitors/{competitor_id}/edit#app-sources",
+        status_code=303,
+    )
+
+
+# ── Manual VoC pipeline triggers ───────────────────────────────────────
+
+
+@router.post("/voc/ingest/run")
+def trigger_voc_ingest(
+    bg: BackgroundTasks,
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin")),
+):
+    """Force a full app-reviews ingest sweep now. Same job the daily cron
+    uses, just `triggered_by="manual"`."""
+    from ..jobs import run_ingest_app_reviews_job
+    bg.add_task(run_ingest_app_reviews_job, "manual")
+    return RedirectResponse("/runs", status_code=303)
+
+
+@router.post("/voc/themes/run")
+def trigger_voc_themes(
+    bg: BackgroundTasks,
+    competitor_id: int | None = Form(None),
+    force: bool = Form(False),
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin")),
+):
+    """Force a theme synthesis pass. With no competitor_id this sweeps every
+    eligible competitor; with one, runs for that competitor only and
+    bypasses the ≥10-reviews-in-60d guard if `force=True`."""
+    from ..jobs import run_voc_themes_job
+    bg.add_task(run_voc_themes_job, competitor_id, "manual", bool(force))
+    if competitor_id is not None:
+        return RedirectResponse(
+            f"/competitors/{competitor_id}#app-reviews", status_code=303,
+        )
+    return RedirectResponse("/runs", status_code=303)

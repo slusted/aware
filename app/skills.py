@@ -65,6 +65,10 @@ KNOWN_SKILLS: dict[str, tuple[str, str]] = {
         "chat_system.md",
         "System prompt for the Chat surface — drives the agentic console with read-tools over the watch's own data and a curated set of write-tools that wrap UI buttons. Placeholders: {{our_company}}, {{our_industry}}, {{tool_catalog}}.",
     ),
+    "voc_theme_synthesise": (
+        "voc_theme_synthesise.md",
+        "Per-competitor app-store-review theme synthesis (docs/voc/01-app-reviews.md). Single Haiku call: recent reviews + current themes → updated themes + per-theme diff. Findings emit only on emergence or material shift. Placeholders: {{competitor_name}}, {{current_themes_json}}, {{reviews_json}}.",
+    ),
 }
 
 
