@@ -93,16 +93,19 @@ def _render_system_prompt(user: User) -> tuple[str, list[tools_module.Tool]]:
 def _rebuild_messages(db: Session, session_id: int) -> list[dict]:
     """Re-render all DB rows into the Anthropic Messages API format.
 
-    The shape we build:
-      user      -> {"role": "user", "content": [{"type": "text", "text": ...}]}
-      assistant -> {"role": "assistant", "content": [text blocks + tool_use blocks]}
-      tool_use  -> appended to the preceding assistant message
-      tool_result -> {"role": "user", "content": [{"type": "tool_result", ...}]}
-                     (Anthropic expects tool_result to come from 'user' role)
+    Each LLM "turn" in the DB is a cluster of rows:
+      assistant text → tool_use rows → tool_result rows
+    where the read-tool inline-result rows MAY appear interleaved with
+    sibling tool_use rows when the agent wrote them in the order they
+    were dispatched. The Anthropic API requires a stricter shape: the
+    assistant message owns ALL its tool_use blocks together, and the
+    next user message owns ALL the matching tool_result blocks.
 
-    Cancelled or still-pending tool_use blocks are emitted as tool_result
-    rows so the API stays consistent — a tool_use with no matching
-    tool_result is rejected by the SDK.
+    We rebuild defensively: don't flush the in-flight assistant when we
+    see a tool_result row — only flush on the next assistant/user text
+    boundary. That way any persisted interleaving heals on the way out
+    to the API. Also tolerates a tool_result with no preceding tool_use
+    by dropping it (avoids confusing the API with an orphan).
     """
     rows = (
         db.query(ChatMessage)
@@ -113,27 +116,24 @@ def _rebuild_messages(db: Session, session_id: int) -> list[dict]:
     messages: list[dict] = []
     pending_assistant: dict | None = None
     pending_tool_results: list[dict] = []
+    pending_tool_use_ids: set[str] = set()
 
-    def _flush_tool_results():
-        nonlocal pending_tool_results
-        if pending_tool_results:
-            messages.append({"role": "user", "content": pending_tool_results})
-            pending_tool_results = []
-
-    def _flush_assistant():
-        nonlocal pending_assistant
+    def _flush_turn():
+        nonlocal pending_assistant, pending_tool_results, pending_tool_use_ids
         if pending_assistant is not None and pending_assistant["content"]:
             messages.append(pending_assistant)
+        if pending_tool_results:
+            messages.append({"role": "user", "content": pending_tool_results})
         pending_assistant = None
+        pending_tool_results = []
+        pending_tool_use_ids = set()
 
     for row in rows:
         if row.role == "user":
-            _flush_tool_results()
-            _flush_assistant()
+            _flush_turn()
             messages.append({"role": "user", "content": [{"type": "text", "text": row.content}]})
         elif row.role == "assistant":
-            _flush_tool_results()
-            _flush_assistant()
+            _flush_turn()
             content: list[dict] = []
             if row.content:
                 content.append({"type": "text", "text": row.content})
@@ -142,27 +142,56 @@ def _rebuild_messages(db: Session, session_id: int) -> list[dict]:
             if pending_assistant is None:
                 pending_assistant = {"role": "assistant", "content": []}
             pl = row.tool_payload or {}
+            tu_id = pl.get("id")
+            if tu_id:
+                pending_tool_use_ids.add(tu_id)
             pending_assistant["content"].append({
                 "type": "tool_use",
-                "id": pl.get("id"),
+                "id": tu_id,
                 "name": pl.get("name"),
                 "input": pl.get("input") or {},
             })
         elif row.role == "tool_result":
-            _flush_assistant()
             pl = row.tool_payload or {}
+            tool_use_id = pl.get("tool_use_id")
+            # An orphan tool_result with no matching tool_use in this
+            # turn would corrupt the API call — drop it. (Belt-and-
+            # braces against legacy rows or hand-edited DBs.)
+            if not tool_use_id or tool_use_id not in pending_tool_use_ids:
+                continue
             output = pl.get("output")
             text = output if isinstance(output, str) else json.dumps(output, default=str)
             pending_tool_results.append({
                 "type": "tool_result",
-                "tool_use_id": pl.get("tool_use_id"),
+                "tool_use_id": tool_use_id,
                 "content": text,
                 "is_error": bool(pl.get("is_error")),
             })
         # error rows are display-only; skip them when rebuilding for the API
 
-    _flush_tool_results()
-    _flush_assistant()
+    _flush_turn()
+
+    # Drop any trailing assistant whose tool_use blocks lack matching
+    # tool_results — sending it would crash the next API call. The
+    # caller will re-emit those tool_uses in the next iteration.
+    while messages and messages[-1].get("role") == "assistant":
+        last = messages[-1]
+        unresolved = any(
+            isinstance(b, dict) and b.get("type") == "tool_use"
+            for b in last.get("content", [])
+        )
+        if not unresolved:
+            break
+        # Look at trailing user-tool_result message (if any) to see
+        # whether it pairs every tool_use; if not, surface the gap by
+        # removing the assistant. With the current persistence order
+        # this should never trigger — we only call _rebuild_messages
+        # right before an API call when all results are present.
+        # Defensive: if it does fire, the next loop iteration will
+        # resurface the missing tool_use as a fresh model response.
+        messages.pop()
+        break
+
     return messages
 
 
@@ -460,8 +489,20 @@ def run_turn(
             })
             return
 
-        # Persist tool_use rows + dispatch.
+        # Two-phase dispatch so DB row order matches the Anthropic message
+        # shape (assistant → tool_use* → tool_result*). Persisting a read
+        # tool's result inline between sibling tool_use blocks corrupts the
+        # rebuild — the model rejects "messages.N: tool_use ids were found
+        # without tool_result blocks immediately after" because we end up
+        # splitting one assistant turn into two.
+        #
+        # Phase 1: persist every tool_use row from this LLM response.
+        # Phase 2: run reads (and persist their tool_results) or mark
+        # writes pending. By the time Phase 2 runs, all sibling tool_use
+        # rows are already on disk, so each tool_result's row index is
+        # strictly greater than every tool_use it could belong to.
         any_pending = False
+        prepared: list[tuple[dict, "tools_module.Tool | None", bool]] = []
         for block in tool_use_blocks:
             tool_calls_this_turn += 1
             if tool_calls_this_turn > MAX_TOOL_CALLS_PER_TURN:
@@ -490,12 +531,13 @@ def run_turn(
 
             _persist_message(db, session.id, role="tool_use", tool_payload=payload)
             yield _sse("tool_use", payload)
+            prepared.append((block, tool_def, requires_confirmation))
 
+        for block, _tool_def, requires_confirmation in prepared:
             if requires_confirmation:
                 any_pending = True
                 continue
 
-            # Read tool — run inline and emit the result.
             yield _sse("tool_running", {"tool_use_id": block["id"], "name": block["name"]})
             output, is_error = tools_module.execute_tool(
                 block["name"], block["input"], db, user
