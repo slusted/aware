@@ -31,48 +31,82 @@ def run_events(run_id: int, db: Session = Depends(get_db), _=Depends(get_current
     return db.query(RunEvent).filter(RunEvent.run_id == run_id).order_by(RunEvent.ts).all()
 
 
+def _enforce_queue_cap(db: Session) -> None:
+    """Soft cap on queued+in-flight runs (spec docs/runs/01-run-queue.md).
+    Trigger endpoints call this before enqueueing so a runaway client
+    doesn't fill the table with thousands of queued rows."""
+    in_flight_or_queued = (
+        db.query(Run)
+        .filter(Run.status.in_(["queued", "running", "cancelling"]))
+        .count()
+    )
+    if in_flight_or_queued >= jobs.RUN_QUEUE_MAX:
+        raise HTTPException(
+            429,
+            detail=(
+                f"run queue is full ({in_flight_or_queued}/{jobs.RUN_QUEUE_MAX}) — "
+                "wait for some to finish or cancel a queued one"
+            ),
+        )
+
+
 @router.post("/scan", status_code=202)
 def trigger_scan(
-    bg: BackgroundTasks,
     days: int | None = None,
     db: Session = Depends(get_db),
     _=Depends(require_role("admin", "analyst")),
 ):
-    """Queue a manual scan. `days` is the freshness window — only return web
-    content from the last N days. Omit for auto (= time since last successful scan)."""
-    existing = db.query(Run).filter(Run.status.in_(["running", "cancelling"])).first()
-    if existing:
-        raise HTTPException(
-            409,
-            detail=f"scan already running (run #{existing.id}) — wait for it to finish",
-        )
-    bg.add_task(jobs.run_scan_job, "manual", days)
-    return {"queued": True, "kind": "scan", "days": days}
+    """Enqueue a manual scan. Returns 202 with the new run id and its
+    FIFO queue position. Multiple triggers stack — the queue drainer
+    runs them one at a time. `days` is the freshness window; omit for
+    auto (= time since last successful scan)."""
+    _enforce_queue_cap(db)
+    run = jobs.enqueue_run(
+        db,
+        "scan",
+        triggered_by="manual",
+        job_args={"days": days},
+    )
+    return {
+        "queued": True,
+        "kind": "scan",
+        "days": days,
+        "run_id": run.id,
+        "queue_position": jobs.queue_position(db, run.id),
+    }
 
 
 @router.post("/discovery", status_code=202)
-def trigger_discovery(bg: BackgroundTasks, _=Depends(require_role("admin"))):
-    bg.add_task(jobs.run_discovery_job)
-    return {"queued": True, "kind": "discovery"}
+def trigger_discovery(
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin")),
+):
+    _enforce_queue_cap(db)
+    run = jobs.enqueue_run(db, "discovery", triggered_by="manual")
+    return {
+        "queued": True,
+        "kind": "discovery",
+        "run_id": run.id,
+        "queue_position": jobs.queue_position(db, run.id),
+    }
 
 
 @router.post("/market-digest", status_code=202)
 def trigger_market_digest(
-    bg: BackgroundTasks,
     db: Session = Depends(get_db),
     _=Depends(require_role("admin", "analyst")),
 ):
-    """Regenerate the market digest over existing findings — LLM only, no
-    new scraping. Rejected if another run is in flight so we don't double-
-    write reports or compete for usage budget."""
-    existing = db.query(Run).filter(Run.status.in_(["running", "cancelling"])).first()
-    if existing:
-        raise HTTPException(
-            409,
-            detail=f"run #{existing.id} ({existing.kind}) is already in flight — wait for it to finish",
-        )
-    bg.add_task(jobs.run_market_digest_job, "manual")
-    return {"queued": True, "kind": "market_digest"}
+    """Enqueue a market-digest regen over existing findings — LLM only, no
+    new scraping. Returns 202; the drainer picks it up when nothing
+    else is in flight."""
+    _enforce_queue_cap(db)
+    run = jobs.enqueue_run(db, "market_digest", triggered_by="manual")
+    return {
+        "queued": True,
+        "kind": "market_digest",
+        "run_id": run.id,
+        "queue_position": jobs.queue_position(db, run.id),
+    }
 
 
 # Manual cooldown default: 6h. Within this window, an extra Run click is
@@ -178,13 +212,29 @@ def cancel_run(
     db: Session = Depends(get_db),
     _=Depends(require_role("admin", "analyst")),
 ):
-    """Request cooperative cancellation of an in-flight run. The worker checks
-    a cancel flag at natural boundaries (between competitors, before review
-    synthesis) and exits with status='cancelled'. The currently in-flight HTTP
-    call completes — cancellation is best-effort, not instantaneous."""
+    """Cancel a queued or running run.
+
+    - Queued: flips to 'cancelled' immediately. The drainer skips it.
+    - Running: cooperative — sets 'cancelling', the worker bails at the
+      next checkpoint (between competitors, before review synthesis).
+      The currently in-flight HTTP call completes; cancellation is
+      best-effort, not instantaneous.
+    """
     run = db.get(Run, run_id)
     if not run:
         raise HTTPException(404)
+    if run.status == "queued":
+        run.status = "cancelled"
+        run.finished_at = datetime.utcnow()
+        db.add(
+            RunEvent(
+                run_id=run_id,
+                level="warn",
+                message="cancelled before start",
+            )
+        )
+        db.commit()
+        return {"cancelled": True, "run_id": run_id}
     if run.status not in ("running", "cancelling"):
         raise HTTPException(409, f"run #{run_id} is {run.status}, not running")
     jobs.request_cancel(run_id)
