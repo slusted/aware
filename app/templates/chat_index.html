@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Chat{% endblock %}
 
+{% block page_actions %}
+  <a href="/chat/schedules" class="btn-ghost">Schedules</a>
+{% endblock %}
+
 {% block content %}
 
 {% if not anthropic_key_set %}
