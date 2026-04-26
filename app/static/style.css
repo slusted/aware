@@ -124,6 +124,115 @@
   --sidebar-w: 232px;
 }
 
+/* ---------- Light theme override ----------
+   Activated by [data-theme="light"] on <html>. Same token shape as dark
+   above; only values change. Status hues are darker (saturation up,
+   lightness down) so AA contrast holds on white. Tints are bumped by
+   ~0.04-0.06 alpha so soft fills remain visible on light surfaces. */
+:root[data-theme="light"] {
+  /* Surfaces */
+  --surface-0:             #ffffff;
+  --surface-1:             #f7f8fa;
+  --surface-2:             #eef0f4;
+  --surface-hover:         rgba(0,0,0,0.04);
+  --surface-alt:           #f3f4f6;
+  --surface-hover-light:   rgba(0,0,0,0.04);
+  --surface-hover-strong:  rgba(0,0,0,0.06);
+
+  --surface-overlay:       rgba(255,255,255,0.85);
+  --surface-overlay-soft:  rgba(255,255,255,0.72);
+
+  --border-subtle:         rgba(0,0,0,0.08);
+  --border-strong:         rgba(0,0,0,0.14);
+
+  /* Text */
+  --text-primary:          #15171a;
+  --text-secondary:        #5a5e66;
+  --text-tertiary:         #8a8d93;
+  --text-on-accent:        #ffffff;
+
+  /* Accents — darkened for AA on white */
+  --accent:                #4854c7;
+  --accent-hover:          #3b46b3;
+  --accent-soft:           rgba(72,84,199,0.10);
+  --accent-soft-strong:    rgba(72,84,199,0.25);
+  --accent-glow:           rgba(94,106,210,0.10);
+  --accent-2:              #7a6cd6;
+
+  /* Status hues — darker on light bg so text passes contrast */
+  --ok:                    #2f9d6e;
+  --warn:                  #b8861a;
+  --err:                   #d33a3a;
+  --info:                  #2a6fd1;
+
+  --ok-soft:               rgba(47,157,110,0.10);
+  --ok-border:             rgba(47,157,110,0.30);
+  --ok-border-strong:      rgba(47,157,110,0.40);
+
+  --warn-soft:             rgba(184,134,26,0.10);
+  --warn-soft-card:        rgba(184,134,26,0.08);
+  --warn-border:           rgba(184,134,26,0.30);
+
+  --err-soft-subtle:       rgba(211,58,58,0.06);
+  --err-soft:              rgba(211,58,58,0.10);
+  --err-soft-strong:       rgba(211,58,58,0.12);
+  --err-border:            rgba(211,58,58,0.30);
+  --err-border-strong:     rgba(211,58,58,0.40);
+
+  --info-soft:             rgba(42,111,209,0.10);
+  --info-border:           rgba(42,111,209,0.30);
+
+  --notice-info-soft:      rgba(0,122,204,0.10);
+  --notice-info-border:    rgba(0,122,204,0.30);
+  --notice-warn-soft:      rgba(192,57,43,0.10);
+  --notice-warn-border:    rgba(192,57,43,0.30);
+
+  /* Pinned palette — deeper amber for light bg */
+  --pinned-bg:             rgba(184,134,26,0.08);
+  --pinned-bg-flip:        rgba(160,122,38,0.10);
+  --pinned-bg-strong:      rgba(160,122,38,0.12);
+  --pinned-border:         rgba(184,134,26,0.40);
+  --pinned-fg:             #a07a26;
+  --pinned-fg-strong:      #886423;
+  --swipe-hide-bg:         #9e2f3c;
+
+  /* signal_type — same hues, alphas bumped ~0.06 for visibility on white */
+  --type-funding-soft:              rgba(76,183,130,0.14);
+  --type-funding-soft-strong:       rgba(76,183,130,0.18);
+  --type-funding-border:            rgba(76,183,130,0.40);
+  --type-funding-border-strong:     rgba(76,183,130,0.50);
+
+  --type-new-hire-soft:             rgba(96,165,250,0.14);
+  --type-new-hire-soft-strong:      rgba(96,165,250,0.18);
+  --type-new-hire-border:           rgba(96,165,250,0.40);
+  --type-new-hire-border-strong:    rgba(96,165,250,0.50);
+
+  --type-product-launch-soft:       rgba(192,132,252,0.14);
+  --type-product-launch-soft-strong:rgba(192,132,252,0.18);
+  --type-product-launch-border:     rgba(192,132,252,0.40);
+  --type-product-launch-border-strong: rgba(192,132,252,0.50);
+
+  --type-integration-soft:          rgba(45,212,191,0.16);
+  --type-integration-soft-strong:   rgba(45,212,191,0.20);
+  --type-integration-border:        rgba(45,212,191,0.45);
+  --type-integration-border-strong: rgba(45,212,191,0.55);
+
+  --type-price-change-soft:         rgba(224,165,0,0.14);
+  --type-price-change-soft-strong:  rgba(224,165,0,0.18);
+  --type-price-change-border:       rgba(224,165,0,0.40);
+  --type-price-change-border-strong:rgba(224,165,0,0.50);
+
+  --type-messaging-shift-soft:      rgba(244,114,182,0.14);
+  --type-messaging-shift-soft-strong: rgba(244,114,182,0.18);
+  --type-messaging-shift-border:    rgba(244,114,182,0.40);
+  --type-messaging-shift-border-strong: rgba(244,114,182,0.50);
+
+  --type-momentum-point-soft:       rgba(251,113,133,0.14);
+  --type-momentum-point-soft-strong:rgba(251,113,133,0.18);
+  --type-momentum-point-border:     rgba(251,113,133,0.40);
+  --type-momentum-point-border-strong: rgba(251,113,133,0.50);
+}
+
 * { box-sizing: border-box; }
 
 html, body {
@@ -2422,3 +2531,52 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
     overflow-y: auto;
   }
 }
+
+/* ---------- Theme toggle ----------
+   Sun icon = "switch to light"; moon = "switch to dark". Visibility flips
+   on the [data-theme] attribute so the icon always shows the *target*
+   state, matching Linear / GitHub convention. */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.theme-toggle:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.theme-toggle svg {
+  width: 14px;
+  height: 14px;
+}
+.theme-toggle .icon-moon { display: none; }
+[data-theme="light"] .theme-toggle .icon-sun { display: none; }
+[data-theme="light"] .theme-toggle .icon-moon { display: inline; }
+
+/* Sidebar footer: place toggle inline with the user block */
+.sidebar .footer .theme-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 2px;
+}
+.sidebar .footer .theme-row-label {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Landing nav: theme toggle sits next to the sign-in link */
+.landing-nav-links .theme-toggle { margin-right: 4px; }
