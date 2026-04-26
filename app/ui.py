@@ -1650,13 +1650,33 @@ async def partial_stream_save_filter(
         "downweight_stale": filters["downweight_stale"],
     }
     visibility = "team" if (form.get("visibility") == "team") else "private"
-    row = SavedFilter(
-        owner_id=None if visibility == "team" else user.id,
-        name=name,
-        spec={k: v for k, v in spec.items() if v not in (None, [], "")},
-        visibility=visibility,
+    target_owner_id = None if visibility == "team" else user.id
+    clean_spec = {k: v for k, v in spec.items() if v not in (None, [], "")}
+    # Upsert by (owner_id, name): typing the name of an existing filter
+    # overwrites it instead of stacking duplicates. Team filters share the
+    # same owner_id NULL key, so update permission mirrors delete — admin only.
+    existing = (
+        db.query(SavedFilter)
+        .filter(SavedFilter.name == name)
+        .filter(SavedFilter.owner_id.is_(None) if target_owner_id is None
+                else SavedFilter.owner_id == target_owner_id)
+        .first()
     )
-    db.add(row)
+    if existing is not None:
+        if existing.owner_id is None and user.role != "admin":
+            raise HTTPException(403, "only admins can update team filters")
+        existing.spec = clean_spec
+        existing.visibility = visibility
+        action = "updated"
+    else:
+        row = SavedFilter(
+            owner_id=target_owner_id,
+            name=name,
+            spec=clean_spec,
+            visibility=visibility,
+        )
+        db.add(row)
+        action = "created"
     db.commit()
     from sqlalchemy import or_ as _or
     saved = (
@@ -1665,10 +1685,12 @@ async def partial_stream_save_filter(
         .order_by(SavedFilter.created_at.desc())
         .all()
     )
-    return templates.TemplateResponse(request, "_stream_saved_filters.html", {
+    response = templates.TemplateResponse(request, "_stream_saved_filters.html", {
         "saved_filters": saved,
         "default_filter_id": user.default_filter_id,
     })
+    response.headers["X-Filter-Action"] = action
+    return response
 
 
 @router.post("/partials/stream_toggle_default/{filter_id}", response_class=HTMLResponse)
