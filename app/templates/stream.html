@@ -105,13 +105,16 @@
           hx-include="#stream-filters"
           hx-target="#saved-filters-slot"
           hx-swap="innerHTML"
+          hx-on::after-request="if(event.detail.successful){this.reset();const s=this.querySelector('.stream-save-status');s.textContent='Saved';clearTimeout(s._t);s._t=setTimeout(()=>{s.textContent=''},2000)}"
           class="stream-save-form">
-      <input type="text" name="name" placeholder="Name this filter…" class="stream-save-name">
+      <input type="text" name="name" placeholder="Name this filter…" class="stream-save-name"
+             required maxlength="80">
       <select name="visibility" class="stream-save-visibility">
         <option value="private">Private</option>
         <option value="team">Team</option>
       </select>
       <button type="submit" class="btn-ghost">Save filter</button>
+      <span class="stream-save-status muted" aria-live="polite"></span>
     </form>
   </div>
 </div>
