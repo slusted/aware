@@ -62,10 +62,10 @@
               excerpt{{ 's' if inputs_meta.dr_reports_used != 1 else '' }} ·
               {{ inputs_meta.brief_chars }} chars
               {% if inputs_meta.truncated %}
-                · <span style="color:var(--warn, var(--text-dim))">truncated to fit</span>
+                · <span style="color:var(--warn, var(--text-tertiary))">truncated to fit</span>
               {% endif %}
               {% if inputs_meta.missing_context %}
-                · <span style="color:var(--warn, var(--text-dim))">missing context: {{ inputs_meta.missing_context|join(', ') }}</span>
+                · <span style="color:var(--warn, var(--text-tertiary))">missing context: {{ inputs_meta.missing_context|join(', ') }}</span>
               {% endif %}
             </p>
           {% endif %}
@@ -189,7 +189,7 @@
            operator knows they're re-running something recent. #}
         {% if cooldown_note %}
           <p class="muted" style="font-size:12px; margin:4px 0">
-            <span style="color:var(--warn, var(--text-dim))">⚠</span>
+            <span style="color:var(--warn, var(--text-tertiary))">⚠</span>
             {{ cooldown_note }} — submitting anyway will run a fresh
             synthesis and burn credits.
           </p>

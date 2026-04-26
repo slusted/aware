@@ -11,10 +11,10 @@
     <div id="scan-menu" role="menu"
          style="display:none; position:absolute; top:100%; right:0; z-index:20;
                 margin-top:4px;
-                background:var(--bg-raised); border:1px solid var(--border-strong);
+                background:var(--surface-2); border:1px solid var(--border-strong);
                 border-radius:var(--r); min-width:220px; padding:4px;
                 box-shadow:0 8px 24px rgba(0,0,0,0.4)">
-      <div class="label" style="padding:8px 10px 4px; color:var(--text-dim); font-size:11px; text-transform:uppercase; letter-spacing:0.04em">Freshness</div>
+      <div class="label" style="padding:8px 10px 4px; color:var(--text-tertiary); font-size:11px; text-transform:uppercase; letter-spacing:0.04em">Freshness</div>
       {% for d, label in [
         (None,  'Auto — since last scan'),
         (1,     'Last 24 hours'),
@@ -26,7 +26,7 @@
         <a href="#" data-days="{{ d if d is not none else '' }}"
            class="scan-opt"
            style="display:block; padding:7px 10px; border-radius:var(--r-sm);
-                  color:var(--text); font-size:13px; text-decoration:none">{{ label }}</a>
+                  color:var(--text-primary); font-size:13px; text-decoration:none">{{ label }}</a>
       {% endfor %}
     </div>
   </div>
@@ -58,7 +58,7 @@
       menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
     });
     menu.querySelectorAll('.scan-opt').forEach(a => {
-      a.addEventListener('mouseenter', () => a.style.background = 'var(--bg-subtle)');
+      a.addEventListener('mouseenter', () => a.style.background = 'var(--surface-1)');
       a.addEventListener('mouseleave', () => a.style.background = '');
       a.addEventListener('click', (e) => {
         e.preventDefault();

@@ -84,7 +84,7 @@
     </label>
     <div style="display:flex; gap:10px; align-items:center">
       <img id="logo-preview" alt="" width="32" height="32"
-           style="border-radius:4px; background:var(--bg-raised, #f3f4f6); object-fit:contain; flex-shrink:0;"
+           style="border-radius:4px; background:var(--surface-2, #f3f4f6); object-fit:contain; flex-shrink:0;"
            src="{% if c and c.homepage_domain %}/logos/{{ c.homepage_domain }}.webp?v={{ c.id }}{% else %}{% endif %}">
       <input name="homepage_domain" id="homepage-domain-input"
              value="{{ c.homepage_domain if c and c.homepage_domain else (candidate.homepage_domain if candidate and candidate.homepage_domain else '') }}"
