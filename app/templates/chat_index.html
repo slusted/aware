@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Chat{% endblock %}
+
+{% block content %}
+
+{% if not anthropic_key_set %}
+  <div class="panel">
+    <div class="panel-body">
+      <h2 style="margin-top:0">Add an Anthropic API key to start chatting</h2>
+      <p class="muted">
+        Chat is powered by Claude (Anthropic). Set <code>ANTHROPIC_API_KEY</code>
+        on <a href="/settings/keys">/settings/keys</a> to enable it.
+      </p>
+    </div>
+  </div>
+{% else %}
+
+<div class="chat-index">
+
+  <aside class="chat-sidebar">
+    <div class="chat-sidebar-header">
+      <span class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em">Conversations</span>
+    </div>
+    {% if sessions %}
+      <ul class="chat-session-list">
+        {% for s in sessions %}
+          <li>
+            <a href="/chat/{{ s.id }}" class="chat-session-link {% if active_id == s.id %}active{% endif %}">
+              <span class="chat-session-title">{{ s.title }}</span>
+              <span class="chat-session-meta muted">
+                {% if s.total_cost_usd and s.total_cost_usd > 0 %}${{ '%.3f'|format(s.total_cost_usd) }} · {% endif %}
+                {{ s.updated_at.strftime('%b %d') }}
+              </span>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted" style="padding:8px 4px; font-size:12px">No conversations yet.</p>
+    {% endif %}
+  </aside>
+
+  <section class="chat-welcome">
+    <div class="panel">
+      <div class="panel-body">
+        <h2 style="margin-top:0">Ask the watch</h2>
+        <p class="muted" style="max-width:60ch">
+          Chat reads from your competitor watch — findings, market briefs, deep-research dossiers,
+          competitor profiles, and runs. It can also kick off the same actions the UI does
+          (regenerate the digest, run deep research on a competitor, run a market synthesis),
+          with a confirmation step before anything fires.
+        </p>
+
+        <form id="chat-new-form" class="chat-new-form" method="post" action="/chat/new">
+          <textarea name="first_message" rows="3"
+                    placeholder="What's new with Ashby this week?"
+                    autofocus></textarea>
+          <div class="chat-new-actions">
+            <button type="submit" class="btn">Start chat</button>
+          </div>
+        </form>
+
+        <div class="chat-examples">
+          <span class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em">Or try</span>
+          <div class="chat-example-row">
+            {% for prompt in example_prompts %}
+              <button type="button" class="chat-example" data-prompt="{{ prompt }}">{{ prompt }}</button>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(function wireExamples() {
+  document.querySelectorAll('.chat-example').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var ta = document.querySelector('#chat-new-form textarea');
+      if (ta) {
+        ta.value = btn.dataset.prompt || '';
+        ta.focus();
+      }
+    });
+  });
+})();
+</script>
+
+{% endif %}
+
+{% endblock %}

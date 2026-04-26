@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ session.title }}{% endblock %}
+
+{% block page_actions %}
+  <a href="/chat" class="btn-ghost">← All chats</a>
+{% endblock %}
+
+{% block content %}
+
+<div class="chat-session"
+     data-session-id="{{ session.id }}"
+     data-has-pending="{{ '1' if has_pending else '0' }}">
+
+  <div class="chat-header">
+    <div class="chat-title-wrap">
+      <h2 id="chat-title" class="chat-title" data-title="{{ session.title }}">{{ session.title }}</h2>
+      <button type="button" id="chat-rename-btn" class="btn-mini" title="Rename this conversation">Rename</button>
+    </div>
+    <div class="chat-header-meta muted">
+      <span id="chat-cost">${{ '%.4f'|format(session.total_cost_usd or 0) }}</span>
+      <span aria-hidden="true">·</span>
+      <span>{{ session.model }}</span>
+    </div>
+  </div>
+
+  <div id="chat-thread" class="chat-thread">
+    {% for msg in messages %}
+      {% include "_chat_message.html" %}
+    {% endfor %}
+  </div>
+
+  <form id="chat-input-form" class="chat-input-form" data-session-id="{{ session.id }}">
+    <textarea id="chat-input" name="text" rows="2"
+              placeholder="Ask anything about the watch — competitors, findings, market, runs."
+              autofocus
+              {% if session.status != 'active' %}disabled{% endif %}></textarea>
+    <button type="submit" class="btn"
+            {% if session.status != 'active' %}disabled{% endif %}>Send</button>
+  </form>
+
+  {% if session.status != 'active' %}
+    <p class="muted" style="margin-top:8px">This session is archived. Start a new chat to continue.</p>
+  {% endif %}
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="/static/chat.js?v=chat-1"></script>
+{% endblock %}

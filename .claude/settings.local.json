@@ -103,7 +103,11 @@
       "Bash(python scripts/verify_semantic_ranking.py)",
       "Bash(python -c \"import sys; print\\(sys.stdout.encoding\\)\")",
       "Bash(python scripts/verify_preference_rollup.py)",
-      "Bash(python scripts/verify_seen_decay.py)"
+      "Bash(python scripts/verify_seen_decay.py)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:49672/login)",
+      "Bash(curl -s -i http://localhost:49672/chat)",
+      "Bash(curl -s -i http://localhost:49672/setup)",
+      "Bash(curl -s -i -c /tmp/cookies.txt -X POST http://localhost:49672/setup --data-urlencode name=Admin --data-urlencode email=admin@local.test --data-urlencode password=testpass123)"
     ]
   }
 }
