@@ -90,6 +90,26 @@ def _render_system_prompt(user: User) -> tuple[str, list[tools_module.Tool]]:
     return body, tools
 
 
+def _render_notification_for_model(pl: dict) -> str:
+    """Convert a notification ChatMessage's tool_payload into the text
+    the model sees. Always prefixed so the system-prompt directive
+    ("don't reply to these on your own") catches reliably."""
+    kind = pl.get("kind")
+    prefix = "[system notification, not from the user]"
+    if kind == "deep_research_report":
+        rid = pl.get("id")
+        comp = pl.get("competitor_name") or f"competitor #{pl.get('competitor_id')}"
+        status = pl.get("status") or "ready"
+        url = pl.get("url") or ""
+        line = f"{prefix} Deep research report #{rid} on {comp} is now {status}."
+        if url:
+            line += f" View at {url}."
+        if status == "failed" and pl.get("error"):
+            line += f" Error: {pl['error']}"
+        return line
+    return f"{prefix} A background job finished: {pl}"
+
+
 def _rebuild_messages(db: Session, session_id: int) -> list[dict]:
     """Re-render all DB rows into the Anthropic Messages API format.
 
@@ -132,6 +152,16 @@ def _rebuild_messages(db: Session, session_id: int) -> list[dict]:
         if row.role == "user":
             _flush_turn()
             messages.append({"role": "user", "content": [{"type": "text", "text": row.content}]})
+        elif row.role == "notification":
+            # System-generated job-completion ping. Render as a synthetic
+            # user-role message so the API accepts it (it only knows
+            # user/assistant) but with a clear prefix so the model
+            # treats it as a status update, not user input. The system
+            # prompt tells it not to reply on its own initiative.
+            _flush_turn()
+            pl = row.tool_payload or {}
+            text = _render_notification_for_model(pl)
+            messages.append({"role": "user", "content": [{"type": "text", "text": text}]})
         elif row.role == "assistant":
             _flush_turn()
             content: list[dict] = []
@@ -391,7 +421,7 @@ def run_turn(
         if decision == "confirmed":
             yield _sse("tool_running", {"tool_use_id": pl.get("id"), "name": pl.get("name")})
             output, is_error = tools_module.execute_tool(
-                pl.get("name"), pl.get("input") or {}, db, user
+                pl.get("name"), pl.get("input") or {}, db, user, session
             )
             result_payload = {
                 "tool_use_id": pl.get("id"),
@@ -578,7 +608,7 @@ def run_turn(
 
             yield _sse("tool_running", {"tool_use_id": block["id"], "name": block["name"]})
             output, is_error = tools_module.execute_tool(
-                block["name"], block["input"], db, user
+                block["name"], block["input"], db, user, session
             )
             result_payload = {
                 "tool_use_id": block["id"],
