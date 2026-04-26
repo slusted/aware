@@ -47,13 +47,13 @@
         <tr data-schedule-id="{{ s.id }}">
           <td style="vertical-align:top; padding-top:14px">
             {% if not s.enabled %}
-              <span title="Disabled" style="color:var(--text-muted)">○</span>
+              <span title="Disabled" style="color:var(--text-secondary)">○</span>
             {% elif s.last_status == 'ok' %}
               <span title="Last run ok" style="color:var(--ok)">✓</span>
             {% elif s.last_status in ('error', 'timeout', 'partial_email', 'no_email') %}
               <span title="Last run had a problem" style="color:var(--warn)">⚠</span>
             {% else %}
-              <span title="Never run" style="color:var(--text-muted)">—</span>
+              <span title="Never run" style="color:var(--text-secondary)">—</span>
             {% endif %}
           </td>
           <td style="vertical-align:top">

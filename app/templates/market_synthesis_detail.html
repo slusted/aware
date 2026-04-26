@@ -37,10 +37,10 @@
         {{ synthesis.inputs_meta.get('dr_reports_used', 0) }} deep-research
         excerpt{{ 's' if synthesis.inputs_meta.get('dr_reports_used', 0) != 1 else '' }} referenced
         {% if synthesis.inputs_meta.get('missing_context') %}
-          · <span style="color:var(--warn, var(--text-dim))">missing context: {{ synthesis.inputs_meta.missing_context|join(', ') }}</span>
+          · <span style="color:var(--warn, var(--text-tertiary))">missing context: {{ synthesis.inputs_meta.missing_context|join(', ') }}</span>
         {% endif %}
         {% if synthesis.inputs_meta.get('truncated') %}
-          · <span style="color:var(--warn, var(--text-dim))">brief truncated to fit</span>
+          · <span style="color:var(--warn, var(--text-tertiary))">brief truncated to fit</span>
         {% endif %}
       </p>
     {% endif %}

@@ -1,4 +1,4 @@
-<div style="display:flex; gap:2px; border-bottom:1px solid var(--border); margin-bottom:20px">
+<div style="display:flex; gap:2px; border-bottom:1px solid var(--border-subtle); margin-bottom:20px">
   {% set path = request.url.path %}
   {% for href, label in [
     ('/settings',           'Overview'),
@@ -10,7 +10,7 @@
     <a href="{{ href }}" style="
        padding:8px 14px;
        font-size:13px;
-       color:{{ 'var(--text)' if active else 'var(--text-muted)' }};
+       color:{{ 'var(--text-primary)' if active else 'var(--text-secondary)' }};
        border-bottom:2px solid {{ 'var(--accent)' if active else 'transparent' }};
        margin-bottom:-1px;
        font-weight:{{ '600' if active else '500' }};

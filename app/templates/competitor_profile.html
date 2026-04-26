@@ -15,10 +15,10 @@
     </button>
     <div id="scan-menu" role="menu"
          style="display:none; position:absolute; top:40px; right:0; z-index:20;
-                background:var(--bg-raised); border:1px solid var(--border-strong);
+                background:var(--surface-2); border:1px solid var(--border-strong);
                 border-radius:var(--r); min-width:220px; padding:4px;
                 box-shadow:0 8px 24px rgba(0,0,0,0.4)">
-      <div class="label" style="padding:8px 10px 4px; color:var(--text-dim); font-size:11px; text-transform:uppercase; letter-spacing:0.04em">Freshness window</div>
+      <div class="label" style="padding:8px 10px 4px; color:var(--text-tertiary); font-size:11px; text-transform:uppercase; letter-spacing:0.04em">Freshness window</div>
       {% for d, label in [
         (None, 'Auto — since last scan'),
         (1,    'Last 24 hours'),
@@ -30,7 +30,7 @@
       ] %}
         <a href="#" data-days="{{ d if d is not none else '' }}"
            class="scan-opt"
-           style="display:block; padding:7px 10px; border-radius:var(--r-sm); color:var(--text); font-size:13px; text-decoration:none">{{ label }}</a>
+           style="display:block; padding:7px 10px; border-radius:var(--r-sm); color:var(--text-primary); font-size:13px; text-decoration:none">{{ label }}</a>
       {% endfor %}
     </div>
   </div>
@@ -94,7 +94,7 @@
         <td style="text-align:right"><a href="#" onclick="showPrior({{ r.id }}); return false">view</a></td>
       </tr>
       <tr id="prior-{{ r.id }}" style="display:none">
-        <td colspan="4" style="background:var(--bg)"><div class="markdown" style="padding:10px 4px">{{ r.body_md|safe }}</div></td>
+        <td colspan="4" style="background:var(--surface-0)"><div class="markdown" style="padding:10px 4px">{{ r.body_md|safe }}</div></td>
       </tr>
     {% endfor %}
     </tbody>
@@ -234,7 +234,7 @@
         <td style="text-align:right"><a href="#" onclick="showPriorPositioning({{ s.id }}); return false">view</a></td>
       </tr>
       <tr id="prior-pos-{{ s.id }}" style="display:none">
-        <td colspan="4" style="background:var(--bg)">
+        <td colspan="4" style="background:var(--surface-0)">
           <div style="padding:10px 4px">
             <div style="margin-bottom:10px">
               {% for p in s.pillars %}
@@ -303,7 +303,7 @@
         </tr>
         {% if pr.status == 'ready' %}
         <tr id="prior-research-{{ pr.id }}" style="display:none">
-          <td colspan="5" style="background:var(--bg)">
+          <td colspan="5" style="background:var(--surface-0)">
             <div style="padding:10px 4px">
               {% with r=pr, can_run=False, show_run_button=False %}
                 {% include "_research_report.html" %}
@@ -614,7 +614,7 @@
       menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
     });
     menu.querySelectorAll('.scan-opt').forEach(function (a) {
-      a.addEventListener('mouseenter', function () { a.style.background = 'var(--bg-subtle)'; });
+      a.addEventListener('mouseenter', function () { a.style.background = 'var(--surface-1)'; });
       a.addEventListener('mouseleave', function () { a.style.background = ''; });
       a.addEventListener('click', function (e) {
         e.preventDefault();

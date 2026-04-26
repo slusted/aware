@@ -40,7 +40,7 @@
     </tbody>
   </table>
   {% if total_pages > 1 %}
-  <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-top:1px solid var(--border);">
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-top:1px solid var(--border-subtle);">
     <span class="muted" style="font-size:12px;">
       {% set start = (page - 1) * page_size + 1 %}
       {% set end = start + runs|length - 1 %}

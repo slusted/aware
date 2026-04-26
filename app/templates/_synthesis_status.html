@@ -190,7 +190,7 @@
             across {{ s.inputs_meta.get('competitors_covered', 0) }} competitors ·
             {{ s.inputs_meta.get('dr_reports_used', 0) }} deep-research
             excerpt{{ 's' if s.inputs_meta.get('dr_reports_used', 0) != 1 else '' }} referenced
-            {% if s.inputs_meta.get('truncated') %}· <span style="color:var(--warn, var(--text-dim))">inputs truncated to fit</span>{% endif %}
+            {% if s.inputs_meta.get('truncated') %}· <span style="color:var(--warn, var(--text-tertiary))">inputs truncated to fit</span>{% endif %}
           </p>
         {% endif %}
         {% if s.body_md %}
