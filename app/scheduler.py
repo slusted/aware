@@ -26,6 +26,32 @@ def _load_config_safe() -> dict:
         return {}
 
 
+def _enqueue_scheduled_scan():
+    """Cron entrypoint for the daily scan. Enqueues via the run queue (spec
+    docs/runs/01-run-queue.md) instead of starting directly, so it can't
+    collide with an already-in-flight manual scan. days=None = auto window
+    (since-last-successful-scan), preserving today's cron behavior."""
+    from .db import SessionLocal
+    db = SessionLocal()
+    try:
+        in_flight_or_queued = jobs.queue_depth(db) + (
+            1 if jobs.is_anything_in_flight(db) else 0
+        )
+        if in_flight_or_queued >= jobs.RUN_QUEUE_MAX:
+            print(
+                f"  [scheduler] daily_scan skipped — queue full "
+                f"({in_flight_or_queued}/{jobs.RUN_QUEUE_MAX})",
+                flush=True,
+            )
+            return
+        run = jobs.enqueue_run(
+            db, "scan", triggered_by="schedule", job_args={"days": None}
+        )
+        print(f"  [scheduler] daily_scan enqueued as run #{run.id}", flush=True)
+    finally:
+        db.close()
+
+
 def _run_market_synthesis_scheduled():
     """Cron entrypoint for the weekly market synthesis. Skips (does not
     queue) when a synthesis is already in flight — manual runs take
@@ -67,7 +93,7 @@ def start():
     sched = AsyncIOScheduler(timezone=os.environ.get("TZ", "UTC"))
 
     sched.add_job(
-        jobs.run_scan_job,
+        _enqueue_scheduled_scan,
         CronTrigger(hour=scan_hour, minute=0),
         id="daily_scan",
         replace_existing=True,

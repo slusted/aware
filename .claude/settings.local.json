@@ -109,7 +109,8 @@
       "Bash(DATA_DIR=data python -m alembic current)",
       "Bash(DATA_DIR=data python -m alembic heads)",
       "Bash(DATA_DIR=data python -m alembic upgrade head)",
-      "Bash(python -m scripts.smoke_run_queue)"
+      "Bash(python -m scripts.smoke_run_queue)",
+      "Bash(python -c \"from app import scheduler; print\\('scheduler ok'\\); print\\('has _enqueue_scheduled_scan:', hasattr\\(scheduler, '_enqueue_scheduled_scan'\\)\\)\")"
     ]
   }
 }

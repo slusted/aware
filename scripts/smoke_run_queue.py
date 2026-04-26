@@ -215,6 +215,47 @@ check("error has dispatch failed message",
 db.close()
 
 
+# -- 7. Cron daily_scan goes through the queue ------------------
+print("\n[7] cron daily_scan enqueues instead of running directly")
+db = SessionLocal()
+db.query(RunEvent).delete()
+db.query(Run).delete()
+db.commit()
+db.close()
+
+from app import scheduler as _scheduler
+_scheduler._enqueue_scheduled_scan()
+
+db = SessionLocal()
+rows = db.query(Run).all()
+check("cron created exactly one row", len(rows) == 1, str(len(rows)))
+if rows:
+    r = rows[0]
+    check("row is queued (not running)", r.status == "queued", r.status)
+    check("triggered_by = 'schedule'", r.triggered_by == "schedule", r.triggered_by)
+    check("kind = 'scan'", r.kind == "scan", r.kind)
+    check("job_args has days=None", (r.job_args or {}).get("days", "MISSING") is None,
+          str(r.job_args))
+db.close()
+
+# Cap: if queue is full, cron should skip rather than throw.
+db = SessionLocal()
+# Fill to cap (RUN_QUEUE_MAX=3 in this smoke env)
+db.query(RunEvent).delete()
+db.query(Run).delete()
+db.commit()
+for _ in range(jobs.RUN_QUEUE_MAX):
+    jobs.enqueue_run(db, "scan")
+before = db.query(Run).count()
+db.close()
+_scheduler._enqueue_scheduled_scan()  # should noop, not throw
+db = SessionLocal()
+after = db.query(Run).count()
+check("cron skips when queue at cap", after == before,
+      f"before={before}, after={after}")
+db.close()
+
+
 print()
 if FAILED:
     print(f"[FAIL] {len(FAILED)} failures: {FAILED}")
