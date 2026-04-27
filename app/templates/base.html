@@ -6,7 +6,7 @@
   <title>{% block title %}Competitor Watch{% endblock %}</title>
   <link rel="preconnect" href="https://rsms.me/">
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
-  <link rel="stylesheet" href="/static/style.css?v=light-2">
+  <link rel="stylesheet" href="/static/style.css?v=light-3">
 
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script>
@@ -15,6 +15,16 @@
       var next = html.dataset.theme === 'light' ? 'dark' : 'light';
       html.dataset.theme = next;
       document.cookie = 'theme=' + next + '; path=/; max-age=' + (60*60*24*365*5) + '; SameSite=Lax';
+    }
+    function toggleNavSection(btn) {
+      var section = btn.closest('.nav-section');
+      var collapsed = section.classList.toggle('is-collapsed');
+      btn.setAttribute('aria-expanded', String(!collapsed));
+      var key = section.dataset.navKey;
+      if (key) {
+        document.cookie = 'nav_' + key + '=' + (collapsed ? 'collapsed' : 'expanded') +
+          '; path=/; max-age=' + (60*60*24*365*5) + '; SameSite=Lax';
+      }
     }
   </script>
 </head>
@@ -61,38 +71,45 @@
       </a>
     </div>
 
-    <div class="nav-section">
-      <div class="label">Admin</div>
-      <a href="/dashboard" class="nav-item {% if path == '/dashboard' %}active{% endif %}">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
-        Dashboard
-      </a>
-      <a href="/runs" class="nav-item {% if path.startswith('/runs') or path == '/runs' %}active{% endif %}">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2"/></svg>
-        Runs
-      </a>
-      <a href="/admin/competitors" class="nav-item {% if path.startswith('/admin/competitors') %}active{% endif %}">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h10v10H3z"/><path d="M3 6h10M6 3v10"/></svg>
-        Manage watchlist
-      </a>
-      <a href="/admin/skills" class="nav-item {% if path.startswith('/admin/skills') %}active{% endif %}">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h12v10H2z"/><path d="M5 6h6M5 9h4"/></svg>
-        Manage skills
-      </a>
-      <a href="/admin/search-quality" class="nav-item {% if path.startswith('/admin/search-quality') %}active{% endif %}">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4"/><path d="M10 10l4 4"/></svg>
-        Search quality
-      </a>
-      {% if user and user.role == 'admin' %}
-      <a href="/admin/users" class="nav-item {% if path.startswith('/admin/users') %}active{% endif %}">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="2.5"/><path d="M3 14c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5"/></svg>
-        Users
-      </a>
-      <a href="/admin/notifications" class="nav-item {% if path.startswith('/admin/notifications') %}active{% endif %}">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6.5C3 4 5 2 7.5 2h1C11 2 13 4 13 6.5v3l1.5 2.5H1.5L3 9.5z"/><path d="M6.5 13a1.5 1.5 0 003 0"/></svg>
-        Notifications
-      </a>
-      {% endif %}
+    {% set admin_collapsed = request.cookies.get('nav_admin', 'expanded') == 'collapsed' %}
+    {% set admin_active = path.startswith('/admin') or path.startswith('/runs') or path == '/dashboard' %}
+    <div class="nav-section nav-section-collapsible{% if admin_collapsed and not admin_active %} is-collapsed{% endif %}" data-nav-key="admin">
+      <button type="button" class="nav-section-toggle" onclick="toggleNavSection(this)" aria-expanded="{% if admin_collapsed and not admin_active %}false{% else %}true{% endif %}">
+        <svg class="chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l4 4 4-4"/></svg>
+        Admin
+      </button>
+      <div class="nav-section-items">
+        <a href="/dashboard" class="nav-item {% if path == '/dashboard' %}active{% endif %}">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+          Dashboard
+        </a>
+        <a href="/runs" class="nav-item {% if path.startswith('/runs') or path == '/runs' %}active{% endif %}">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><path d="M8 4v4l2.5 2"/></svg>
+          Runs
+        </a>
+        <a href="/admin/competitors" class="nav-item {% if path.startswith('/admin/competitors') %}active{% endif %}">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h10v10H3z"/><path d="M3 6h10M6 3v10"/></svg>
+          Manage watchlist
+        </a>
+        <a href="/admin/skills" class="nav-item {% if path.startswith('/admin/skills') %}active{% endif %}">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h12v10H2z"/><path d="M5 6h6M5 9h4"/></svg>
+          Manage skills
+        </a>
+        <a href="/admin/search-quality" class="nav-item {% if path.startswith('/admin/search-quality') %}active{% endif %}">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4"/><path d="M10 10l4 4"/></svg>
+          Search quality
+        </a>
+        {% if user and user.role == 'admin' %}
+        <a href="/admin/users" class="nav-item {% if path.startswith('/admin/users') %}active{% endif %}">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="2.5"/><path d="M3 14c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5"/></svg>
+          Users
+        </a>
+        <a href="/admin/notifications" class="nav-item {% if path.startswith('/admin/notifications') %}active{% endif %}">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6.5C3 4 5 2 7.5 2h1C11 2 13 4 13 6.5v3l1.5 2.5H1.5L3 9.5z"/><path d="M6.5 13a1.5 1.5 0 003 0"/></svg>
+          Notifications
+        </a>
+        {% endif %}
+      </div>
     </div>
 
     <div class="spacer"></div>
