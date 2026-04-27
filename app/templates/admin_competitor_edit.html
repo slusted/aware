@@ -171,6 +171,120 @@
   </div>
 </form>
 
+{% if c %}
+<div class="panel" id="app-sources" style="padding:20px; max-width:720px; margin-top:24px">
+  <h2 style="margin-top:0">App stores</h2>
+  <p class="muted" style="margin-top:0">
+    Track app-store reviews for this competitor. Reviews are ingested daily;
+    themes are synthesised weekly. See <a href="/runs">/runs</a> for status.
+  </p>
+
+  {% if app_source_msg %}
+    <div class="callout {{ 'callout-success' if app_source_msg == 'ok' else 'callout-warn' }}" style="margin:8px 0">
+      {% if app_source_msg == 'ok' %}
+        Source added.
+      {% elif app_source_msg.startswith('err:') %}
+        {{ app_source_msg[4:] }}
+      {% else %}
+        {{ app_source_msg }}
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if app_sources %}
+    <table class="app-sources-table" style="width:100%; margin-bottom:12px">
+      <thead>
+        <tr>
+          <th>Store</th>
+          <th>App id</th>
+          <th>Country</th>
+          <th>Last ingested</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in app_sources %}
+          <tr class="app-source-row {{ 'disabled' if not s.enabled else '' }}">
+            <td>{{ 'App Store' if s.store == 'apple' else s.store }}</td>
+            <td class="mono">{{ s.app_id }}</td>
+            <td>{{ s.country|upper }}</td>
+            <td class="muted">
+              {% if s.last_ingested_at %}
+                {{ s.last_ingested_at.strftime('%Y-%m-%d %H:%M') }}
+                <span style="margin-left:6px">· {{ s.last_ingested_count }} new</span>
+              {% else %}
+                never
+              {% endif %}
+              {% if s.last_error %}
+                <div class="muted" style="color:var(--err); font-size:11px; margin-top:2px">
+                  {{ s.last_error[:160] }}
+                </div>
+              {% endif %}
+            </td>
+            <td>
+              {% if s.enabled %}
+                <span class="chip">enabled</span>
+              {% else %}
+                <span class="chip" style="opacity:0.6">disabled</span>
+              {% endif %}
+            </td>
+            <td style="text-align:right; white-space:nowrap">
+              <form method="post"
+                    action="/api/competitors/{{ c.id }}/app-sources/{{ s.id }}/toggle"
+                    style="display:inline">
+                <button class="btn btn-ghost" type="submit"
+                        style="padding:4px 10px; font-size:12px">
+                  {{ 'Disable' if s.enabled else 'Enable' }}
+                </button>
+              </form>
+              <form method="post"
+                    action="/api/competitors/{{ c.id }}/app-sources/{{ s.id }}/delete"
+                    style="display:inline"
+                    onsubmit="return confirm('Delete this source? Already-ingested reviews stay in the corpus.');">
+                <button class="btn btn-ghost" type="submit"
+                        style="padding:4px 10px; font-size:12px">Delete</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No sources configured.</p>
+  {% endif %}
+
+  <form method="post" action="/api/competitors/{{ c.id }}/app-sources" class="add-app-source-form">
+    <h3 style="margin-bottom:8px">Add source</h3>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end">
+      <div>
+        <label class="label" style="margin-bottom:4px">Store</label>
+        <select name="store" required>
+          <option value="apple">Apple App Store</option>
+          {# Spec 02 will enable: <option value="play">Google Play</option> #}
+        </select>
+      </div>
+      <div style="flex:1; min-width:180px">
+        <label class="label" style="margin-bottom:4px">App id</label>
+        <input name="app_id" type="text" required class="mono"
+               placeholder="123456789">
+        <span class="hint">Numeric id from the App Store URL — e.g. for
+          <code>apps.apple.com/us/app/foo/id123456789</code> the id is
+          <code>123456789</code>.</span>
+      </div>
+      <div>
+        <label class="label" style="margin-bottom:4px">Country</label>
+        <input name="country" type="text" value="us" maxlength="8"
+               style="width:80px" class="mono">
+      </div>
+      <div>
+        <button class="btn" type="submit">Add</button>
+      </div>
+    </div>
+  </form>
+</div>
+{% endif %}
+
 <script>
 (function () {
   var form = document.getElementById('edit-form');

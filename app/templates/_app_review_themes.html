@@ -1,0 +1,113 @@
+{# App-store review themes panel for the competitor profile.
+   Receives: app_sources, review_themes_active, review_themes_dormant,
+             review_total_count.
+   Renders rolling-state theme cards above a recent-samples panel. #}
+<div class="panel">
+  <div class="panel-header">
+    <h2>App-store reviews</h2>
+    <span class="muted" style="font-size:11px">
+      {% if app_sources %}
+        {{ app_sources|length }} source{{ '' if app_sources|length == 1 else 's' }}
+        · {{ review_total_count }} review{{ '' if review_total_count == 1 else 's' }} ingested
+      {% else %}
+        No sources configured
+      {% endif %}
+    </span>
+  </div>
+  <div class="panel-body">
+    {% if not app_sources %}
+      <p class="muted" style="margin:0">
+        Track app-store reviews for {{ c.name }} —
+        <a href="/admin/competitors/{{ c.id }}/edit#app-sources">add an App Store source</a>.
+      </p>
+    {% elif review_total_count < 10 %}
+      <p class="muted" style="margin:0">
+        Ingested {{ review_total_count }} review{{ '' if review_total_count == 1 else 's' }} so far.
+        Themes appear after we have ≥ 10.
+        {% if user.role == 'admin' %}
+          <form method="post" action="/api/competitors/voc/ingest/run" style="display:inline">
+            <button class="btn-link" type="submit">Run ingest now</button>
+          </form>
+        {% endif %}
+      </p>
+    {% elif not review_themes_active %}
+      <p class="muted" style="margin:0">
+        No themes synthesised yet for {{ c.name }}.
+        {% if user.role == 'admin' %}
+          <form method="post" action="/api/competitors/voc/themes/run" style="display:inline">
+            <input type="hidden" name="competitor_id" value="{{ c.id }}">
+            <input type="hidden" name="force" value="false">
+            <button class="btn-link" type="submit">Run synthesis now</button>
+          </form>
+        {% endif %}
+      </p>
+    {% else %}
+      <div class="theme-list">
+        {% for t in review_themes_active %}
+          {% set delta = t.volume_30d - t.volume_prev_30d %}
+          {% set delta_pct = ((delta * 100 / t.volume_prev_30d) | round | int)
+                             if t.volume_prev_30d else None %}
+          <div class="theme-card sentiment-{{ t.sentiment }}">
+            <div class="theme-card-header">
+              <strong class="theme-card-label">{{ t.label }}</strong>
+              <span class="chip sentiment-chip-{{ t.sentiment }}">{{ t.sentiment }}</span>
+              {% if delta > 0 %}
+                <span class="theme-card-trend trend-up" title="trailing-30d vs prior 30d">
+                  ▲{% if delta_pct is not none %} {{ delta_pct }}%{% endif %}
+                </span>
+              {% elif delta < 0 %}
+                <span class="theme-card-trend trend-down" title="trailing-30d vs prior 30d">
+                  ▼{% if delta_pct is not none %} {{ delta_pct|abs }}%{% endif %}
+                </span>
+              {% else %}
+                <span class="theme-card-trend trend-flat" title="no change vs prior 30d">—</span>
+              {% endif %}
+            </div>
+            {% if t.description %}
+              <p class="theme-card-desc">{{ t.description }}</p>
+            {% endif %}
+            <div class="theme-card-meta muted">
+              Volume: {{ t.volume_30d }}{% if t.volume_prev_30d %} (was {{ t.volume_prev_30d }}){% endif %}
+              · Last seen {{ t.last_seen.strftime('%Y-%m-%d') }}
+              {% if t.sample_review_ids %}
+                · {{ t.sample_review_ids|length }} sample{{ '' if t.sample_review_ids|length == 1 else 's' }}
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      {% if user.role == 'admin' %}
+        <div style="margin-top:12px">
+          <form method="post" action="/api/competitors/voc/themes/run" style="display:inline">
+            <input type="hidden" name="competitor_id" value="{{ c.id }}">
+            <input type="hidden" name="force" value="false">
+            <button class="btn-link" type="submit">Re-run synthesis</button>
+          </form>
+        </div>
+      {% endif %}
+
+      {% if review_themes_dormant %}
+        <details style="margin-top:12px">
+          <summary class="muted">Show {{ review_themes_dormant|length }} dormant theme{{ '' if review_themes_dormant|length == 1 else 's' }}</summary>
+          <div class="theme-list" style="margin-top:8px; opacity:0.7">
+            {% for t in review_themes_dormant %}
+              <div class="theme-card sentiment-{{ t.sentiment }}">
+                <div class="theme-card-header">
+                  <strong class="theme-card-label">{{ t.label }}</strong>
+                  <span class="chip">dormant</span>
+                </div>
+                {% if t.description %}
+                  <p class="theme-card-desc">{{ t.description }}</p>
+                {% endif %}
+                <div class="theme-card-meta muted">
+                  Last seen {{ t.last_seen.strftime('%Y-%m-%d') }}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </details>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>

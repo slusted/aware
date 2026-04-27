@@ -2521,6 +2521,90 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 }
 .chat-input-form textarea:disabled { opacity: 0.6; }
 
+/* ── App-store reviews (docs/voc/01-app-reviews.md) ─────────────── */
+
+.theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.theme-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--r);
+  padding: 10px 12px;
+  background: var(--bg-raised, var(--bg));
+}
+.theme-card.sentiment-negative { border-left-color: var(--err, #d33); }
+.theme-card.sentiment-positive { border-left-color: var(--ok, #2a8); }
+.theme-card.sentiment-mixed    { border-left-color: var(--warn, #c93); }
+
+.theme-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.theme-card-label { flex: 1; min-width: 0; }
+.theme-card-trend { font-size: 12px; font-variant-numeric: tabular-nums; }
+.theme-card-trend.trend-up   { color: var(--err, #d33); }
+.theme-card-trend.trend-down { color: var(--ok, #2a8); }
+.theme-card-trend.trend-flat { color: var(--muted); }
+.theme-card-desc { margin: 6px 0; }
+.theme-card-meta { font-size: 11px; }
+
+.sentiment-chip-positive { background: rgba(0, 170, 130, 0.10); }
+.sentiment-chip-negative { background: rgba(220, 60, 60, 0.10); }
+.sentiment-chip-mixed    { background: rgba(200, 150, 60, 0.10); }
+
+.review-sample-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.review-sample {
+  padding: 8px 10px;
+  border-left: 2px solid var(--border);
+}
+.review-sample-meta { font-size: 11px; }
+.review-rating { color: var(--warn, #c93); letter-spacing: 1px; }
+.review-sample-title { margin: 4px 0; }
+.review-sample-body { white-space: pre-wrap; }
+.review-sample-theme { font-size: 11px; margin-top: 4px; }
+
+.app-sources-table { border-collapse: collapse; }
+.app-sources-table th,
+.app-sources-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.app-source-row.disabled { opacity: 0.55; }
+
+.add-app-source-form { margin-top: 8px; }
+
+.callout {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--r);
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.callout-success { border-left-color: var(--ok, #2a8); }
+.callout-warn    { border-left-color: var(--warn, #c93); }
+
+.btn-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.btn-link:hover { text-decoration: underline; }
+
 @media (max-width: 760px) {
   .chat-index {
     grid-template-columns: 1fr;
