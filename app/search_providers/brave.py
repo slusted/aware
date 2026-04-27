@@ -57,12 +57,14 @@ class BraveProvider(SearchProvider):
             params["freshness"] = fresh
 
         url = "https://api.search.brave.com/res/v1/news/search?" + urllib.parse.urlencode(params)
+        # No Accept-Encoding: gzip — urllib.request doesn't auto-decompress, so
+        # advertising gzip support makes resp.read() return raw gzipped bytes
+        # that .decode("utf-8") can't parse (0x8b at byte 1 = gzip magic).
         req = urllib.request.Request(
             url,
             headers={
                 "X-Subscription-Token": key,
                 "Accept": "application/json",
-                "Accept-Encoding": "gzip",
             },
         )
         try:
