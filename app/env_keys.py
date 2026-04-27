@@ -169,7 +169,19 @@ def _refresh_module_captures(name: str, value: str) -> None:
             # call instantiates a fresh voyageai.Client with the new key.
             from .adapters import voyage as _voyage
             _voyage._client = None
-        # SERPER_API_KEY is read at call time by SerperProvider — nothing cached.
+
+        # If the key belongs to a search provider, rebuild the active-providers
+        # set from config.json. Without this, a provider added via /settings/keys
+        # would stay out of `_active` (which is frozen at startup or at PUT
+        # /api/providers/{name}) until a restart, even though the key is live.
+        from . import search_providers as _sp
+        provider_env_vars = {cls.env_var for cls in _sp.REGISTRY.values()}
+        if name in provider_env_vars:
+            import json as _json
+            cfg_path = os.environ.get("CONFIG_PATH", "config.json")
+            with open(cfg_path, encoding="utf-8") as f:
+                _cfg = _json.load(f)
+            _sp.load_from_config(_cfg)
     except Exception as e:
         print(f"[env_keys] refresh failed for {name}: {e}")
 
