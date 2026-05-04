@@ -129,8 +129,16 @@ FINDING_DIMENSIONS: tuple[tuple[str, str], ...] = (
 # Post-ranker presentation layer. Collapses near-duplicate findings into
 # one card and forces diversity on the top slots via MMR.
 
-# Title-Jaccard threshold above which two same-(competitor, signal_type)
-# findings are treated as the same event. 0.4 ≈ "3 of 7 content words
+# Cosine-similarity threshold for embedding-based clustering. Pairs of
+# findings within the same competitor whose embedding cosine clears this
+# bar are merged. 0.85 is conservative: voyage-3-lite tends to put true
+# dupes (same event, different outlet) ≥0.88 and merely related stories
+# in the 0.65–0.78 range, so this leans toward recall over silently
+# collapsing distinct stories.
+CLUSTER_COSINE_THRESHOLD: float = 0.85
+
+# Title-Jaccard threshold used as the fallback when one or both findings
+# in a pair lack a current-model embedding. 0.4 ≈ "3 of 7 content words
 # overlap" — the knee between obvious dupes and merely related stories.
 CLUSTER_JACCARD_THRESHOLD: float = 0.4
 
