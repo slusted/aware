@@ -43,52 +43,105 @@
   {% if scope == 'company' %}
     Your company's living strategic brief — synthesized from uploaded public documents (investor decks, annual reports, earnings transcripts) and recent external signals. This brief is injected into every market digest so the cross-competitor analysis knows where you stand.
   {% else %}
-    What your customers want, how they're behaving, and what's shifting. Synthesized from uploaded research, voice-of-customer transcripts, and recent market signals. Injected into every market digest.
+    A Jobs-to-be-Done view of the market: the jobs customers are hiring solutions for, how well solved each is today, who's leading, what's holding back better solutions, and what new approaches are emerging. Synthesized from uploaded research, voice-of-customer transcripts, and recent market signals.
   {% endif %}
 </p>
 
-<div class="panel">
-  <div class="panel-header">
-    <h2>Current brief</h2>
-    {% if latest %}
-      <span class="muted" style="font-size:11px">{{ latest.created_at.strftime('%H:%M') }}</span>
-    {% endif %}
-  </div>
-  <div class="panel-body">
-  {% if latest %}
-    <div class="brief-meta">
-      <div class="brief-meta-item">
-        <span class="brief-meta-label">Refreshed</span>
-        <span class="brief-meta-value">{{ latest.created_at.strftime('%b %d, %Y') }}</span>
-      </div>
-      <div class="brief-meta-item">
-        <span class="brief-meta-label">Cycle</span>
-        <span class="brief-meta-value">#{{ history|length + 1 }}</span>
-      </div>
-      <div class="brief-meta-item">
-        <span class="brief-meta-label">Sources</span>
-        <span class="brief-meta-value">{{ docs|length }} doc{% if docs|length != 1 %}s{% endif %}</span>
-      </div>
-      {% if latest.model %}
-      <div class="brief-meta-item">
-        <span class="brief-meta-label">Model</span>
-        <span class="brief-meta-value mono">{{ latest.model }}</span>
-      </div>
-      {% endif %}
-      <div class="brief-meta-item">
-        <span class="brief-meta-label">Scope</span>
-        <span class="brief-meta-value">{{ scope|capitalize }}</span>
+{% if scope == 'customer' and latest and not jtbd_view %}
+  <div class="panel" style="border-left:3px solid var(--accent)">
+    <div class="panel-body" style="display:flex; gap:14px; align-items:flex-start">
+      <div style="flex:1">
+        <strong>Legacy brief format.</strong>
+        <span class="muted">This brief was generated under the older "Who we serve / What matters / Pain signals" skill. Click <em>Regenerate brief</em> to produce the JTBD view (jobs · how well solved · leaders · constraints · solution spaces).</span>
       </div>
     </div>
-    <div id="brief-body" class="markdown"></div>
-    <script id="brief-src" type="text/plain">{{ latest.body_md }}</script>
-  {% else %}
-    <p class="muted" style="margin:0">
-      No brief yet. Upload a source document below, or click <strong>Regenerate brief</strong> once there's material to work with.
-    </p>
-  {% endif %}
   </div>
-</div>
+{% endif %}
+
+{% if scope == 'customer' and latest and jtbd_view %}
+  {# JTBD view: each section gets its own labeled panel. Sections the
+     LLM omitted render an empty-state instead of being hidden, so the
+     page is structurally complete even when content is thin. #}
+  <div class="brief-meta" style="margin-bottom:18px">
+    <div class="brief-meta-item">
+      <span class="brief-meta-label">Refreshed</span>
+      <span class="brief-meta-value">{{ latest.created_at.strftime('%b %d, %Y · %H:%M') }}</span>
+    </div>
+    <div class="brief-meta-item">
+      <span class="brief-meta-label">Cycle</span>
+      <span class="brief-meta-value">#{{ history|length + 1 }}</span>
+    </div>
+    <div class="brief-meta-item">
+      <span class="brief-meta-label">Sources</span>
+      <span class="brief-meta-value">{{ docs|length }} doc{% if docs|length != 1 %}s{% endif %} · {{ discussion|length }} VoC finding{% if discussion|length != 1 %}s{% endif %}</span>
+    </div>
+    {% if latest.model %}
+    <div class="brief-meta-item">
+      <span class="brief-meta-label">Model</span>
+      <span class="brief-meta-value mono">{{ latest.model }}</span>
+    </div>
+    {% endif %}
+  </div>
+
+  {% for s in jtbd_sections %}
+    <div class="panel jtbd-section">
+      <div class="panel-header">
+        <h2>{{ s.label }}</h2>
+      </div>
+      <div class="panel-body">
+        <p class="muted" style="margin:0 0 10px; font-size:12px">{{ s.helper }}</p>
+        {% if s.body_md %}
+          <div class="markdown jtbd-body" data-md="{{ s.body_md }}"></div>
+        {% else %}
+          <p class="muted" style="margin:0; font-style:italic">Not covered in the latest brief. Regenerate after uploading more research, or expand the source material.</p>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+{% else %}
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Current brief</h2>
+      {% if latest %}
+        <span class="muted" style="font-size:11px">{{ latest.created_at.strftime('%H:%M') }}</span>
+      {% endif %}
+    </div>
+    <div class="panel-body">
+    {% if latest %}
+      <div class="brief-meta">
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Refreshed</span>
+          <span class="brief-meta-value">{{ latest.created_at.strftime('%b %d, %Y') }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Cycle</span>
+          <span class="brief-meta-value">#{{ history|length + 1 }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Sources</span>
+          <span class="brief-meta-value">{{ docs|length }} doc{% if docs|length != 1 %}s{% endif %}</span>
+        </div>
+        {% if latest.model %}
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Model</span>
+          <span class="brief-meta-value mono">{{ latest.model }}</span>
+        </div>
+        {% endif %}
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Scope</span>
+          <span class="brief-meta-value">{{ scope|capitalize }}</span>
+        </div>
+      </div>
+      <div id="brief-body" class="markdown"></div>
+      <script id="brief-src" type="text/plain">{{ latest.body_md }}</script>
+    {% else %}
+      <p class="muted" style="margin:0">
+        No brief yet. Upload a source document below, or click <strong>Regenerate brief</strong> once there's material to work with.
+      </p>
+    {% endif %}
+    </div>
+  </div>
+{% endif %}
 
 <div class="panel">
   <div class="panel-header">
@@ -223,6 +276,13 @@
     var src = document.getElementById('brief-src');
     var out = document.getElementById('brief-body');
     if (src && out && window.marked) out.innerHTML = window.marked.parse(src.textContent);
+    // JTBD-view: each section panel renders its own markdown body
+    // from a data-md attribute. Skipped if marked.js isn't loaded yet.
+    if (window.marked) {
+      document.querySelectorAll('.jtbd-body[data-md]').forEach(function (el) {
+        el.innerHTML = window.marked.parse(el.getAttribute('data-md') || '');
+      });
+    }
   })();
 
   function showPrior(id) {

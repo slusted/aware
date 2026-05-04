@@ -73,6 +73,7 @@ class PredicateSummary(NamedTuple):
     last_updated_at: datetime | None            # newest snapshot or evidence touch
     has_recent_evidence: bool                   # confirmed in last 30 days
     sparkline_dominant: list[tuple[datetime, float]]  # (timestamp, prob) for dominant state
+    source: str                                 # 'user' | 'llm_proposed' | 'llm_promoted'
 
 
 class EvidenceContribView(NamedTuple):
@@ -267,6 +268,7 @@ def predicate_summary(db: Session, *, now: datetime | None = None) -> list[Predi
             last_updated_at=last_snap_at,
             has_recent_evidence=p.id in recent_pred_ids,
             sparkline_dominant=sparkline_dominant,
+            source=p.source,
         ))
     return out
 
