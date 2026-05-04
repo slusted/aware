@@ -430,6 +430,12 @@ def _dispatch_queued_run(run_id: int, kind: str, args: dict, triggered_by: str) 
                 force=bool(args.get("force", False)),
                 run_id=run_id,
             )
+        elif kind == "scenarios_recompute":
+            run_scenarios_recompute_job(
+                triggered_by=triggered_by,
+                predicate_keys=args.get("predicate_keys"),
+                run_id=run_id,
+            )
         else:
             raise ValueError(f"queue dispatch: unknown run kind {kind!r}")
     except Exception as e:
@@ -2260,6 +2266,50 @@ def run_voc_themes_job(competitor_id: int | None = None,
                     },
                 ))
             db.commit()
+        _finish_run(db, run, "ok")
+    except Exception as e:
+        tb = traceback.format_exc()
+        _log(db, run, f"ERROR: {e}\n{tb}", "error")
+        _finish_run(db, run, "error", str(e))
+    finally:
+        current_run_id.reset(token)
+
+
+# ─── Scenarios recompute (docs/scenarios/01-foundation.md) ──────────────
+# Pure DB-side recompute — no LLM, no scraping. Walks confirmed evidence
+# per active predicate, updates cached current_probability + writes a
+# snapshot row. Cheap; runs end-to-end in well under a second for the
+# stage-1 predicate set.
+
+def run_scenarios_recompute_job(
+    triggered_by: str = "manual",
+    predicate_keys: list[str] | None = None,
+    run_id: int | None = None,
+) -> None:
+    """Recompute Scenarios posteriors. `predicate_keys=None` means all
+    active predicates; pass a list to scope to one or a few (the CLI
+    uses this after adding a single evidence row).
+
+    Wrapped in a Run so the recompute shows up on /runs alongside scans
+    and digests. Failures mark the row 'error' and stash the traceback
+    in Run.error like every other job."""
+    run, db = _start_run("scenarios_recompute", triggered_by, run_id=run_id)
+    run_id = run.id
+    token = current_run_id.set(run_id)
+    try:
+        from .scenarios.service import recompute_all
+
+        scope = ",".join(predicate_keys) if predicate_keys else "all"
+        _log(db, run, f"recomputing scenarios posteriors (scope={scope})")
+
+        out = recompute_all(db, run_id=run_id, predicate_keys=predicate_keys)
+        db.commit()
+
+        _log(
+            db, run,
+            f"recomputed {len(out)} predicate(s); states updated: "
+            + ", ".join(f"{k}({len(v)})" for k, v in sorted(out.items())),
+        )
         _finish_run(db, run, "ok")
     except Exception as e:
         tb = traceback.format_exc()

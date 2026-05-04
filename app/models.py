@@ -833,3 +833,217 @@ class ReviewTheme(Base):
     __table_args__ = (
         Index("ix_theme_competitor_status", "competitor_id", "status"),
     )
+
+
+# ─── Scenarios belief engine (docs/scenarios/01-foundation.md) ──────────
+# Stage 1 is headless: data model + math + manual evidence via CLI. No
+# UI, no LLM mapping, no scanner hook. Predicates carry the only state;
+# scenarios are computed on demand from predicate posteriors. Findings
+# are reused as the evidence source via predicate_evidence.finding_id.
+
+
+class Predicate(Base):
+    """One testable claim about market structure (e.g. "distribution control
+    shifts to agents vs platforms"). Carries no probability of its own —
+    state lives on PredicateState rows. Soft-archived via active=False so
+    historical snapshots stay interpretable."""
+    __tablename__ = "predicates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Stable short identifier ("p1", "p2", ...) used in seed files and CLI.
+    # Not the PK so we can rename freely; unique so seed upserts work.
+    key: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    # Long-form precise statement. The Stage-2 LLM mapping prompt hinges
+    # on this being unambiguous, so don't shorten it.
+    statement: Mapped[str] = mapped_column(Text)
+    # discovery | evaluation | transaction | control_point. Free-form so
+    # new categories don't need a migration.
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    # NULL = use scenario_settings["default_decay_half_life_days"]. Days.
+    decay_half_life_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Inactive predicates don't contribute to scenario derivation. Kept
+    # rather than deleted so snapshot history remains readable.
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PredicateState(Base):
+    """One state of a predicate. Binary predicates have 2 rows; ordinal
+    have 3+. Prior sums across states for one predicate must equal 1.0
+    (validated by app/scenarios/integrity.py, not the schema)."""
+    __tablename__ = "predicate_states"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    predicate_id: Mapped[int] = mapped_column(
+        ForeignKey("predicates.id", ondelete="CASCADE"), index=True
+    )
+    # Lower-case, no spaces. Referenced by scenario_predicate_links and
+    # predicate_evidence. Stable across renames of `label`.
+    state_key: Mapped[str] = mapped_column(String(64))
+    label: Mapped[str] = mapped_column(String(128))
+    # 0-indexed; defines order for ordinal predicates. Binary uses 0/1.
+    ordinal_position: Mapped[int] = mapped_column(Integer)
+    prior_probability: Mapped[float] = mapped_column(Float)
+    # Cached "latest snapshot" probability. Recompute writes here and a
+    # PredicatePosteriorSnapshot row simultaneously — read path stays
+    # fast, history stays complete.
+    current_probability: Mapped[float] = mapped_column(Float)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("predicate_id", "state_key",
+                         name="uq_predicate_states_pred_key"),
+    )
+
+
+class Scenario(Base):
+    """One alternative future, defined as a constrained bundle of predicate
+    state requirements with weights. Scenarios carry no stored probability —
+    P(scenario) is computed on demand from current predicate posteriors."""
+    __tablename__ = "scenarios"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text, default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ScenarioPredicateLink(Base):
+    """Scenario X requires predicate Y to be in state Z with importance W.
+    Weights sum to 1.0 across links for one scenario (validated by
+    integrity.py). required_state_key must reference a real PredicateState
+    for that predicate (also validated)."""
+    __tablename__ = "scenario_predicate_links"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scenario_id: Mapped[int] = mapped_column(
+        ForeignKey("scenarios.id", ondelete="CASCADE"), index=True
+    )
+    predicate_id: Mapped[int] = mapped_column(
+        ForeignKey("predicates.id", ondelete="CASCADE"), index=True
+    )
+    required_state_key: Mapped[str] = mapped_column(String(64))
+    weight: Mapped[float] = mapped_column(Float)
+
+    __table_args__ = (
+        UniqueConstraint("scenario_id", "predicate_id",
+                         name="uq_scenario_predicate"),
+    )
+
+
+class PredicateEvidence(Base):
+    """One piece of evidence bearing on one predicate's state. Append-only
+    once confirmed_at is set. finding_id is nullable so manual evidence
+    (typed-in observation, not from the scanner) is supported; ON DELETE
+    SET NULL so a finding prune doesn't strand the belief history.
+
+    Only confirmed evidence (confirmed_at IS NOT NULL) contributes to the
+    posterior. Stage 1 sets confirmed_at at insert time (manual entry =
+    pre-confirmed). Stage 2 introduces the LLM-proposed / human-confirms
+    queue, where confirmed_at stays NULL until a human commits."""
+    __tablename__ = "predicate_evidence"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    finding_id: Mapped[int | None] = mapped_column(
+        ForeignKey("findings.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
+    predicate_id: Mapped[int] = mapped_column(
+        ForeignKey("predicates.id", ondelete="CASCADE"), index=True
+    )
+    target_state_key: Mapped[str] = mapped_column(String(64))
+    # "support" | "contradict" | "neutral". Neutral exists so an LLM can
+    # say "this finding mentions the predicate but doesn't move it" — the
+    # mapping is recorded, log(LR=1)=0, no posterior movement.
+    direction: Mapped[str] = mapped_column(String(16))
+    # "weak" | "moderate" | "strong" — joined to evidence_likelihood_ratios
+    # at compute time. Bucket rather than free float so tuning is one-table.
+    strength_bucket: Mapped[str] = mapped_column(String(16))
+    # 0–1 scalar. Defaults to source_credibility_defaults.credibility for
+    # the finding's source at insert time; per-row override allowed.
+    credibility: Mapped[float] = mapped_column(Float, default=1.0)
+    # "manual" | "llm" | "user_override". Stage 1 is "manual" only.
+    classified_by: Mapped[str] = mapped_column(String(16), default="manual", index=True)
+    # When the evidence was actually observed in the world. Defaults to
+    # finding.published_at or finding.created_at; can be backdated via
+    # CLI for historical replay. Drives decay.
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, index=True
+    )
+    # Set when a human commits the mapping. NULL = pending review (Stage 2).
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_predicate_evidence_pred_observed",
+              "predicate_id", "observed_at"),
+    )
+
+
+class PredicatePosteriorSnapshot(Base):
+    """Append-only history. One row per (predicate, state, recompute).
+    Sparkline source for the (later) predicate dashboard. Cached
+    `current_probability` on PredicateState mirrors the latest snapshot."""
+    __tablename__ = "predicate_posterior_snapshots"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    predicate_id: Mapped[int] = mapped_column(
+        ForeignKey("predicates.id", ondelete="CASCADE"), index=True
+    )
+    state_key: Mapped[str] = mapped_column(String(64))
+    probability: Mapped[float] = mapped_column(Float)
+    # Total confirmed evidence count contributing at this snapshot. Lets
+    # us spot "moved a lot but only 1 evidence behind it" cases.
+    evidence_count: Mapped[int] = mapped_column(Integer, default=0)
+    run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("runs.id"), nullable=True, index=True
+    )
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, index=True
+    )
+
+    __table_args__ = (
+        Index("ix_posterior_snap_pred_computed",
+              "predicate_id", "computed_at"),
+    )
+
+
+class EvidenceLikelihoodRatio(Base):
+    """The (direction, strength_bucket) → multiplier table the posterior
+    update reads at compute time. Seeded from PRD §4.1; tunable. Edit
+    in Stage 1 via SQL UPDATE; Stage 5 wraps in a UI form with audit log."""
+    __tablename__ = "evidence_likelihood_ratios"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    direction: Mapped[str] = mapped_column(String(16))
+    strength_bucket: Mapped[str] = mapped_column(String(16))
+    multiplier: Mapped[float] = mapped_column(Float)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("direction", "strength_bucket",
+                         name="uq_likelihood_dir_strength"),
+    )
+
+
+class SourceCredibilityDefault(Base):
+    """Per-source default credibility used to populate
+    PredicateEvidence.credibility at insert time. source_type matches
+    Finding.source values ("tavily", "serper", "voc", "ats", "newsroom",
+    "manual", ...)."""
+    __tablename__ = "source_credibility_defaults"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_type: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    credibility: Mapped[float] = mapped_column(Float)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ScenarioSetting(Base):
+    """Key-value bag for global knobs. JSON value so each setting can have
+    whatever shape it needs. Seeded keys:
+      - default_decay_half_life_days → {"value": 60}
+      - independence_assumption_acknowledged → {"value": true}
+      - min_evidence_for_movement → {"value": 0}
+    """
+    __tablename__ = "scenario_settings"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
