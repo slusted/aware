@@ -328,6 +328,25 @@ a:hover { color: var(--accent-hover); }
 }
 .nav-item svg { width: 15px; height: 15px; opacity: 0.9; flex-shrink: 0; }
 
+/* Review-queue badge — appended to a nav-item label by an HTMX-loaded
+   partial. Empty span has zero footprint, so the sidebar stays clean
+   when there's nothing to review. */
+.nav-badge-slot { margin-left: auto; display: inline-flex; }
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
 /* Greyed-out, non-interactive nav items (e.g. Execute placeholders).
    Rendered as <span> not <a>; we still want the row geometry to match
    real items so the section reads as a coherent list. */
@@ -3330,6 +3349,78 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* Source provenance pill — sits next to the predicate name in the
+   card header. Visible only when the predicate isn't user-authored,
+   so the default look stays uncluttered. */
+.predicate-source-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.predicate-source-proposed {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.predicate-source-promoted {
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+
+/* Source filter tabs at the top of /predicates. Chip row with counts.
+   Mirrors the look of the existing tab strip on /scenarios but is its
+   own element so the predicate page reads as a library, not a tab on
+   another page. */
+.predicate-source-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 14px 0 12px;
+  flex-wrap: wrap;
+}
+.predicate-source-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--r);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  text-decoration: none;
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.predicate-source-tab:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.predicate-source-tab.is-active {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+.predicate-source-tab-count {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-1);
+  color: var(--text-tertiary);
+}
+.predicate-source-tab.is-active .predicate-source-tab-count {
+  background: var(--surface-0);
+  color: var(--text-secondary);
 }
 
 .predicate-card-bars {

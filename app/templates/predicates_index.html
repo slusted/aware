@@ -7,6 +7,10 @@
     <h1 class="scenarios-page-title">Predicates</h1>
     <div class="scenarios-page-actions">
       {% if user.role in ("admin", "analyst") %}
+        <button type="button" id="predicates-propose-btn" class="btn-ghost"
+                title="Ask the LLM to scan recent findings + the current roster and propose any new predicates worth tracking. Lands in the Proposed tab.">
+          ✦ Propose
+        </button>
         <button type="button" id="scenarios-recompute-btn" class="btn">Recompute</button>
       {% endif %}
     </div>
@@ -55,7 +59,26 @@
     </div>
   </aside>
 
+  {# Source filter — chip row instead of a dropdown so the review
+     queue is visible at a glance. Each chip carries its current count. #}
+  <nav class="predicate-source-tabs" aria-label="Filter by predicate source">
+    {% set tab_defs = [
+      ('all', 'All', None),
+      ('user', 'User', source_counts.user),
+      ('llm_proposed', 'Proposed', source_counts.llm_proposed),
+      ('llm_promoted', 'Promoted', source_counts.llm_promoted),
+    ] %}
+    {% for slug, label, count in tab_defs %}
+      <a class="predicate-source-tab {% if source == slug %}is-active{% endif %}"
+         href="/predicates?source={{ slug }}{% if sort != 'shifting' %}&sort={{ sort }}{% endif %}{% if category %}&category={{ category }}{% endif %}{% if only_no_recent %}&only_no_recent=1{% endif %}">
+        {{ label }}{% if count is not none %} <span class="predicate-source-tab-count">{{ count }}</span>{% endif %}
+      </a>
+    {% endfor %}
+  </nav>
+
   <form method="get" action="/predicates" class="scenarios-controls-row">
+    {# Preserve the active source filter when changing sort/category/etc. #}
+    <input type="hidden" name="source" value="{{ source }}">
     <label class="filter-label">
       Sort:
       <select name="sort" onchange="this.form.submit()">
@@ -89,13 +112,25 @@
   </form>
 
   {% if summaries %}
+    {# Enable inline Promote/Reject buttons inside the card partial.
+       Only visible to admin/analyst on llm_proposed predicates — gated
+       inside the partial. #}
+    {% set predicate_actions_enabled = True %}
     <div class="predicate-grid">
       {% for s in summaries %}
         {% include "_scenarios_predicate_card.html" %}
       {% endfor %}
     </div>
   {% else %}
-    <p class="muted">No active predicates match the current filters. Try clearing the category filter or the "no recent evidence" toggle.</p>
+    {% if source == 'llm_proposed' %}
+      <p class="muted">
+        No proposed predicates right now. The LLM-suggestion job (Phase 3b) hasn't been wired up yet — until then this queue will stay empty unless an analyst manually creates a predicate with <code>source='llm_proposed'</code> via the Agent.
+      </p>
+    {% elif source == 'llm_promoted' %}
+      <p class="muted">No promoted predicates yet. Predicates that pass review move here.</p>
+    {% else %}
+      <p class="muted">No active predicates match the current filters. Try clearing the category filter or the "no recent evidence" toggle.</p>
+    {% endif %}
   {% endif %}
 </section>
 
@@ -133,6 +168,123 @@
       });
     }
   });
+})();
+
+(() => {
+  // Promote / Reject handlers for llm_proposed predicates. Event-
+  // delegated at the grid root so newly-rendered cards (e.g. after
+  // an HTMX edit swap) keep working without rebinding.
+  const grid = document.querySelector('.predicate-grid');
+  if (!grid) return;
+
+  async function applyAction(card, action) {
+    const key = card.dataset.predicateKey;
+    if (!key) return;
+    const buttons = card.querySelectorAll('.predicate-card-promote, .predicate-card-reject');
+    buttons.forEach((b) => { b.disabled = true; });
+    const verb = action === 'promote' ? 'Promoting…' : 'Rejecting…';
+    const acted = card.querySelector('.predicate-card-' + action);
+    if (acted) acted.textContent = verb;
+    try {
+      const r = await fetch('/api/predicates/' + encodeURIComponent(key) + '/' + action, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' },
+      });
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error('http ' + r.status + ': ' + t);
+      }
+      // Reload — the simplest correct refresh. The card will either
+      // disappear from the proposed queue (now promoted/rejected) or
+      // shift into the promoted tab.
+      location.reload();
+    } catch (err) {
+      buttons.forEach((b) => { b.disabled = false; });
+      if (acted) acted.textContent = action === 'promote' ? '✓ Promote' : '✗ Reject';
+      alert('Failed: ' + err.message);
+    }
+  }
+
+  grid.addEventListener('click', (e) => {
+    const promote = e.target.closest('.predicate-card-promote');
+    if (promote) {
+      e.preventDefault();
+      const card = promote.closest('.predicate-card');
+      if (card && confirm('Promote this proposed predicate?')) applyAction(card, 'promote');
+      return;
+    }
+    const reject = e.target.closest('.predicate-card-reject');
+    if (reject) {
+      e.preventDefault();
+      const card = reject.closest('.predicate-card');
+      if (card && confirm('Reject this predicate? It will be marked inactive.')) applyAction(card, 'reject');
+      return;
+    }
+  });
+})();
+
+(() => {
+  // "Propose" button — kicks off a predicate-proposal Run. Polls the
+  // proposed-count badge for ~90 seconds; once the badge ticks up
+  // (or after timeout), reloads so the new proposals appear in the
+  // Proposed tab. Cheap and obvious; if we want a richer in-page
+  // toast later, the run_id is in the response.
+  const proposeBtn = document.getElementById('predicates-propose-btn');
+  if (proposeBtn) {
+    async function readBadgeCount() {
+      try {
+        const r = await fetch('/partials/predicate-proposed-count', {
+          credentials: 'same-origin',
+          headers: { 'Accept': 'text/html' },
+        });
+        if (!r.ok) return null;
+        const html = (await r.text()).trim();
+        if (!html) return 0;
+        const m = html.match(/>(\d+)</);
+        return m ? parseInt(m[1], 10) : null;
+      } catch (e) { return null; }
+    }
+    proposeBtn.addEventListener('click', async () => {
+      proposeBtn.disabled = true;
+      const orig = proposeBtn.textContent;
+      proposeBtn.textContent = 'Queueing…';
+      const baseline = (await readBadgeCount()) || 0;
+      try {
+        const r = await fetch('/api/runs/predicate-proposal', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Accept': 'application/json' },
+        });
+        if (!r.ok) throw new Error('http ' + r.status + ': ' + (await r.text()));
+        const data = await r.json();
+        proposeBtn.textContent = 'Run #' + data.run_id + ' queued · waiting…';
+        const start = Date.now();
+        const iv = setInterval(async () => {
+          const now = await readBadgeCount();
+          if (now !== null && now > baseline) {
+            clearInterval(iv);
+            location.assign('/predicates?source=llm_proposed');
+            return;
+          }
+          if (Date.now() - start > 90000) {
+            clearInterval(iv);
+            proposeBtn.textContent = 'Run #' + data.run_id + ' · check Runs';
+            setTimeout(() => {
+              proposeBtn.disabled = false;
+              proposeBtn.textContent = orig;
+            }, 4000);
+          }
+        }, 3000);
+      } catch (err) {
+        proposeBtn.textContent = 'Failed — ' + err.message;
+        setTimeout(() => {
+          proposeBtn.disabled = false;
+          proposeBtn.textContent = orig;
+        }, 4000);
+      }
+    });
+  }
 })();
 
 (() => {
