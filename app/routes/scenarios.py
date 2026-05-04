@@ -199,6 +199,14 @@ def predicate_form(
     active_count = sum(
         1 for r in rows_view if r["classified_by"] != "user_rejected"
     )
+    view = (
+        db.query(SignalView)
+        .filter(
+            SignalView.user_id == user.id,
+            SignalView.finding_id == finding_id,
+        )
+        .first()
+    )
     return templates.TemplateResponse(request, "_predicate_form.html", {
         "f": f,
         "evidence_rows": rows_view,
@@ -207,6 +215,7 @@ def predicate_form(
         "strengths": VALID_STRENGTHS,
         "max_per_finding": MAX_EVIDENCE_PER_FINDING,
         "can_add_more": active_count < MAX_EVIDENCE_PER_FINDING,
+        "view_state": view.state if view else None,
     })
 
 
