@@ -778,6 +778,191 @@ def test_confirm_reject_flow():
 
 # ── Main ────────────────────────────────────────────────────────────
 
+# ── Stage-3: dashboard math helpers + service layer ─────────────────────
+
+def test_dashboard_math():
+    section("Stage 3: dashboard math (entropy, velocity, log-odds contribution)")
+    from datetime import datetime as _dt, timedelta as _td
+    from app.scenarios.posterior import (
+        shannon_entropy,
+        velocity_pp,
+        log_odds_contribution,
+        downsample_series,
+    )
+
+    # entropy normalization
+    check("entropy: empty dict -> 0",
+          almost(shannon_entropy({}), 0.0))
+    check("entropy: single state -> 0",
+          almost(shannon_entropy({"a": 1.0}), 0.0))
+    check("entropy: 2-state uniform -> 1.0",
+          almost(shannon_entropy({"a": 0.5, "b": 0.5}), 1.0, tol=1e-9))
+    check("entropy: 3-state uniform -> 1.0 (normalized)",
+          almost(shannon_entropy({"a": 1/3, "b": 1/3, "c": 1/3}), 1.0, tol=1e-9))
+    check("entropy: 2-state {1,0} -> 0",
+          almost(shannon_entropy({"a": 1.0, "b": 0.0}), 0.0, tol=1e-9))
+    h = shannon_entropy({"a": 0.5, "b": 0.3, "c": 0.2})
+    check("entropy: 3-state non-uniform between (0,1)",
+          0 < h < 1, f"got {h}")
+
+    # velocity
+    check("velocity: 0.5 -> 0.55 = +5pp",
+          almost(velocity_pp(0.5, 0.55), 5.0, tol=1e-9))
+    check("velocity: 0.5 -> 0.45 = -5pp",
+          almost(velocity_pp(0.5, 0.45), -5.0, tol=1e-9))
+
+    # log-odds contribution
+    LR = _likelihood_table_for_tests()
+    HL = 60
+    now = _dt(2026, 5, 4, 12, 0, 0)
+    c = log_odds_contribution("support", "strong", 1.0, now, LR, HL, now=now)
+    check("contrib: support/strong, cred 1.0, age 0 = log(3)",
+          almost(c, math.log(3.0), tol=1e-9), f"got {c}")
+    c_half_cred = log_odds_contribution("support", "strong", 0.5, now, LR, HL, now=now)
+    check("contrib: half credibility halves",
+          almost(c_half_cred, math.log(3.0) * 0.5, tol=1e-9))
+    c_old = log_odds_contribution(
+        "support", "strong", 1.0, now - _td(days=HL), LR, HL, now=now,
+    )
+    check("contrib: one half-life halves",
+          almost(c_old, math.log(3.0) * 0.5, tol=1e-9))
+    c_neutral = log_odds_contribution("neutral", "moderate", 1.0, now, LR, HL, now=now)
+    check("contrib: neutral = 0.0", almost(c_neutral, 0.0, tol=1e-9))
+    c_contradict = log_odds_contribution("contradict", "strong", 1.0, now, LR, HL, now=now)
+    check("contrib: contradict/strong = log(0.4) (negative)",
+          almost(c_contradict, math.log(0.4), tol=1e-9) and c_contradict < 0)
+    c_unknown = log_odds_contribution("madeup", "wibble", 1.0, now, LR, HL, now=now)
+    check("contrib: unknown LR returns 0 (no crash)", c_unknown == 0.0)
+
+    # downsampling
+    fake = [(now - _td(days=i), 0.5) for i in range(500)]
+    sampled = downsample_series(fake, max_points=100)
+    check("downsample: 500 → ≤101 points",
+          len(sampled) <= 101, f"got {len(sampled)}")
+    check("downsample: keeps first point",
+          sampled[0] is fake[0])
+    check("downsample: keeps last point",
+          sampled[-1] is fake[-1])
+    short = [(now, 0.5), (now - _td(days=1), 0.6)]
+    check("downsample: under cap returns unchanged",
+          downsample_series(short, max_points=100) is short)
+
+
+def test_dashboard_service():
+    section("Stage 3: dashboard service (predicate_summary, _detail, evidence_list)")
+    from datetime import datetime as _dt
+    from app.scenarios import dashboard as dash
+    from app.scenarios.service import recompute_all
+
+    db = SessionLocal()
+    try:
+        # Wipe leftover state from earlier tests so the counts are
+        # interpretable. Specifically, the confirm_reject flow leaves
+        # the predicate state at prior; that's fine. The sweep test
+        # added some llm-classified evidence on p1 — leave that too.
+        summaries = dash.predicate_summary(db)
+    finally:
+        db.close()
+
+    check("predicate_summary: returns one entry per active predicate",
+          len(summaries) == 8, f"got {len(summaries)}")
+    check("predicate_summary: every entry has states",
+          all(len(s.states) >= 2 for s in summaries))
+    check("predicate_summary: every entry has a dominant_state_key in its state list",
+          all(s.dominant_state_key in {st.state_key for st in s.states} for s in summaries))
+    check("predicate_summary: every entry has 0 or more sparkline points",
+          all(isinstance(s.sparkline_dominant, list) for s in summaries))
+
+    # Sort sanity: shifting puts highest |velocity| first.
+    sorted_by_shifting = dash.sort_summaries(summaries, "shifting")
+    velocities = [abs(s.dominant_state_velocity_pp_30d) for s in sorted_by_shifting]
+    check("sort: shifting is descending by |velocity|",
+          velocities == sorted(velocities, reverse=True))
+    sorted_by_alpha = dash.sort_summaries(summaries, "alpha")
+    keys = [s.key for s in sorted_by_alpha]
+    check("sort: alpha is ascending by key",
+          keys == sorted(keys))
+
+    # Trigger one recompute so snapshot rows actually exist for sparkline.
+    db = SessionLocal()
+    try:
+        recompute_all(db)
+        db.commit()
+    finally:
+        db.close()
+
+    # predicate_detail on p1 should return something.
+    db = SessionLocal()
+    try:
+        detail = dash.predicate_detail(db, "p1")
+    finally:
+        db.close()
+    check("predicate_detail: returns a result for p1", detail is not None)
+    check("predicate_detail: every state in summary has a sparkline key",
+          detail is not None
+          and all(st.state_key in detail.sparklines for st in detail.summary.states))
+
+    # predicate_detail unknown key
+    db = SessionLocal()
+    try:
+        none_detail = dash.predicate_detail(db, "p999")
+    finally:
+        db.close()
+    check("predicate_detail: unknown key returns None", none_detail is None)
+
+    # Confirmed evidence sorts by |contribution| desc (insert two).
+    from app.models import (
+        Predicate as _Pr, PredicateEvidence as _Ev,
+    )
+    db = SessionLocal()
+    try:
+        p1 = db.query(_Pr).filter(_Pr.key == "p1").one()
+        # Wipe prior p1 evidence so sort is unambiguous.
+        db.query(_Ev).filter(_Ev.predicate_id == p1.id).delete()
+        db.commit()
+        now = _dt.utcnow()
+        db.add(_Ev(
+            predicate_id=p1.id, target_state_key="agent",
+            direction="support", strength_bucket="strong",
+            credibility=1.0, classified_by="manual",
+            observed_at=now, confirmed_at=now,
+            notes="big move",
+        ))
+        db.add(_Ev(
+            predicate_id=p1.id, target_state_key="agent",
+            direction="contradict", strength_bucket="weak",
+            credibility=0.5, classified_by="manual",
+            observed_at=now, confirmed_at=now,
+            notes="small move",
+        ))
+        db.commit()
+        d2 = dash.predicate_detail(db, "p1")
+    finally:
+        db.close()
+    check("predicate_detail: ≥2 confirmed evidence rows",
+          d2 is not None and len(d2.evidence_confirmed) >= 2)
+    if d2 and len(d2.evidence_confirmed) >= 2:
+        check("predicate_detail: confirmed sorted by |contribution| desc",
+              abs(d2.evidence_confirmed[0].contribution) >=
+              abs(d2.evidence_confirmed[1].contribution),
+              f"first={d2.evidence_confirmed[0].contribution:.3f}, second={d2.evidence_confirmed[1].contribution:.3f}")
+
+    # evidence_list pagination + total
+    db = SessionLocal()
+    try:
+        rows, total = dash.evidence_list(db, limit=5)
+    finally:
+        db.close()
+    check("evidence_list: returns ≤ limit rows",
+          len(rows) <= 5)
+    check("evidence_list: total ≥ rows returned",
+          total >= len(rows))
+    check("evidence_list: every returned row has confirmed_at set",
+          all(r.confirmed_at is not None for r in rows))
+    check("evidence_list: no rejected rows in result",
+          all(r.classified_by != "user_rejected" for r in rows))
+
+
 def main() -> int:
     print(f"Verify DB: {_tmp}")
     test_pure_math()
@@ -788,6 +973,8 @@ def main() -> int:
     test_classifier_parsing()
     test_sweep_idempotency()
     test_confirm_reject_flow()
+    test_dashboard_math()
+    test_dashboard_service()
 
     print(f"\n{_passes} passed, {len(_failures)} failed.")
     if _failures:

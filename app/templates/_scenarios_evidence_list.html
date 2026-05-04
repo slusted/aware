@@ -1,0 +1,96 @@
+{# Evidence tab — flat confirmed evidence across all predicates.
+   Args:
+     evidence_rows  - list of EvidenceContribView (confirmed only)
+     evidence_total - total confirmed count (for pagination)
+     evidence_sort  - active sort key
+     evidence_offset - current offset
+     evidence_page_size - rows per page
+     valid_evidence_sorts - allowed sort keys
+#}
+<div class="evidence-tab-controls">
+  <form method="get" action="/scenarios" class="evidence-sort-form">
+    <input type="hidden" name="tab" value="evidence">
+    <label class="filter-label">
+      Sort:
+      <select name="evidence_sort" onchange="this.form.submit()">
+        {% for opt in valid_evidence_sorts %}
+          <option value="{{ opt }}"{% if opt == evidence_sort %} selected{% endif %}>
+            {% if opt == 'observed_desc' %}Observed (newest)
+            {% elif opt == 'observed_asc' %}Observed (oldest)
+            {% elif opt == 'confirmed_desc' %}Confirmed (newest)
+            {% elif opt == 'credibility_desc' %}Credibility (highest)
+            {% elif opt == 'contribution_desc' %}|Contribution| (highest)
+            {% else %}{{ opt }}
+            {% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <span class="muted">
+      {{ evidence_offset + 1 }}–{{ [evidence_offset + evidence_rows|length, evidence_total]|min }}
+      of {{ evidence_total }}
+    </span>
+  </form>
+</div>
+
+{% if evidence_rows %}
+  <table class="evidence-table evidence-table-flat">
+    <thead>
+      <tr>
+        <th>Δ</th>
+        <th>Observed</th>
+        <th>Predicate</th>
+        <th>State</th>
+        <th>Direction / strength</th>
+        <th>Cred</th>
+        <th>Source</th>
+        <th>Class</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for ev in evidence_rows %}
+      <tr>
+        <td class="evidence-contribution mono
+          {% if ev.contribution > 0 %}is-positive{% elif ev.contribution < 0 %}is-negative{% endif %}">
+          {% if ev.contribution > 0 %}+{% endif %}{{ ev.contribution|round(2) }}
+        </td>
+        <td class="muted">{{ ev.observed_at.strftime('%Y-%m-%d') }}</td>
+        <td><span class="mono">predicate</span></td>
+        <td>{{ ev.target_state_label }}</td>
+        <td>
+          <span class="evidence-direction-chip is-{{ ev.direction }}">{{ ev.direction }}</span>
+          <span class="muted">/ {{ ev.strength_bucket }}</span>
+        </td>
+        <td class="mono">{{ ev.credibility|round(2) }}</td>
+        <td>
+          {% if ev.finding_url %}
+            <a href="{{ ev.finding_url }}" target="_blank" rel="noopener">
+              {{ (ev.finding_title or '#' ~ ev.finding_id)[:60] }}
+            </a>
+          {% elif ev.finding_id %}
+            <span class="muted">finding #{{ ev.finding_id }}</span>
+          {% else %}
+            <span class="muted">manual</span>
+          {% endif %}
+          {% if ev.competitor %}
+            <span class="muted"> · {{ ev.competitor }}</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ ev.classified_by }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  {# Pagination — pure server-side via query params. #}
+  <nav class="evidence-pagination">
+    {% if evidence_offset > 0 %}
+      <a href="/scenarios?tab=evidence&evidence_sort={{ evidence_sort }}&evidence_offset={{ [evidence_offset - evidence_page_size, 0]|max }}">← prev</a>
+    {% endif %}
+    {% if evidence_offset + evidence_rows|length < evidence_total %}
+      <a href="/scenarios?tab=evidence&evidence_sort={{ evidence_sort }}&evidence_offset={{ evidence_offset + evidence_page_size }}">next →</a>
+    {% endif %}
+  </nav>
+{% else %}
+  <p class="muted">No confirmed evidence yet. Head to <a href="/stream">/stream</a> to start tagging findings.</p>
+{% endif %}

@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}Scenarios{% endblock %}
+
+{% block content %}
+<header class="scenarios-page-head">
+  <div class="scenarios-page-head-row">
+    <h1 class="scenarios-page-title">Scenarios</h1>
+    <div class="scenarios-page-actions">
+      {% if user.role in ("admin", "analyst") %}
+        <button type="button" id="scenarios-recompute-btn" class="btn">Recompute</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <nav class="scenarios-tabs" role="tablist" aria-label="Scenarios sections">
+    {% for t in ("predicates", "scenarios", "evidence", "settings") %}
+      <a class="scenarios-tab {% if tab == t %}is-active{% endif %}"
+         href="/scenarios?tab={{ t }}"
+         role="tab"
+         aria-selected="{% if tab == t %}true{% else %}false{% endif %}">
+        {{ t|capitalize }}
+      </a>
+    {% endfor %}
+  </nav>
+
+  <div class="scenarios-page-meta muted">
+    <span class="scenarios-meta-item independence-pill"
+          title="P(scenario) ∝ Π P(predicate=required_state)^weight assumes predicate independence — see docs/scenarios/01-foundation.md §Known limitations.">
+      ⓘ Independence assumed
+    </span>
+    <span class="scenarios-meta-item">{{ header.n_predicates }} predicate{{ header.n_predicates != 1 and 's' or '' }} active</span>
+    <span class="scenarios-meta-item">{{ header.n_evidence_confirmed }} confirmed evidence</span>
+    {% if header.last_recompute_at %}
+      <span class="scenarios-meta-item">last recompute {{ header.last_recompute_at.strftime('%b %d, %H:%M') }}</span>
+    {% else %}
+      <span class="scenarios-meta-item">no recompute yet</span>
+    {% endif %}
+  </div>
+</header>
+
+{% if tab == "predicates" %}
+  <section class="scenarios-tab-panel" id="tab-predicates" role="tabpanel">
+    <form method="get" action="/scenarios" class="scenarios-controls-row">
+      <input type="hidden" name="tab" value="predicates">
+      <label class="filter-label">
+        Sort:
+        <select name="sort" onchange="this.form.submit()">
+          {% for opt in valid_predicate_sorts %}
+            <option value="{{ opt }}"{% if opt == sort %} selected{% endif %}>
+              {% if opt == 'shifting' %}Most shifting
+              {% elif opt == 'contested' %}Most contested
+              {% elif opt == 'alpha' %}Alphabetical
+              {% elif opt == 'category' %}By category
+              {% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="filter-label">
+        Category:
+        <select name="category" onchange="this.form.submit()">
+          <option value="">All</option>
+          {% for c in categories %}
+            <option value="{{ c }}"{% if c == category %} selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="filter-label">
+        <input type="hidden" name="only_no_recent" value="0">
+        <input type="checkbox" name="only_no_recent" value="1"
+               onchange="this.form.submit()"
+               {% if only_no_recent %}checked{% endif %}>
+        No recent evidence only
+      </label>
+    </form>
+
+    {% if summaries %}
+      <div class="predicate-grid">
+        {% for s in summaries %}
+          {% include "_scenarios_predicate_card.html" %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No active predicates match the current filters. Try clearing the category filter or the "no recent evidence" toggle.</p>
+    {% endif %}
+  </section>
+{% elif tab == "evidence" %}
+  <section class="scenarios-tab-panel" id="tab-evidence" role="tabpanel">
+    {% include "_scenarios_evidence_list.html" %}
+  </section>
+{% elif tab == "scenarios" %}
+  <section class="scenarios-tab-panel" id="tab-scenarios" role="tabpanel">
+    <p class="muted">
+      Scenario probability widget lands in Spec 04. The data is already in the engine —
+      <a href="?tab=evidence">browse the evidence</a> in the meantime.
+    </p>
+  </section>
+{% elif tab == "settings" %}
+  <section class="scenarios-tab-panel" id="tab-settings" role="tabpanel">
+    <p class="muted">
+      Editable assumption controls land in Spec 05. Until then, the knobs (likelihoods, source credibility, decay, priors, scenario weights) live in the DB and are edited via SQL — see <code>docs/scenarios/01-foundation.md</code> §Configurability surface.
+    </p>
+  </section>
+{% endif %}
+
+<script>
+(() => {
+  // Toggle the inline expand panel on Expand-button click. The button
+  // uses HTMX to load the detail partial; we just manage visibility +
+  // aria here. Collapse handler also lives here so the button rendered
+  // inside the HTMX-loaded partial works without per-card listeners.
+  const root = document.querySelector('.predicate-grid');
+  if (!root) return;
+
+  root.addEventListener('htmx:afterSwap', (e) => {
+    // After the detail partial loads, show its mount and flip aria.
+    const mount = e.target.closest('.predicate-detail-mount');
+    if (!mount) return;
+    mount.hidden = false;
+    const card = mount.closest('.predicate-card');
+    const btn = card && card.querySelector('.predicate-card-expand');
+    if (btn) {
+      btn.setAttribute('aria-expanded', 'true');
+      btn.textContent = '▾ Collapse';
+    }
+  });
+
+  root.addEventListener('click', (e) => {
+    // Collapse button (rendered inside the loaded detail partial).
+    const collapse = e.target.closest('.predicate-detail-collapse');
+    if (collapse) {
+      const card = collapse.closest('.predicate-card');
+      const mount = card && card.querySelector('.predicate-detail-mount');
+      const btn = card && card.querySelector('.predicate-card-expand');
+      if (mount) {
+        mount.innerHTML = '';
+        mount.hidden = true;
+      }
+      if (btn) {
+        btn.setAttribute('aria-expanded', 'false');
+        btn.textContent = '▸ Expand';
+      }
+      return;
+    }
+    // Expand button — when clicked while already expanded, collapse instead
+    // of re-loading. HTMX will run for the load case via hx-get.
+    const expand = e.target.closest('.predicate-card-expand');
+    if (expand && expand.getAttribute('aria-expanded') === 'true') {
+      e.preventDefault();
+      e.stopPropagation();
+      // HTMX has already fired by now if the click bubbled. Easier path:
+      // synthesize a Collapse click on the rendered button.
+      const card = expand.closest('.predicate-card');
+      const inner = card && card.querySelector('.predicate-detail-collapse');
+      if (inner) inner.click();
+    }
+  });
+
+  // Recompute button — fire-and-forget. Toast via alert; the page
+  // doesn't auto-refresh because recompute is a queued background job.
+  const recomputeBtn = document.getElementById('scenarios-recompute-btn');
+  if (recomputeBtn) {
+    recomputeBtn.addEventListener('click', async () => {
+      recomputeBtn.disabled = true;
+      const orig = recomputeBtn.textContent;
+      recomputeBtn.textContent = 'Queueing…';
+      try {
+        const r = await fetch('/api/runs/scenarios-recompute', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {'Accept': 'application/json'},
+        });
+        if (!r.ok) throw new Error('http ' + r.status);
+        const data = await r.json();
+        recomputeBtn.textContent = 'Queued · run #' + data.run_id;
+        setTimeout(() => {
+          recomputeBtn.disabled = false;
+          recomputeBtn.textContent = orig;
+        }, 4000);
+      } catch (err) {
+        recomputeBtn.textContent = 'Failed — ' + err;
+        setTimeout(() => {
+          recomputeBtn.disabled = false;
+          recomputeBtn.textContent = orig;
+        }, 3000);
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

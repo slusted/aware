@@ -234,6 +234,95 @@ def compute_sensitivity(
     }
 
 
+# ─── Dashboard math (Stage 3) ───────────────────────────────────────────
+
+def shannon_entropy(probabilities: dict[str, float]) -> float:
+    """Normalized Shannon entropy over a probability distribution.
+
+    Returns a float in [0, 1]:
+      0 = one state has all the mass (no contention; the engine is "sure")
+      1 = uniform distribution (maximum contention; the engine is balanced)
+
+    Normalized by log(N) where N is the number of states with non-zero
+    probability, so a 2-state and 3-state predicate are directly
+    comparable. Sorts the dashboard's "most contested" view.
+    """
+    if not probabilities:
+        return 0.0
+    n = sum(1 for p in probabilities.values() if p > 0)
+    if n <= 1:
+        return 0.0  # single non-zero state = certainty
+    h_raw = 0.0
+    for p in probabilities.values():
+        if p > 0:
+            h_raw -= p * math.log(p)
+    h_max = math.log(n)
+    if h_max <= 0:
+        return 0.0
+    return min(1.0, max(0.0, h_raw / h_max))
+
+
+def velocity_pp(baseline: float, current: float) -> float:
+    """Signed percentage-point delta. Trivial wrapper, lives here so the
+    Stage-3 dashboard imports all its math from one place."""
+    return (current - baseline) * 100.0
+
+
+def log_odds_contribution(
+    direction: str,
+    strength_bucket: str,
+    credibility: float,
+    observed_at: datetime,
+    likelihood_table: dict[tuple[str, str], float],
+    half_life_days: float,
+    now: datetime | None = None,
+) -> float:
+    """Per-evidence log-odds contribution: log(LR) * credibility * decay.
+
+    This is exactly what compute_posterior accumulates onto the target
+    state's logit. Surfaced for the evidence drill-down so movement is
+    fully attributable: "p1 moved +0.18 because of these specific
+    findings, weighted thus."
+
+    Returns 0.0 when the likelihood is missing/invalid (defensive — the
+    table is seeded but a future schema drift shouldn't crash the
+    dashboard render)."""
+    if now is None:
+        now = datetime.utcnow()
+    lr = likelihood_table.get((direction, strength_bucket))
+    if lr is None or lr <= 0:
+        return 0.0
+    return math.log(lr) * credibility * decay_factor(observed_at, now, half_life_days)
+
+
+def downsample_series(
+    series: list,
+    max_points: int = 100,
+) -> list:
+    """Sample a long snapshot series down to roughly `max_points` evenly
+    spaced entries. Always keeps the first and last so endpoints are
+    honest; walks every Nth entry in between. Cheap O(N) — no smoothing,
+    no averaging, just decimation. Acceptable for sparkline rendering at
+    the densities the snapshot table reaches.
+
+    Series elements are opaque to this function — typically tuples of
+    `(timestamp, probability)` but anything subscriptable will do.
+
+    Returns the input unchanged if it's already at or under the cap.
+    """
+    if len(series) <= max_points:
+        return series
+    step = len(series) / max_points
+    out = []
+    i = 0.0
+    while int(i) < len(series):
+        out.append(series[int(i)])
+        i += step
+    if out and out[-1] is not series[-1]:
+        out.append(series[-1])
+    return out
+
+
 def _bumped(
     posteriors: dict[str, dict[str, float]],
     predicate_key: str,

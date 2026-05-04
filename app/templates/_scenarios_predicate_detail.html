@@ -1,0 +1,133 @@
+{# Inline expand panel for one predicate.
+   Loaded via HTMX into #predicate-detail-{key} on click of "Expand".
+
+   Args:
+     detail - PredicateDetail (see app/scenarios/dashboard.py)
+       .summary             - PredicateSummary
+       .sparklines          - dict[state_key, list[(ts, p)]]
+       .evidence_confirmed  - list[EvidenceContribView] (sorted by |contribution|)
+       .evidence_pending    - list[EvidenceContribView]
+       .evidence_rejected   - list[EvidenceContribView]
+#}
+<div class="predicate-detail-panel" data-predicate-key="{{ detail.summary.key }}">
+  <div class="predicate-detail-statement muted">{{ detail.summary.statement }}</div>
+
+  <div class="predicate-detail-sparklines">
+    {% for st in detail.summary.states %}
+      <div class="predicate-detail-sparkline-row">
+        <div class="predicate-detail-sparkline-head">
+          <span class="ordinal-swatch ordinal-{{ st.ordinal_position }}" aria-hidden="true"></span>
+          <span class="predicate-detail-state-label">{{ st.label }}</span>
+          <span class="predicate-detail-velocity mono
+              {% if st.velocity_pp_30d|abs < 1 %}is-flat
+              {% elif st.velocity_pp_30d > 0 %}is-up
+              {% else %}is-down{% endif %}">
+            {% if st.velocity_pp_30d > 0 %}+{% endif %}{{ st.velocity_pp_30d|round(1) }}pp · 30d
+          </span>
+        </div>
+        {% with series=detail.sparklines[st.state_key], color_var='var(--ordinal-' ~ st.ordinal_position ~ ')', height_px=40 %}
+          {% include "_scenarios_sparkline.html" %}
+        {% endwith %}
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="predicate-detail-evidence">
+    <h4 class="predicate-detail-h">Evidence (sorted by |contribution|)</h4>
+    {% if detail.evidence_confirmed %}
+      <table class="evidence-table">
+        <thead>
+          <tr>
+            <th>Δ logit</th>
+            <th>Observed</th>
+            <th>State</th>
+            <th>Direction / strength</th>
+            <th>Cred</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for ev in detail.evidence_confirmed %}
+          <tr>
+            <td class="evidence-contribution mono
+              {% if ev.contribution > 0 %}is-positive{% elif ev.contribution < 0 %}is-negative{% endif %}">
+              {% if ev.contribution > 0 %}+{% endif %}{{ ev.contribution|round(2) }}
+            </td>
+            <td class="muted">{{ ev.observed_at.strftime('%Y-%m-%d') }}</td>
+            <td>{{ ev.target_state_label }}</td>
+            <td>
+              <span class="evidence-direction-chip is-{{ ev.direction }}">{{ ev.direction }}</span>
+              <span class="muted">/ {{ ev.strength_bucket }}</span>
+            </td>
+            <td class="mono">{{ ev.credibility|round(2) }}</td>
+            <td>
+              {% if ev.finding_url %}
+                <a href="{{ ev.finding_url }}" target="_blank" rel="noopener">
+                  {{ (ev.finding_title or '#' ~ ev.finding_id)[:80] }}
+                </a>
+              {% elif ev.finding_id %}
+                <span class="muted">finding #{{ ev.finding_id }}</span>
+              {% else %}
+                <span class="muted">manual</span>
+              {% endif %}
+              {% if ev.competitor %}
+                <span class="muted"> · {{ ev.competitor }}</span>
+              {% endif %}
+              {% if ev.notes %}
+                <div class="evidence-notes muted">{{ ev.notes }}</div>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No confirmed evidence on this predicate yet.</p>
+    {% endif %}
+
+    {% set hidden_total = detail.evidence_pending|length + detail.evidence_rejected|length %}
+    {% if hidden_total > 0 %}
+      <details class="evidence-hidden-toggle">
+        <summary class="muted">▸ Show pending + rejected ({{ hidden_total }} hidden)</summary>
+        <table class="evidence-table evidence-table-muted">
+          <thead>
+            <tr>
+              <th>Δ</th><th>Observed</th><th>State</th><th>Dir / str</th><th>Cred</th><th>Source</th><th>Class</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for ev in detail.evidence_pending + detail.evidence_rejected %}
+            <tr class="evidence-row-{{ ev.classified_by }}">
+              <td class="mono muted">0.00</td>
+              <td class="muted">{{ ev.observed_at.strftime('%Y-%m-%d') }}</td>
+              <td>{{ ev.target_state_label }}</td>
+              <td>
+                <span class="evidence-direction-chip is-{{ ev.direction }}">{{ ev.direction }}</span>
+                <span class="muted">/ {{ ev.strength_bucket }}</span>
+              </td>
+              <td class="mono">{{ ev.credibility|round(2) }}</td>
+              <td>
+                {% if ev.finding_url %}
+                  <a href="{{ ev.finding_url }}" target="_blank" rel="noopener">
+                    {{ (ev.finding_title or '#' ~ ev.finding_id)[:60] }}
+                  </a>
+                {% elif ev.finding_id %}
+                  <span class="muted">finding #{{ ev.finding_id }}</span>
+                {% else %}
+                  <span class="muted">manual</span>
+                {% endif %}
+              </td>
+              <td class="muted">{{ ev.classified_by }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </details>
+    {% endif %}
+  </div>
+
+  <div class="predicate-detail-foot">
+    <button type="button" class="btn-ghost predicate-detail-collapse"
+            data-predicate-key="{{ detail.summary.key }}">Collapse</button>
+  </div>
+</div>
