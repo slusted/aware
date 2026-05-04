@@ -1,0 +1,49 @@
+{# One scenario card in the grid.
+   Args:
+     s - ScenarioSummary (see app/scenarios/dashboard.py)
+   Color cycling uses Jinja's `loop.index0` from the enclosing for-loop.
+   Clicking Expand HTMX-loads the detail partial via
+   /scenarios/scenarios/{key}/expand.
+#}
+{% set palette_idx = (loop.index0 if loop is defined else 0) % 6 %}
+<article id="scenario-card-{{ s.key }}" class="scenario-card" data-scenario-key="{{ s.key }}">
+  <header class="scenario-card-head">
+    <div class="scenario-card-title">
+      <span class="scenario-card-key mono">{{ s.key|upper }}</span>
+      <span class="scenario-card-name">{{ s.name }}</span>
+    </div>
+    <span class="scenario-card-rank">#{{ s.rank }}</span>
+  </header>
+
+  <div class="scenario-card-bar-wrap" title="Current probability under the independence-assumption derivation">
+    <div class="scenario-card-bar">
+      <div class="scenario-card-bar-fill ordinal-{{ palette_idx }}"
+           style="width: {{ (s.probability * 100)|round(1) }}%"></div>
+    </div>
+    <span class="scenario-card-bar-value mono">{{ (s.probability * 100)|round(1) }}%</span>
+  </div>
+
+  {% if s.description %}
+    <p class="scenario-card-description muted">{{ s.description[:200] }}{% if s.description|length > 200 %}…{% endif %}</p>
+  {% endif %}
+
+  <footer class="scenario-card-foot">
+    <span class="scenario-card-stat muted">{{ s.constraint_count }} constraint{{ s.constraint_count != 1 and 's' or '' }}</span>
+    {% if s.weakest_link_predicate_key %}
+      <span class="scenario-card-stat muted"
+            title="Predicate that's pulling this scenario down most">
+        weakest: {{ s.weakest_link_predicate_key }} {{ s.weakest_link_required_state_label }}
+        ({{ (s.weakest_link_current_p * 100)|round(0)|int }}%)
+      </span>
+    {% endif %}
+    <button type="button" class="btn-ghost scenario-card-expand"
+            hx-get="/scenarios/scenarios/{{ s.key }}/expand"
+            hx-target="#scenario-detail-{{ s.key }}"
+            hx-swap="innerHTML"
+            data-scenario-key="{{ s.key }}"
+            aria-expanded="false"
+            aria-controls="scenario-detail-{{ s.key }}">▸ Expand</button>
+  </footer>
+
+  <div id="scenario-detail-{{ s.key }}" class="scenario-detail-mount" hidden></div>
+</article>

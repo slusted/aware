@@ -538,6 +538,11 @@ def scenarios_index(
             db, sort=evidence_sort, offset=evidence_offset,
         )
 
+    # Stage-4: scenarios tab populated from the headless service.
+    scenario_summaries: list = []
+    if tab == "scenarios":
+        scenario_summaries = dashboard_svc.scenario_summary(db)
+
     return templates.TemplateResponse(request, "scenarios_index.html", {
         "user": user,
         "tab": tab,
@@ -546,6 +551,7 @@ def scenarios_index(
         "categories": categories,
         "only_no_recent": bool(only_no_recent),
         "summaries": summaries,
+        "scenario_summaries": scenario_summaries,
         "evidence_sort": evidence_sort,
         "evidence_offset": evidence_offset,
         "evidence_rows": evidence_rows,
@@ -596,5 +602,25 @@ def predicate_expand(
     if detail is None:
         raise HTTPException(404, f"predicate {predicate_key!r} not found or inactive")
     return templates.TemplateResponse(request, "_scenarios_predicate_detail.html", {
+        "detail": detail,
+    })
+
+
+@router.get(
+    "/scenarios/scenarios/{scenario_key}/expand",
+    response_class=HTMLResponse,
+)
+def scenario_expand(
+    scenario_key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """HTMX partial: the inline expand panel for one scenario card.
+    Same shape as predicate_expand — targets `#scenario-detail-{key}`."""
+    detail = dashboard_svc.scenario_detail(db, scenario_key)
+    if detail is None:
+        raise HTTPException(404, f"scenario {scenario_key!r} not found or inactive")
+    return templates.TemplateResponse(request, "_scenarios_scenario_detail.html", {
         "detail": detail,
     })

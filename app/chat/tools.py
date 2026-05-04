@@ -858,6 +858,14 @@ TOOLS: list[Tool] = [
 ]
 
 
+# Stage-4 (docs/scenarios/04-scenario-dashboard.md): scenarios chat tools
+# live in app/scenarios/chat_tools.py and are appended here so the
+# global TOOLS list stays the single registry the agent reads from.
+# Imported lazily to avoid a circular at module-load time.
+from ..scenarios.chat_tools import SCENARIO_TOOLS  # noqa: E402
+TOOLS.extend(SCENARIO_TOOLS)
+
+
 _BY_NAME: dict[str, Tool] = {t.name: t for t in TOOLS}
 
 

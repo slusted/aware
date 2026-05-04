@@ -1,0 +1,86 @@
+{# Inline expand panel for one scenario.
+   Loaded via HTMX into #scenario-detail-{key} on click of "Expand".
+
+   Args:
+     detail - ScenarioDetail (see app/scenarios/dashboard.py)
+       .summary                       - ScenarioSummary
+       .contributions                 - list[ScenarioContribution] (sorted)
+       .sensitivity_to_predicates     - list[SensitivityRow] (sorted by |Δ|)
+#}
+<div class="scenario-detail-panel" data-scenario-key="{{ detail.summary.key }}">
+  {% if detail.summary.description %}
+    <div class="scenario-detail-description muted">{{ detail.summary.description }}</div>
+  {% endif %}
+
+  <div class="scenario-detail-section">
+    <h4 class="scenario-detail-h">Contributions (weight × log P(required state))</h4>
+    {% if detail.contributions %}
+      <table class="evidence-table scenario-contributions">
+        <thead>
+          <tr>
+            <th>Δ logit</th>
+            <th>Weight</th>
+            <th>Predicate</th>
+            <th>Required state</th>
+            <th>Current P</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for c in detail.contributions %}
+          <tr>
+            <td class="evidence-contribution mono
+              {% if c.contribution > 0 %}is-positive{% elif c.contribution < 0 %}is-negative{% endif %}">
+              {% if c.contribution > -1e308 %}
+                {% if c.contribution > 0 %}+{% endif %}{{ c.contribution|round(2) }}
+              {% else %}
+                −∞
+              {% endif %}
+            </td>
+            <td class="mono">{{ c.weight|round(2) }}</td>
+            <td>
+              <span class="mono">{{ c.predicate_key }}</span>
+              <span class="muted">{{ c.predicate_name[:40] }}</span>
+            </td>
+            <td>{{ c.required_state_label }}</td>
+            <td class="mono">{{ (c.current_p_required * 100)|round(0)|int }}%</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No contributions — this scenario has no predicate links seeded.</p>
+    {% endif %}
+  </div>
+
+  <div class="scenario-detail-section">
+    <h4 class="scenario-detail-h">Sensitivity (∂P({{ detail.summary.key|upper }}) per +1pp move)</h4>
+    {% if detail.sensitivity_to_predicates %}
+      {% set max_abs = (detail.sensitivity_to_predicates|map(attribute='delta_per_pp')|map('abs')|list|max) or 1.0 %}
+      <ul class="sensitivity-list">
+      {% for r in detail.sensitivity_to_predicates %}
+        {% set width = ((r.delta_per_pp|abs) / max_abs * 100)|round(1) %}
+        <li class="sensitivity-row {% if r.delta_per_pp < 0 %}is-negative{% else %}is-positive{% endif %}">
+          <span class="sensitivity-value mono">
+            {% if r.delta_per_pp > 0 %}+{% endif %}{{ r.delta_per_pp|round(2) }}pp
+          </span>
+          <span class="sensitivity-label">
+            <span class="mono">{{ r.predicate_key }}</span>
+            {{ r.target_state_label }}
+            {% if r.delta_per_pp < 0 %}<span class="muted">(pulls away)</span>{% endif %}
+          </span>
+          <span class="sensitivity-bar">
+            <span class="sensitivity-bar-fill" style="width: {{ width }}%"></span>
+          </span>
+        </li>
+      {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No sensitivity data — scenario has no constraints.</p>
+    {% endif %}
+  </div>
+
+  <div class="scenario-detail-foot">
+    <button type="button" class="btn-ghost scenario-detail-collapse"
+            data-scenario-key="{{ detail.summary.key }}">Collapse</button>
+  </div>
+</div>
