@@ -22,10 +22,62 @@
     <div class="label">Findings · 24h</div>
     <div class="value">{{ findings_today }}</div>
   </div>
-  <div class="stat">
-    <div class="label">Spend · 24h</div>
-    <div class="value">${{ '%.4f' % cost_today }}</div>
-    <div class="sub"><a href="/settings/usage">details →</a></div>
+</div>
+
+{# Spend panel — the dashboard's reframed job is "engine health + spend",
+   so this gets its own panel rather than a single stat card. Three
+   windows let you read both the day's burn and the trend at a glance.
+   The model breakdown answers "where is the money going" without
+   leaving the page. Full detail lives at /settings/usage. #}
+<div class="panel">
+  <div class="panel-header">
+    <h2>Spend</h2>
+    <a href="/settings/usage" class="muted" style="font-size:12px">details →</a>
+  </div>
+  <div class="panel-body">
+    <div class="stat-grid">
+      <div class="stat">
+        <div class="label">24h</div>
+        <div class="value">${{ '%.2f' % spend.day.cost }}</div>
+        <div class="sub muted">{{ spend.day.calls }} call{{ '' if spend.day.calls == 1 else 's' }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">7d</div>
+        <div class="value">${{ '%.2f' % spend.week.cost }}</div>
+        <div class="sub muted">{{ spend.week.calls }} call{{ '' if spend.week.calls == 1 else 's' }}</div>
+      </div>
+      <div class="stat">
+        <div class="label">30d</div>
+        <div class="value">${{ '%.2f' % spend.month.cost }}</div>
+        <div class="sub muted">{{ spend.month.calls }} call{{ '' if spend.month.calls == 1 else 's' }}</div>
+      </div>
+    </div>
+
+    {% if top_models %}
+      <h3 style="font-size:12px; font-weight:500; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:0.04em; margin: 18px 0 8px">Top spend · 30d</h3>
+      <table class="spend-breakdown">
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th>Model</th>
+            <th style="text-align:right">Calls</th>
+            <th style="text-align:right">Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in top_models %}
+            <tr>
+              <td class="muted">{{ row.provider }}</td>
+              <td>{{ row.model }}</td>
+              <td style="text-align:right">{{ row.calls }}</td>
+              <td style="text-align:right" class="mono">${{ '%.2f' % row.cost }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted" style="margin-top:16px; font-size:12px">No usage recorded in the last 30 days.</p>
+    {% endif %}
   </div>
 </div>
 
