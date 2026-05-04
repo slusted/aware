@@ -3116,6 +3116,61 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   flex-wrap: wrap;
 }
 
+/* Per-tab explainer box — sits at the top of each Scenarios tab body and
+   does two jobs: (1) static prose teaching what a predicate / scenario /
+   evidence row is, (2) a live counts strip so the user always sees the
+   shape of the system. Reuses the .brief-meta layout so the metric strip
+   matches the Market brief / research panels. */
+.tab-explainer {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px;
+  margin: 4px 0 18px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 4%, var(--surface-0)) 0%,
+    var(--surface-0) 100%
+  );
+}
+.tab-explainer-body { display: flex; flex-direction: column; gap: 6px; }
+.tab-explainer-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+.tab-explainer-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  max-width: 760px;
+}
+.tab-explainer-text strong { color: var(--text-primary); font-weight: 600; }
+.tab-explainer-text em { color: var(--text-primary); font-style: normal; opacity: 0.85; }
+.tab-explainer-stats.brief-meta {
+  margin: 0;
+  padding-top: 10px;
+  padding-bottom: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: none;
+  gap: 0;
+}
+.tab-explainer-stats .brief-meta-value { font-size: 16px; font-weight: 600; }
+
+@media (max-width: 720px) {
+  .tab-explainer { padding: 14px; }
+  .tab-explainer-stats.brief-meta { gap: 12px 20px; }
+  .tab-explainer-stats .brief-meta-item {
+    padding: 0;
+    border-right: none;
+  }
+}
+
 /* Card grid — auto-fill so the layout adapts to viewport without media queries */
 .predicate-grid {
   display: grid;

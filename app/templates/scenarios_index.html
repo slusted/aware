@@ -40,6 +40,39 @@
 
 {% if tab == "predicates" %}
   <section class="tab-panel" id="tab-predicates" role="tabpanel">
+    <aside class="tab-explainer">
+      <div class="tab-explainer-body">
+        <h2 class="tab-explainer-title">What is a predicate?</h2>
+        <p class="tab-explainer-text">
+          A <strong>predicate</strong> is a single claim about the market that
+          can take one of a fixed set of states — e.g. <em>"do buyers prefer
+          self-serve or sales-led?"</em>. Each piece of evidence we tag nudges
+          the predicate's posterior toward one state. Predicates are the atoms
+          scenarios are built from.
+        </p>
+      </div>
+      <div class="tab-explainer-stats brief-meta">
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Active</span>
+          <span class="brief-meta-value">{{ header.n_predicates }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Categories</span>
+          <span class="brief-meta-value">{{ header.n_predicate_categories }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Confirmed evidence</span>
+          <span class="brief-meta-value">{{ header.n_evidence_confirmed }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Last recompute</span>
+          <span class="brief-meta-value">
+            {% if header.last_recompute_at %}{{ header.last_recompute_at.strftime('%b %d, %H:%M') }}{% else %}—{% endif %}
+          </span>
+        </div>
+      </div>
+    </aside>
+
     <form method="get" action="/scenarios" class="scenarios-controls-row">
       <input type="hidden" name="tab" value="predicates">
       <label class="filter-label">
@@ -86,10 +119,77 @@
   </section>
 {% elif tab == "evidence" %}
   <section class="tab-panel" id="tab-evidence" role="tabpanel">
+    <aside class="tab-explainer">
+      <div class="tab-explainer-body">
+        <h2 class="tab-explainer-title">What is evidence?</h2>
+        <p class="tab-explainer-text">
+          <strong>Evidence</strong> is a single finding tagged against a
+          predicate — direction (support / contradict / neutral), strength,
+          and a credibility weight. Tagged on the Stream, proposed by the
+          classifier sweep or added manually. Each row's contribution decays
+          over time and feeds the predicate posterior.
+        </p>
+      </div>
+      <div class="tab-explainer-stats brief-meta">
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Confirmed</span>
+          <span class="brief-meta-value">{{ header.n_evidence_confirmed }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Pending</span>
+          <span class="brief-meta-value">{{ header.n_evidence_pending }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Predicates covered</span>
+          <span class="brief-meta-value">{{ header.n_predicates }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Last recompute</span>
+          <span class="brief-meta-value">
+            {% if header.last_recompute_at %}{{ header.last_recompute_at.strftime('%b %d, %H:%M') }}{% else %}—{% endif %}
+          </span>
+        </div>
+      </div>
+    </aside>
+
     {% include "_scenarios_evidence_list.html" %}
   </section>
 {% elif tab == "scenarios" %}
   <section class="tab-panel" id="tab-scenarios" role="tabpanel">
+    <aside class="tab-explainer">
+      <div class="tab-explainer-body">
+        <h2 class="tab-explainer-title">What is a scenario?</h2>
+        <p class="tab-explainer-text">
+          A <strong>scenario</strong> is a future state of the market defined
+          as a weighted bundle of predicates each pinned to a required state —
+          e.g. <em>"market consolidates around two sales-led incumbents"</em>.
+          Its probability is the weighted product of its predicates' current
+          posteriors (independence assumed). Use scenarios to track where the
+          weight of evidence is pointing across competitors.
+        </p>
+      </div>
+      <div class="tab-explainer-stats brief-meta">
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Active</span>
+          <span class="brief-meta-value">{{ header.n_scenarios }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Predicates in play</span>
+          <span class="brief-meta-value">{{ header.n_predicates }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Confirmed evidence</span>
+          <span class="brief-meta-value">{{ header.n_evidence_confirmed }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Last recompute</span>
+          <span class="brief-meta-value">
+            {% if header.last_recompute_at %}{{ header.last_recompute_at.strftime('%b %d, %H:%M') }}{% else %}—{% endif %}
+          </span>
+        </div>
+      </div>
+    </aside>
+
     {% if scenario_summaries %}
       <div class="scenario-grid">
         {% for s in scenario_summaries %}
@@ -102,9 +202,40 @@
   </section>
 {% elif tab == "settings" %}
   <section class="tab-panel" id="tab-settings" role="tabpanel">
-    <p class="muted">
-      Editable assumption controls land in Spec 05. Until then, the knobs (likelihoods, source credibility, decay, priors, scenario weights) live in the DB and are edited via SQL — see <code>docs/scenarios/01-foundation.md</code> §Configurability surface.
-    </p>
+    <aside class="tab-explainer">
+      <div class="tab-explainer-body">
+        <h2 class="tab-explainer-title">What lives in settings?</h2>
+        <p class="tab-explainer-text">
+          The knobs that drive the Bayesian math: <strong>likelihood ratios</strong>
+          (how strongly each direction × strength bucket moves a state),
+          <strong>source credibility</strong>, <strong>decay half-life</strong>
+          (how fast old evidence fades), <strong>priors</strong>, and
+          <strong>scenario weights</strong>. Editable controls land in Spec 05;
+          for now these live in the DB and are tuned via SQL — see
+          <code>docs/scenarios/01-foundation.md</code> §Configurability surface.
+        </p>
+      </div>
+      <div class="tab-explainer-stats brief-meta">
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Predicates</span>
+          <span class="brief-meta-value">{{ header.n_predicates }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Scenarios</span>
+          <span class="brief-meta-value">{{ header.n_scenarios }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Confirmed evidence</span>
+          <span class="brief-meta-value">{{ header.n_evidence_confirmed }}</span>
+        </div>
+        <div class="brief-meta-item">
+          <span class="brief-meta-label">Last recompute</span>
+          <span class="brief-meta-value">
+            {% if header.last_recompute_at %}{{ header.last_recompute_at.strftime('%b %d, %H:%M') }}{% else %}—{% endif %}
+          </span>
+        </div>
+      </div>
+    </aside>
   </section>
 {% endif %}
 

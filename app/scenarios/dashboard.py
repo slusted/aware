@@ -768,9 +768,25 @@ def header_counts(db: Session) -> dict:
         .filter(Predicate.active.is_(True))
         .scalar()
     ) or 0
+    n_predicate_categories = (
+        db.query(_func.count(_func.distinct(Predicate.category)))
+        .filter(Predicate.active.is_(True))
+        .scalar()
+    ) or 0
+    n_scenarios = (
+        db.query(_func.count(Scenario.id))
+        .filter(Scenario.active.is_(True))
+        .scalar()
+    ) or 0
     n_evidence_confirmed = (
         db.query(_func.count(PredicateEvidence.id))
         .filter(PredicateEvidence.confirmed_at.isnot(None))
+        .filter(PredicateEvidence.classified_by != "user_rejected")
+        .scalar()
+    ) or 0
+    n_evidence_pending = (
+        db.query(_func.count(PredicateEvidence.id))
+        .filter(PredicateEvidence.confirmed_at.is_(None))
         .filter(PredicateEvidence.classified_by != "user_rejected")
         .scalar()
     ) or 0
@@ -779,6 +795,9 @@ def header_counts(db: Session) -> dict:
     )
     return {
         "n_predicates": int(n_predicates),
+        "n_predicate_categories": int(n_predicate_categories),
+        "n_scenarios": int(n_scenarios),
         "n_evidence_confirmed": int(n_evidence_confirmed),
+        "n_evidence_pending": int(n_evidence_pending),
         "last_recompute_at": last_recompute_at,
     }
