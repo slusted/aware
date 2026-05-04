@@ -1,7 +1,7 @@
 """predicate_reviews + predicate_proposals + predicate_evidence.fitness*
 
 Revision ID: dd4q0r1s2t3u4
-Revises: cc3p9q0r1s2t3
+Revises: aa3agentbrnd1
 Create Date: 2026-05-04 00:00:00.000000
 
 Stage 6 — monthly ontology hygiene (docs/scenarios/06-predicate-review.md).
@@ -19,6 +19,12 @@ Adds:
 Drop-then-create on each new table so a half-applied previous run on a
 Railway box doesn't trap the container in a hot crash-loop. Same idiom
 as z2o6p7q8r9s0 / w9l3m4n5o6p7.
+
+Originally landed (#107) with `down_revision = 'cc3p9q0r1s2t3'`, which
+collided with the `aa3agentbrnd1` agent-brand migration (#106) that
+also chains off `cc3p9q0r1s2t3`. Production crashed at boot with
+"multiple heads"; we now chain after `aa3agentbrnd1` so the linear
+chain is cc3 → aa3 → dd4.
 """
 from alembic import op
 import sqlalchemy as sa
@@ -26,7 +32,7 @@ from sqlalchemy import inspect
 
 
 revision = 'dd4q0r1s2t3u4'
-down_revision = 'cc3p9q0r1s2t3'
+down_revision = 'aa3agentbrnd1'
 branch_labels = None
 depends_on = None
 
