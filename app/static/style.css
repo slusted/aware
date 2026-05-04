@@ -1885,19 +1885,19 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     padding: 0;
     margin-left: auto;
     cursor: pointer;
-    color: var(--text-secondary);
-    border: 1px solid var(--border-strong);
+    color: var(--accent);
+    border: none;
     border-radius: var(--r);
-    background: var(--surface-0);
+    background: transparent;
     transition: color 80ms ease, background 80ms ease;
   }
-  .mobile-nav-btn svg { width: 16px; height: 16px; }
-  .mobile-nav-btn:hover { color: var(--text-primary); background: var(--surface-2); }
+  .mobile-nav-btn svg { width: 22px; height: 22px; stroke-width: 2; }
+  .mobile-nav-btn:hover { color: var(--accent-hover); background: var(--accent-soft); }
 
   /* Collapse by default: nav sections, agent launcher, and footer hidden until toggled. */
   .sidebar .nav-section,
@@ -1921,8 +1921,8 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
   }
 
   .mobile-nav-toggle:checked ~ .brand .mobile-nav-btn {
-    color: var(--text-primary);
-    background: var(--surface-2);
+    color: var(--accent-hover);
+    background: var(--accent-soft);
   }
 
   .topbar { padding: 12px 16px; }
