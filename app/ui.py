@@ -88,7 +88,64 @@ def company_page(request: Request, db: Session = Depends(get_db), user=Depends(g
 
 @router.get("/customer", response_class=HTMLResponse)
 def customer_page(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    return _context_page(request, db, user, scope="customer", title="Customer")
+    return _context_page(request, db, user, scope="customer", title="Customers")
+
+
+# JTBD section frame for the customer brief. Order = render order; the
+# customer_brief skill is instructed to produce these headings in this
+# order. Each entry is (heading_in_markdown, ui_label, helper_copy).
+# When a brief was generated under the older skill (Who we serve / What
+# matters to them now / Pain signals / Shifts / Implications / Watch
+# list), none of these match — the page falls back to the legacy
+# single-blob render. After one regeneration the JTBD view takes over.
+CUSTOMER_JTBD_SECTIONS: list[tuple[str, str, str]] = [
+    ("Jobs to be done",
+     "Jobs to be done",
+     "The functional jobs customers are hiring solutions for — framed as outcomes, not features."),
+    ("How well solved today",
+     "How well solved today",
+     "For each top job: how well-served it is, the dominant solution shape, and where the gap is."),
+    ("Leaders & laggards",
+     "Leaders & laggards",
+     "Who's currently winning each job, and who's notably falling behind."),
+    ("Constraints",
+     "Constraints",
+     "What's holding back better solutions — tech, regulation, behaviour, economics, data, liquidity."),
+    ("Solution spaces being explored",
+     "Solution spaces being explored",
+     "New approaches being attempted to crack the constrained jobs, and how mature each looks."),
+    ("Shifts vs. prior brief",
+     "Shifts vs. prior brief",
+     "What changed in the JTBD landscape since last regen."),
+    ("Watch list",
+     "Watch list",
+     "Behaviours and emerging mechanisms to look for in the next research cycle."),
+]
+
+
+def _parse_jtbd_sections(body_md: str) -> dict[str, str]:
+    """Split a markdown brief on '## Heading' lines and return
+    {heading_text: section_body}. Headings the brief omits are absent
+    from the dict — the caller decides whether to show empty-state.
+    Case-sensitive, trims whitespace.
+    """
+    if not body_md:
+        return {}
+    sections: dict[str, str] = {}
+    current_heading: str | None = None
+    current_lines: list[str] = []
+    for raw in body_md.splitlines():
+        line = raw.rstrip()
+        if line.startswith("## "):
+            if current_heading is not None:
+                sections[current_heading] = "\n".join(current_lines).strip()
+            current_heading = line[3:].strip()
+            current_lines = []
+        elif current_heading is not None:
+            current_lines.append(raw)
+    if current_heading is not None:
+        sections[current_heading] = "\n".join(current_lines).strip()
+    return sections
 
 
 CHAT_EXAMPLE_PROMPTS = [
@@ -212,6 +269,8 @@ def _context_page(request, db, user, *, scope: str, title: str):
     # the customer_watch sweep.
     discussion = []
     watch = None
+    jtbd_sections: list[dict] = []
+    jtbd_view = False
     if scope == "customer":
         # Reddit VoC findings — pulled regardless of whether they came from the
         # customer Full scan or from an individual competitor's full scan. Both
@@ -231,6 +290,22 @@ def _context_page(request, db, user, *, scope: str, title: str):
         except Exception:
             watch = {}
 
+        # If the latest brief was produced under the JTBD skill, parse it
+        # into structured sections so the page can render each as its own
+        # labeled panel. If at least one JTBD heading matches, we switch
+        # into the JTBD view; otherwise we fall back to the legacy
+        # single-markdown-blob render and the user sees a banner suggesting
+        # regeneration.
+        parsed = _parse_jtbd_sections(latest.body_md if latest else "")
+        for heading, ui_label, helper in CUSTOMER_JTBD_SECTIONS:
+            jtbd_sections.append({
+                "heading": heading,
+                "label": ui_label,
+                "helper": helper,
+                "body_md": parsed.get(heading, ""),
+            })
+        jtbd_view = any(s["body_md"] for s in jtbd_sections)
+
     return templates.TemplateResponse(request, "context_page.html", {
         "user": user,
         "scope": scope,
@@ -240,6 +315,8 @@ def _context_page(request, db, user, *, scope: str, title: str):
         "docs": docs,
         "discussion": discussion,
         "watch": watch,
+        "jtbd_sections": jtbd_sections,
+        "jtbd_view": jtbd_view,
     })
 
 
