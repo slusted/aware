@@ -343,6 +343,63 @@ def _persist(db: Session,
     return p
 
 
+# ─── Single-proposal entry point (used by the Agent chat tool) ──────────
+
+def persist_proposal(
+    db: Session,
+    proposal: dict,
+    *,
+    model: str = "agent",
+    now: datetime | None = None,
+) -> tuple[Predicate | None, str | None]:
+    """Validate + dedupe + persist one proposal dict in the same shape
+    the batch proposer accepts. Used by the Agent's `predicate_propose`
+    chat tool so a single in-conversation proposal lands in the review
+    queue with the same provenance shape as a batch run.
+
+    Returns (persisted Predicate, None) on success or (None, reason)
+    on rejection. Commits on success.
+    """
+    now = now or datetime.utcnow()
+
+    # Verify finding_ids exist as real Finding rows. The batch proposer
+    # constrains this to the current batch; the chat tool has no such
+    # batch, so we look up the citations directly.
+    cited_ids = proposal.get("source_finding_ids") or []
+    if not isinstance(cited_ids, list):
+        return None, "source_finding_ids must be a list"
+    valid_ids: set[int] = set()
+    if cited_ids:
+        try:
+            int_ids = [int(v) for v in cited_ids]
+        except (TypeError, ValueError):
+            return None, "source_finding_ids must contain integers"
+        # One query rather than N. Empty result = none of the ids exist.
+        rows = (
+            db.query(Finding.id)
+            .filter(Finding.id.in_(int_ids))
+            .all()
+        )
+        valid_ids = {r[0] for r in rows}
+
+    parsed, err = _validate_proposal(proposal, valid_ids)
+    if not parsed:
+        return None, err
+
+    existing = db.query(Predicate).order_by(Predicate.id).all()
+    if _is_duplicate(parsed, existing):
+        return None, "overlaps an existing predicate (name token-overlap >= 80%)"
+
+    try:
+        parsed.key = _resolve_key(parsed.key, {p.key for p in existing})
+    except ValueError as e:
+        return None, str(e)
+
+    pred = _persist(db, parsed, model=model, now=now)
+    db.commit()
+    return pred, None
+
+
 # ─── Entry point ────────────────────────────────────────────────────────
 
 def propose_predicates(
