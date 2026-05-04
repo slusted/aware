@@ -328,6 +328,25 @@ a:hover { color: var(--accent-hover); }
 }
 .nav-item svg { width: 15px; height: 15px; opacity: 0.9; flex-shrink: 0; }
 
+/* Review-queue badge — appended to a nav-item label by an HTMX-loaded
+   partial. Empty span has zero footprint, so the sidebar stays clean
+   when there's nothing to review. */
+.nav-badge-slot { margin-left: auto; display: inline-flex; }
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
 /* Greyed-out, non-interactive nav items (e.g. Execute placeholders).
    Rendered as <span> not <a>; we still want the row geometry to match
    real items so the section reads as a coherent list. */

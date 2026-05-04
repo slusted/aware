@@ -442,6 +442,14 @@ def _dispatch_queued_run(run_id: int, kind: str, args: dict, triggered_by: str) 
                 limit=args.get("limit"),
                 run_id=run_id,
             )
+        elif kind == "predicate_proposal":
+            run_predicate_proposal_job(
+                triggered_by=triggered_by,
+                finding_window_days=args.get("finding_window_days"),
+                finding_limit=args.get("finding_limit"),
+                max_proposals=args.get("max_proposals"),
+                run_id=run_id,
+            )
         else:
             raise ValueError(f"queue dispatch: unknown run kind {kind!r}")
     except Exception as e:
@@ -2346,6 +2354,76 @@ def run_scenarios_recompute_job(
 # Haiku to propose 0–2 evidence rows per finding, writes them
 # unconfirmed (classified_by="llm", confirmed_at=NULL). Operator
 # confirms in the stream UI; that's where evidence flows into the engine.
+
+def run_predicate_proposal_job(
+    triggered_by: str = "manual",
+    finding_window_days: int | None = None,
+    finding_limit: int | None = None,
+    max_proposals: int | None = None,
+    run_id: int | None = None,
+) -> None:
+    """LLM-driven predicate proposer (Phase 3b). Looks at recent findings
+    against the existing roster and writes 0-N new predicates with
+    source='llm_proposed' so they show up in the /predicates review queue.
+
+    Idempotent in the sense that duplicates against existing predicates
+    are skipped (name token overlap >= 80%), but if you re-run twice in
+    a row you may get fresh proposals on the same findings — the LLM
+    isn't deterministic and we don't track "already considered". The
+    skill instructs the model to keep proposals lean (0-2 per batch
+    typically), and review buttons on /predicates clear them out.
+    """
+    run, db = _start_run("predicate_proposal", triggered_by, run_id=run_id)
+    run_id = run.id
+    token = current_run_id.set(run_id)
+    try:
+        from .scenarios.proposer import (
+            DEFAULT_FINDING_WINDOW_DAYS,
+            DEFAULT_FINDING_LIMIT,
+            DEFAULT_MAX_PROPOSALS,
+            propose_predicates,
+        )
+
+        window = finding_window_days or DEFAULT_FINDING_WINDOW_DAYS
+        limit = finding_limit or DEFAULT_FINDING_LIMIT
+        cap = max_proposals or DEFAULT_MAX_PROPOSALS
+        _log(
+            db, run,
+            f"proposer cycle: window={window}d, limit={limit}, max_proposals={cap}",
+        )
+
+        def _log_cb(msg: str, level: str = "info") -> None:
+            _log(db, run, msg, level)
+
+        result = propose_predicates(
+            db,
+            finding_window_days=window,
+            finding_limit=limit,
+            max_proposals=cap,
+            log=_log_cb,
+        )
+
+        msg = (
+            f"proposer complete: findings={result.findings_considered}, "
+            f"returned={result.proposals_returned}, "
+            f"persisted={result.proposals_persisted}, "
+            f"skipped_duplicate={result.proposals_skipped_duplicate}, "
+            f"skipped_invalid={result.proposals_skipped_invalid}"
+        )
+        if result.error:
+            _log(db, run, f"{msg}; error={result.error}", "warn")
+            _finish_run(db, run, "error", result.error)
+        else:
+            level = "warn" if result.proposals_skipped_invalid else "info"
+            _log(db, run, msg, level)
+            _finish_run(db, run, "ok")
+    except Exception as e:
+        tb = traceback.format_exc()
+        _log(db, run, f"ERROR: {e}\n{tb}", "error")
+        _finish_run(db, run, "error", str(e))
+    finally:
+        current_run_id.reset(token)
+
 
 def run_scenarios_classify_sweep_job(
     triggered_by: str = "manual",
