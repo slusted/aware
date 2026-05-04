@@ -22,27 +22,21 @@
       </a>
     {% endfor %}
   </nav>
-
-  <div class="scenarios-page-meta muted">
-    <span class="scenarios-meta-item independence-pill"
-          title="P(scenario) ∝ Π P(predicate=required_state)^weight assumes predicate independence — see docs/scenarios/01-foundation.md §Known limitations.">
-      ⓘ Independence assumed
-    </span>
-    <span class="scenarios-meta-item">{{ header.n_predicates }} predicate{{ header.n_predicates != 1 and 's' or '' }} active</span>
-    <span class="scenarios-meta-item">{{ header.n_evidence_confirmed }} confirmed evidence</span>
-    {% if header.last_recompute_at %}
-      <span class="scenarios-meta-item">last recompute {{ header.last_recompute_at.strftime('%b %d, %H:%M') }}</span>
-    {% else %}
-      <span class="scenarios-meta-item">no recompute yet</span>
-    {% endif %}
-  </div>
 </header>
 
 {% if tab == "predicates" %}
   <section class="tab-panel" id="tab-predicates" role="tabpanel">
-    <aside class="tab-explainer">
-      <div class="tab-explainer-body">
+    <aside class="tab-explainer"
+           data-tab="predicates"
+           data-has-data="{{ 'true' if header.n_predicates > 0 else 'false' }}">
+      <div class="tab-explainer-head">
         <h2 class="tab-explainer-title">What is a predicate?</h2>
+        <button type="button" class="tab-explainer-toggle" aria-expanded="true">
+          <span class="tab-explainer-toggle-expanded">▾ Hide</span>
+          <span class="tab-explainer-toggle-collapsed">ⓘ What is this?</span>
+        </button>
+      </div>
+      <div class="tab-explainer-body">
         <p class="tab-explainer-text">
           A <strong>predicate</strong> is a single claim about the market that
           can take one of a fixed set of states — e.g. <em>"do buyers prefer
@@ -119,9 +113,17 @@
   </section>
 {% elif tab == "evidence" %}
   <section class="tab-panel" id="tab-evidence" role="tabpanel">
-    <aside class="tab-explainer">
-      <div class="tab-explainer-body">
+    <aside class="tab-explainer"
+           data-tab="evidence"
+           data-has-data="{{ 'true' if header.n_evidence_confirmed > 0 else 'false' }}">
+      <div class="tab-explainer-head">
         <h2 class="tab-explainer-title">What is evidence?</h2>
+        <button type="button" class="tab-explainer-toggle" aria-expanded="true">
+          <span class="tab-explainer-toggle-expanded">▾ Hide</span>
+          <span class="tab-explainer-toggle-collapsed">ⓘ What is this?</span>
+        </button>
+      </div>
+      <div class="tab-explainer-body">
         <p class="tab-explainer-text">
           <strong>Evidence</strong> is a single finding tagged against a
           predicate — direction (support / contradict / neutral), strength,
@@ -156,9 +158,17 @@
   </section>
 {% elif tab == "scenarios" %}
   <section class="tab-panel" id="tab-scenarios" role="tabpanel">
-    <aside class="tab-explainer">
-      <div class="tab-explainer-body">
+    <aside class="tab-explainer"
+           data-tab="scenarios"
+           data-has-data="{{ 'true' if header.n_scenarios > 0 else 'false' }}">
+      <div class="tab-explainer-head">
         <h2 class="tab-explainer-title">What is a scenario?</h2>
+        <button type="button" class="tab-explainer-toggle" aria-expanded="true">
+          <span class="tab-explainer-toggle-expanded">▾ Hide</span>
+          <span class="tab-explainer-toggle-collapsed">ⓘ What is this?</span>
+        </button>
+      </div>
+      <div class="tab-explainer-body">
         <p class="tab-explainer-text">
           A <strong>scenario</strong> is a future state of the market defined
           as a weighted bundle of predicates each pinned to a required state —
@@ -202,9 +212,17 @@
   </section>
 {% elif tab == "settings" %}
   <section class="tab-panel" id="tab-settings" role="tabpanel">
-    <aside class="tab-explainer">
-      <div class="tab-explainer-body">
+    <aside class="tab-explainer"
+           data-tab="settings"
+           data-has-data="{{ 'true' if header.n_predicates > 0 else 'false' }}">
+      <div class="tab-explainer-head">
         <h2 class="tab-explainer-title">What lives in settings?</h2>
+        <button type="button" class="tab-explainer-toggle" aria-expanded="true">
+          <span class="tab-explainer-toggle-expanded">▾ Hide</span>
+          <span class="tab-explainer-toggle-collapsed">ⓘ What is this?</span>
+        </button>
+      </div>
+      <div class="tab-explainer-body">
         <p class="tab-explainer-text">
           The knobs that drive the Bayesian math: <strong>likelihood ratios</strong>
           (how strongly each direction × strength bucket moves a state),
@@ -240,6 +258,52 @@
 {% endif %}
 
 <script>
+(() => {
+  // Per-tab explainer box collapse/expand. Default-open on first visit
+  // (or whenever the tab has no data to show), then auto-collapse so
+  // returning users see the live stats first. Manual clicks always win
+  // and persist via localStorage.
+  document.querySelectorAll('.tab-explainer').forEach((box) => {
+    const tab = box.dataset.tab;
+    const hasData = box.dataset.hasData === 'true';
+    const key = 'aware:scenarios:explainer:' + tab;
+
+    let stored = null;
+    try { stored = localStorage.getItem(key); } catch (e) {}
+
+    let open;
+    if (stored === 'open') {
+      open = true;
+    } else if (stored === 'closed') {
+      open = false;
+    } else {
+      // Never visited (with data present) before — show it. Only mark
+      // 'closed' for next time if the user actually has data; if the
+      // tab is empty we want the explainer to keep coaching them.
+      open = true;
+      if (hasData) {
+        try { localStorage.setItem(key, 'closed'); } catch (e) {}
+      }
+    }
+
+    const apply = (isOpen) => {
+      box.classList.toggle('is-collapsed', !isOpen);
+      const btn = box.querySelector('.tab-explainer-toggle');
+      if (btn) btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    };
+    apply(open);
+
+    const btn = box.querySelector('.tab-explainer-toggle');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        const nowOpen = box.classList.contains('is-collapsed');
+        apply(nowOpen);
+        try { localStorage.setItem(key, nowOpen ? 'open' : 'closed'); } catch (e) {}
+      });
+    }
+  });
+})();
+
 (() => {
   // Toggle the inline expand panel on Expand-button click. The button
   // uses HTMX to load the detail partial; we just manage visibility +
