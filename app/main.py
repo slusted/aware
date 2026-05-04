@@ -191,6 +191,24 @@ async def lifespan(app: FastAPI):
     finally:
         _db.close()
 
+    # Scenarios belief-engine seed. Mirrors the competitor pattern above:
+    # release-time seeding via Procfile is unreliable on Railway because
+    # the release container's writes don't always reach the persistent
+    # volume, leaving the live DB without the predicate/scenario rows the
+    # `/scenarios` dashboard depends on. Running it here guarantees the
+    # volume is mounted. Idempotent — safe to run on every boot.
+    from .scenarios.seed_loader import seed_from_default_json
+    _db = SessionLocal()
+    try:
+        counts = seed_from_default_json(_db)
+        _db.commit()
+        print(f"  [startup] seed_scenarios: {counts}", flush=True)
+    except Exception as _e:
+        _db.rollback()
+        print(f"  [startup] seed_scenarios failed: {_e}", flush=True)
+    finally:
+        _db.close()
+
     # Warm the logo cache in a background thread — any competitor with a
     # homepage_domain but no on-disk file gets one fetch attempt. Boot
     # proceeds immediately; failures are logged, not raised.
