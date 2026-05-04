@@ -43,7 +43,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 # this. LazyBrand reads the in-memory cache, so {{ agent_brand.name }}
 # costs nothing per render.
 from . import agent_brand as _agent_brand_module
-templates.env.globals["agent_brand"] = _agent_brand_module.lazy_brand
+_agent_brand_module.register_template_globals(templates)
 
 router = APIRouter(include_in_schema=False)
 
