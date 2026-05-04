@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Predicates{% endblock %}
+
+{% block content %}
+<header class="scenarios-page-head">
+  <div class="scenarios-page-head-row">
+    <h1 class="scenarios-page-title">Predicates</h1>
+    <div class="scenarios-page-actions">
+      {% if user.role in ("admin", "analyst") %}
+        <button type="button" id="scenarios-recompute-btn" class="btn">Recompute</button>
+      {% endif %}
+    </div>
+  </div>
+</header>
+
+<section class="tab-panel" id="tab-predicates" role="tabpanel">
+  <aside class="tab-explainer"
+         data-tab="predicates-page"
+         data-has-data="{{ 'true' if header.n_predicates > 0 else 'false' }}">
+    <div class="tab-explainer-head">
+      <h2 class="tab-explainer-title">What is a predicate?</h2>
+      <button type="button" class="tab-explainer-toggle" aria-expanded="true">
+        <span class="tab-explainer-toggle-expanded">▾ Hide</span>
+        <span class="tab-explainer-toggle-collapsed">ⓘ What is this?</span>
+      </button>
+    </div>
+    <div class="tab-explainer-body">
+      <p class="tab-explainer-text">
+        A <strong>predicate</strong> is a single claim about the market that
+        can take one of a fixed set of states — e.g. <em>"do buyers prefer
+        self-serve or sales-led?"</em>. Findings provide evidence for or
+        against each state; predicates are the atoms <a href="/scenarios">scenarios</a>
+        compose into futures.
+      </p>
+    </div>
+    <div class="tab-explainer-stats brief-meta">
+      <div class="brief-meta-item">
+        <span class="brief-meta-label">Active</span>
+        <span class="brief-meta-value">{{ header.n_predicates }}</span>
+      </div>
+      <div class="brief-meta-item">
+        <span class="brief-meta-label">Categories</span>
+        <span class="brief-meta-value">{{ header.n_predicate_categories }}</span>
+      </div>
+      <div class="brief-meta-item">
+        <span class="brief-meta-label">Confirmed evidence</span>
+        <span class="brief-meta-value">{{ header.n_evidence_confirmed }}</span>
+      </div>
+      <div class="brief-meta-item">
+        <span class="brief-meta-label">Last recompute</span>
+        <span class="brief-meta-value">
+          {% if header.last_recompute_at %}{{ header.last_recompute_at.strftime('%b %d, %H:%M') }}{% else %}—{% endif %}
+        </span>
+      </div>
+    </div>
+  </aside>
+
+  <form method="get" action="/predicates" class="scenarios-controls-row">
+    <label class="filter-label">
+      Sort:
+      <select name="sort" onchange="this.form.submit()">
+        {% for opt in valid_predicate_sorts %}
+          <option value="{{ opt }}"{% if opt == sort %} selected{% endif %}>
+            {% if opt == 'shifting' %}Most shifting
+            {% elif opt == 'contested' %}Most contested
+            {% elif opt == 'alpha' %}Alphabetical
+            {% elif opt == 'category' %}By category
+            {% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="filter-label">
+      Category:
+      <select name="category" onchange="this.form.submit()">
+        <option value="">All</option>
+        {% for c in categories %}
+          <option value="{{ c }}"{% if c == category %} selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="filter-label">
+      <input type="hidden" name="only_no_recent" value="0">
+      <input type="checkbox" name="only_no_recent" value="1"
+             onchange="this.form.submit()"
+             {% if only_no_recent %}checked{% endif %}>
+      No recent evidence only
+    </label>
+  </form>
+
+  {% if summaries %}
+    <div class="predicate-grid">
+      {% for s in summaries %}
+        {% include "_scenarios_predicate_card.html" %}
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="muted">No active predicates match the current filters. Try clearing the category filter or the "no recent evidence" toggle.</p>
+  {% endif %}
+</section>
+
+<script>
+(() => {
+  // Per-page explainer collapse, persisted in localStorage. Mirrors the
+  // pattern on /scenarios so users get the same reading affordance.
+  document.querySelectorAll('.tab-explainer').forEach((box) => {
+    const tab = box.dataset.tab;
+    const hasData = box.dataset.hasData === 'true';
+    const key = 'aware:scenarios:explainer:' + tab;
+    let stored = null;
+    try { stored = localStorage.getItem(key); } catch (e) {}
+    let open;
+    if (stored === 'open') { open = true; }
+    else if (stored === 'closed') { open = false; }
+    else {
+      open = true;
+      if (hasData) {
+        try { localStorage.setItem(key, 'closed'); } catch (e) {}
+      }
+    }
+    const apply = (isOpen) => {
+      box.classList.toggle('is-collapsed', !isOpen);
+      const btn = box.querySelector('.tab-explainer-toggle');
+      if (btn) btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    };
+    apply(open);
+    const btn = box.querySelector('.tab-explainer-toggle');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        const nowOpen = box.classList.contains('is-collapsed');
+        apply(nowOpen);
+        try { localStorage.setItem(key, nowOpen ? 'open' : 'closed'); } catch (e) {}
+      });
+    }
+  });
+})();
+
+(() => {
+  const recomputeBtn = document.getElementById('scenarios-recompute-btn');
+  if (!recomputeBtn) return;
+  recomputeBtn.addEventListener('click', async () => {
+    recomputeBtn.disabled = true;
+    const orig = recomputeBtn.textContent;
+    recomputeBtn.textContent = 'Queueing…';
+    try {
+      const r = await fetch('/api/runs/scenarios-recompute', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'Accept': 'application/json'},
+      });
+      if (!r.ok) throw new Error('http ' + r.status);
+      const data = await r.json();
+      recomputeBtn.textContent = 'Queued · run #' + data.run_id;
+      setTimeout(() => {
+        recomputeBtn.disabled = false;
+        recomputeBtn.textContent = orig;
+      }, 4000);
+    } catch (err) {
+      recomputeBtn.textContent = 'Failed — ' + err;
+      setTimeout(() => {
+        recomputeBtn.disabled = false;
+        recomputeBtn.textContent = orig;
+      }, 3000);
+    }
+  });
+})();
+</script>
+{% endblock %}

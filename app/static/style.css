@@ -328,6 +328,69 @@ a:hover { color: var(--accent-hover); }
 }
 .nav-item svg { width: 15px; height: 15px; opacity: 0.9; flex-shrink: 0; }
 
+/* Greyed-out, non-interactive nav items (e.g. Execute placeholders).
+   Rendered as <span> not <a>; we still want the row geometry to match
+   real items so the section reads as a coherent list. */
+.nav-item.is-disabled {
+  color: var(--text-tertiary);
+  opacity: 0.55;
+  cursor: default;
+  pointer-events: none;
+}
+.nav-item.is-disabled:hover { background: transparent; color: var(--text-tertiary); }
+.nav-soon {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  opacity: 0.8;
+}
+
+/* Soft sub-grouping inside a nav-section (e.g. SYSTEM splits into
+   live-ops / engine-config / account). Whitespace, no visible rule. */
+.nav-sub-gap { height: 8px; }
+
+/* Agent — elevated launcher above the section labels. Reads as a
+   button rather than a list item to signal it's a cross-cutting entry
+   point, not a destination page. */
+.nav-agent {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  margin: 4px 0 10px;
+  border-radius: var(--r);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+.nav-agent:hover {
+  background: var(--surface-3, var(--surface-2));
+  border-color: var(--border-strong);
+}
+.nav-agent.active {
+  background: var(--surface-3, var(--surface-2));
+  border-color: var(--border-strong);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.nav-agent svg {
+  width: 16px; height: 16px;
+  flex-shrink: 0;
+  opacity: 0.95;
+}
+.nav-agent-label { flex: 1; }
+.nav-agent-arrow {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
 .sidebar .spacer { flex: 1; }
 
 .sidebar .footer {
@@ -1817,14 +1880,19 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
   .mobile-nav-btn svg { width: 16px; height: 16px; }
   .mobile-nav-btn:hover { color: var(--text-primary); background: var(--surface-2); }
 
-  /* Collapse by default: nav sections and footer hidden until toggled. */
+  /* Collapse by default: nav sections, agent launcher, and footer hidden until toggled. */
   .sidebar .nav-section,
+  .sidebar .nav-agent,
   .sidebar .spacer,
   .sidebar .footer {
     display: none;
   }
 
   .mobile-nav-toggle:checked ~ .nav-section {
+    display: flex;
+    margin-top: 8px;
+  }
+  .mobile-nav-toggle:checked ~ .nav-agent {
     display: flex;
     margin-top: 8px;
   }
