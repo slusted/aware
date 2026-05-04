@@ -26,7 +26,7 @@ from datetime import datetime
 from .db import Base, SessionLocal, engine
 from . import scheduler, skills as skills_module, ui, usage, search_providers
 from .models import Run, RunEvent
-from .routes import status, competitors, runs, findings, reports, usage as usage_routes, skills as skills_routes, context as context_routes, providers as providers_routes, env_keys as env_keys_routes, filters as filters_routes, auth as auth_routes, users as users_routes, signal_events as signal_events_routes, preferences as preferences_routes, chat as chat_routes, notifications as notifications_routes, schedules as schedules_routes, scenarios as scenarios_routes, predicates as predicates_routes
+from .routes import status, competitors, runs, findings, reports, usage as usage_routes, skills as skills_routes, context as context_routes, providers as providers_routes, env_keys as env_keys_routes, filters as filters_routes, auth as auth_routes, users as users_routes, signal_events as signal_events_routes, preferences as preferences_routes, chat as chat_routes, notifications as notifications_routes, schedules as schedules_routes, scenarios as scenarios_routes, predicates as predicates_routes, agent_brand as agent_brand_routes
 
 
 def _reap_orphan_runs() -> int:
@@ -269,6 +269,14 @@ async def lifespan(app: FastAPI):
         print(f"  [startup] search_providers config load failed: {_e}")
     search_providers.install_scanner_hook()
 
+    # Prime the agent-brand cache so the first page render doesn't pay
+    # a DB hit. Subsequent writes (via /api/settings/agent) refresh it.
+    try:
+        from . import agent_brand as _agent_brand
+        _agent_brand.prime()
+    except Exception as _e:
+        print(f"  [startup] agent_brand prime failed: {_e}", flush=True)
+
     scheduler.start()
     yield
     scheduler.stop()
@@ -321,6 +329,7 @@ app.include_router(notifications_routes.router)
 app.include_router(schedules_routes.router)
 app.include_router(scenarios_routes.router)
 app.include_router(predicates_routes.router)
+app.include_router(agent_brand_routes.router)
 
 # Jinja/HTMX UI — second renderer that consumes the same API shape.
 app.include_router(ui.router)

@@ -403,6 +403,14 @@ a:hover { color: var(--accent-hover); }
   flex-shrink: 0;
   opacity: 0.95;
 }
+.nav-agent-avatar {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
 .nav-agent-label { flex: 1; }
 .nav-agent-arrow {
   font-size: 13px;
@@ -2937,6 +2945,14 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.chat-drawer-avatar {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
 }
 .chat-drawer-header-actions {
   display: flex;

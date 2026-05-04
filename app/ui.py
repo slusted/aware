@@ -37,6 +37,14 @@ SIGNAL_TYPES = [
 ]
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+# Expose the configurable agent brand to every template — sidebar Agent
+# launcher, floating chat launcher, and chat-drawer header all read from
+# this. LazyBrand reads the in-memory cache, so {{ agent_brand.name }}
+# costs nothing per render.
+from . import agent_brand as _agent_brand_module
+templates.env.globals["agent_brand"] = _agent_brand_module.lazy_brand
+
 router = APIRouter(include_in_schema=False)
 
 
@@ -727,6 +735,11 @@ def settings_keys(request: Request, user=Depends(get_current_user)):
     return templates.TemplateResponse(request, "settings_keys.html", {
         "user": user, "keys": _env_keys.status(category="engine"),
     })
+
+
+@router.get("/settings/agent", response_class=HTMLResponse)
+def settings_agent(request: Request, user=Depends(get_current_user)):
+    return templates.TemplateResponse(request, "settings_agent.html", {"user": user})
 
 
 @router.get("/settings/usage", response_class=HTMLResponse)

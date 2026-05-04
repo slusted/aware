@@ -31,3 +31,6 @@ trafilatura>=1.12
 # on transitive availability.
 voyageai>=0.3.0
 numpy>=1.26.0
+
+# Image processing for the configurable agent avatar (settings_agent).
+Pillow>=10.0.0

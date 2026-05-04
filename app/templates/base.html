@@ -6,7 +6,7 @@
   <title>{% block title %}Competitor Watch{% endblock %}</title>
   <link rel="preconnect" href="https://rsms.me/">
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
-  <link rel="stylesheet" href="/static/style.css?v=ia-reshape-3b-flo-mobnav">
+  <link rel="stylesheet" href="/static/style.css?v=ia-reshape-3b-flo-mobnav-flo3">
 
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script>
@@ -77,8 +77,8 @@
        tissue across Findings/Present/Future/Execute, not just one nav
        item among many. Styled as a launcher button to read accordingly. #}
     <a href="/chat" class="nav-agent {% if path.startswith('/chat') %}active{% endif %}">
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l1.6 4.4L14 8l-4.4 1.6L8 14l-1.6-4.4L2 8l4.4-1.6z"/></svg>
-      <span class="nav-agent-label">Agent</span>
+      <img src="{{ agent_brand.avatar_url }}" alt="" class="nav-agent-avatar">
+      <span class="nav-agent-label">Agent {{ agent_brand.name }}</span>
       <span class="nav-agent-arrow" aria-hidden="true">→</span>
     </a>
 
@@ -250,9 +250,9 @@
   <button type="button"
           id="chat-launcher"
           class="chat-launcher"
-          aria-label="Open chat with Florian (Ctrl+/)"
+          aria-label="Open chat with {{ agent_brand.name }} (Ctrl+/)"
           aria-expanded="false">
-    <img src="/static/florian.png?v=flo-1" alt="" width="56" height="56">
+    <img src="{{ agent_brand.avatar_url }}" alt="" width="56" height="56">
   </button>
   {% include "_chat_drawer.html" %}
 {% endif %}

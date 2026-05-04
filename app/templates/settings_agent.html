@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Agent · Settings{% endblock %}
+
+{% block content %}
+{% include "_settings_nav.html" %}
+
+<div class="panel" style="max-width:560px">
+  <div class="panel-body">
+    <h2 style="margin-top:0">Agent identity</h2>
+    <p class="muted" style="font-size:13px">
+      Sets the name and picture used for the in-product agent — sidebar
+      launcher, floating chat button, and chat-drawer header.
+    </p>
+
+    <div style="display:flex; align-items:center; gap:16px; margin:20px 0">
+      <img id="agent-avatar-preview"
+           src="{{ agent_brand.avatar_url }}"
+           alt="Current agent avatar"
+           style="width:96px; height:96px; border-radius:50%; object-fit:cover; border:1px solid var(--border-subtle)">
+      <div>
+        <div style="font-size:18px; font-weight:600" id="agent-name-preview">{{ agent_brand.name }}</div>
+        <div class="muted" style="font-size:12px">Current</div>
+      </div>
+    </div>
+
+    <form id="agent-brand-form" enctype="multipart/form-data" style="display:flex; flex-direction:column; gap:14px">
+      <label style="display:flex; flex-direction:column; gap:6px">
+        <span style="font-size:13px; font-weight:500">Name</span>
+        <input type="text" name="name" maxlength="64"
+               value="{{ agent_brand.name }}"
+               placeholder="Flo"
+               style="padding:8px 10px; font-size:14px">
+      </label>
+
+      <label style="display:flex; flex-direction:column; gap:6px">
+        <span style="font-size:13px; font-weight:500">Picture</span>
+        <input type="file" name="avatar" accept="image/png,image/jpeg,image/webp">
+        <span class="muted" style="font-size:12px">
+          PNG, JPG, or WEBP. Up to 5 MB. Cropped to a square and resized to 512×512.
+        </span>
+      </label>
+
+      <div style="display:flex; gap:8px; align-items:center">
+        <button type="submit" class="btn">Save</button>
+        <span id="agent-brand-status" class="muted" style="font-size:13px"></span>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  var form = document.getElementById('agent-brand-form');
+  var status = document.getElementById('agent-brand-status');
+  var preview = document.getElementById('agent-avatar-preview');
+  var namePreview = document.getElementById('agent-name-preview');
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    status.textContent = 'Saving…';
+    status.style.color = '';
+
+    var fd = new FormData(form);
+    // Drop the file field if no file picked, so the API doesn't complain
+    // about an empty upload when the user is only renaming.
+    var fileInput = form.querySelector('input[name="avatar"]');
+    if (!fileInput.files || fileInput.files.length === 0) {
+      fd.delete('avatar');
+    }
+
+    try {
+      var resp = await fetch('/api/settings/agent', { method: 'POST', body: fd });
+      var data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Save failed');
+      status.textContent = 'Saved.';
+      // Re-render preview from server values so it matches what other
+      // pages will show (cache-busted via the version in the URL).
+      namePreview.textContent = data.name;
+      preview.src = data.avatar_url;
+      // Clear the file input so a second click of Save without picking
+      // a new file doesn't re-upload the same image.
+      fileInput.value = '';
+    } catch (err) {
+      status.textContent = 'Error: ' + err.message;
+      status.style.color = 'var(--err)';
+    }
+  });
+})();
+</script>
+{% endblock %}
