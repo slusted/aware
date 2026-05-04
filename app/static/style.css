@@ -3120,12 +3120,14 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
    does two jobs: (1) static prose teaching what a predicate / scenario /
    evidence row is, (2) a live counts strip so the user always sees the
    shape of the system. Reuses the .brief-meta layout so the metric strip
-   matches the Market brief / research panels. */
+   matches the Market brief / research panels.
+   Collapsible: the prose hides behind a toggle once the user has seen it
+   at least once with data present (state in localStorage). */
 .tab-explainer {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px 18px;
+  gap: 12px;
+  padding: 14px 16px;
   margin: 4px 0 18px;
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
@@ -3134,6 +3136,13 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
     color-mix(in srgb, var(--accent) 4%, var(--surface-0)) 0%,
     var(--surface-0) 100%
   );
+}
+.tab-explainer-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 18px;
 }
 .tab-explainer-body { display: flex; flex-direction: column; gap: 6px; }
 .tab-explainer-title {
@@ -3162,8 +3171,47 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 }
 .tab-explainer-stats .brief-meta-value { font-size: 16px; font-weight: 600; }
 
+.tab-explainer-toggle {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
+}
+.tab-explainer-toggle:hover {
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border-color: var(--border-subtle);
+}
+.tab-explainer-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.tab-explainer-toggle-collapsed { display: none; }
+.tab-explainer.is-collapsed .tab-explainer-toggle-expanded { display: none; }
+.tab-explainer.is-collapsed .tab-explainer-toggle-collapsed { display: inline; }
+
+/* Collapsed: hide the title + prose, keep just the stats strip + toggle.
+   The head row stays so the toggle has a home; we shrink it visually so
+   the box reads as a slim stats strip. */
+.tab-explainer.is-collapsed { padding: 10px 16px; gap: 6px; }
+.tab-explainer.is-collapsed .tab-explainer-title { display: none; }
+.tab-explainer.is-collapsed .tab-explainer-body { display: none; }
+.tab-explainer.is-collapsed .tab-explainer-head { min-height: 0; }
+.tab-explainer.is-collapsed .tab-explainer-stats.brief-meta {
+  padding-top: 0;
+  border-top: none;
+}
+
 @media (max-width: 720px) {
-  .tab-explainer { padding: 14px; }
+  .tab-explainer { padding: 12px 14px; }
   .tab-explainer-stats.brief-meta { gap: 12px 20px; }
   .tab-explainer-stats .brief-meta-item {
     padding: 0;
