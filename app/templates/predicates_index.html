@@ -7,6 +7,10 @@
     <h1 class="scenarios-page-title">Predicates</h1>
     <div class="scenarios-page-actions">
       {% if user.role in ("admin", "analyst") %}
+        <button type="button" id="predicates-propose-btn" class="btn-ghost"
+                title="Ask the LLM to scan recent findings + the current roster and propose any new predicates worth tracking. Lands in the Proposed tab.">
+          ✦ Propose
+        </button>
         <button type="button" id="scenarios-recompute-btn" class="btn">Recompute</button>
       {% endif %}
     </div>
@@ -218,6 +222,69 @@
       return;
     }
   });
+})();
+
+(() => {
+  // "Propose" button — kicks off a predicate-proposal Run. Polls the
+  // proposed-count badge for ~90 seconds; once the badge ticks up
+  // (or after timeout), reloads so the new proposals appear in the
+  // Proposed tab. Cheap and obvious; if we want a richer in-page
+  // toast later, the run_id is in the response.
+  const proposeBtn = document.getElementById('predicates-propose-btn');
+  if (proposeBtn) {
+    async function readBadgeCount() {
+      try {
+        const r = await fetch('/partials/predicate-proposed-count', {
+          credentials: 'same-origin',
+          headers: { 'Accept': 'text/html' },
+        });
+        if (!r.ok) return null;
+        const html = (await r.text()).trim();
+        if (!html) return 0;
+        const m = html.match(/>(\d+)</);
+        return m ? parseInt(m[1], 10) : null;
+      } catch (e) { return null; }
+    }
+    proposeBtn.addEventListener('click', async () => {
+      proposeBtn.disabled = true;
+      const orig = proposeBtn.textContent;
+      proposeBtn.textContent = 'Queueing…';
+      const baseline = (await readBadgeCount()) || 0;
+      try {
+        const r = await fetch('/api/runs/predicate-proposal', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Accept': 'application/json' },
+        });
+        if (!r.ok) throw new Error('http ' + r.status + ': ' + (await r.text()));
+        const data = await r.json();
+        proposeBtn.textContent = 'Run #' + data.run_id + ' queued · waiting…';
+        const start = Date.now();
+        const iv = setInterval(async () => {
+          const now = await readBadgeCount();
+          if (now !== null && now > baseline) {
+            clearInterval(iv);
+            location.assign('/predicates?source=llm_proposed');
+            return;
+          }
+          if (Date.now() - start > 90000) {
+            clearInterval(iv);
+            proposeBtn.textContent = 'Run #' + data.run_id + ' · check Runs';
+            setTimeout(() => {
+              proposeBtn.disabled = false;
+              proposeBtn.textContent = orig;
+            }, 4000);
+          }
+        }, 3000);
+      } catch (err) {
+        proposeBtn.textContent = 'Failed — ' + err.message;
+        setTimeout(() => {
+          proposeBtn.disabled = false;
+          proposeBtn.textContent = orig;
+        }, 4000);
+      }
+    });
+  }
 })();
 
 (() => {

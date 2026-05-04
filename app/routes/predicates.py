@@ -15,7 +15,11 @@ Phase 3a: predicates carry a `source` field ('user' | 'llm_proposed' |
 'llm_promoted'). The page accepts a `?source=` filter and exposes
 two API endpoints (promote / reject) so reviewers can act on
 LLM-proposed predicates as soon as the suggestion job (3b) starts
-producing them. Until then the proposed filter shows an empty state.
+producing them.
+
+Phase 3b: adds the LLM-suggestion job. Manual trigger via
+POST /api/runs/predicate-proposal; sidebar review-queue badge fed by
+GET /partials/predicate-proposed-count.
 """
 from __future__ import annotations
 
@@ -27,6 +31,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from .. import jobs
 from ..deps import get_current_user, get_db, require_role
 from ..models import Predicate, User
 from ..scenarios import dashboard as dashboard_svc
@@ -145,3 +150,49 @@ def reject_predicate(
         p.updated_at = datetime.utcnow()
         db.commit()
     return JSONResponse({"key": p.key, "active": p.active})
+
+
+# ── Phase 3b: proposer trigger + sidebar badge ──────────────────────────
+
+@router.post("/api/runs/predicate-proposal", status_code=202)
+def trigger_predicate_proposal(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("analyst", "admin")),
+):
+    """Manually enqueue a predicate-proposal run. Drainer picks it up,
+    the LLM proposer scans recent findings + the current roster, and
+    writes any new predicates worth tracking with source='llm_proposed'.
+    They land in /predicates?source=llm_proposed for review."""
+    run = jobs.enqueue_run(
+        db,
+        "predicate_proposal",
+        triggered_by="manual",
+    )
+    return {
+        "queued": True,
+        "kind": "predicate_proposal",
+        "run_id": run.id,
+        "queue_position": jobs.queue_position(db, run.id),
+    }
+
+
+@router.get("/partials/predicate-proposed-count", response_class=HTMLResponse)
+def predicate_proposed_count_partial(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Tiny HTMX partial — renders just the review-queue badge.
+    Hooked from the sidebar Predicates entry. Hidden when zero so the
+    sidebar stays uncluttered."""
+    n = (
+        db.query(Predicate)
+        .filter(Predicate.active.is_(True))
+        .filter(Predicate.source == "llm_proposed")
+        .count()
+    )
+    if n <= 0:
+        return HTMLResponse("")
+    return HTMLResponse(
+        f'<span class="nav-badge" title="Proposed predicates awaiting review">{n}</span>'
+    )
