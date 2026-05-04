@@ -18,6 +18,8 @@ from ..models import User
 
 router = APIRouter(tags=["users"], include_in_schema=False)
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+from .. import agent_brand as _agent_brand
+_agent_brand.register_template_globals(templates)
 
 ROLES = ["admin", "analyst", "viewer"]
 

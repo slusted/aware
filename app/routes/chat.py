@@ -35,6 +35,8 @@ from ..models import ChatMessage, ChatSession, User
 templates = Jinja2Templates(
     directory=str(Path(__file__).parent.parent / "templates")
 )
+from .. import agent_brand as _agent_brand
+_agent_brand.register_template_globals(templates)
 
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])

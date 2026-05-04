@@ -196,3 +196,16 @@ class _LazyBrand:
 
 
 lazy_brand = _LazyBrand()
+
+
+def register_template_globals(templates) -> None:
+    """Wire `agent_brand` into a Jinja2Templates env.
+
+    Each FastAPI router that renders templates constructs its own
+    Jinja2Templates instance (chat.py, scenarios.py, schedules.py, …).
+    Each instance gets its own Jinja Environment, so the global has to
+    be set on every one of them — base.html now reads
+    `{{ agent_brand.name }}` / `{{ agent_brand.avatar_url }}` from the
+    sidebar, which is rendered on every authenticated page including
+    /chat, /scenarios, etc."""
+    templates.env.globals["agent_brand"] = lazy_brand
