@@ -55,8 +55,11 @@ def dashboard(request: Request, db: Session = Depends(get_db), user=Depends(get_
     last_run = db.query(Run).order_by(Run.started_at.desc()).first()
     recent_runs = db.query(Run).order_by(Run.started_at.desc()).limit(10).all()
     recent_findings = db.query(Finding).order_by(Finding.created_at.desc()).limit(20).all()
-    since = datetime.utcnow() - timedelta(days=1)
-    findings_today = db.query(func.count(Finding.id)).filter(Finding.created_at >= since).scalar() or 0
+    now = datetime.utcnow()
+    since_24h = now - timedelta(days=1)
+    since_7d = now - timedelta(days=7)
+    since_30d = now - timedelta(days=30)
+    findings_today = db.query(func.count(Finding.id)).filter(Finding.created_at >= since_24h).scalar() or 0
     competitor_count = db.query(func.count(Competitor.id)).filter(Competitor.active == True).scalar() or 0
     is_running = db.query(Run).filter(Run.status == "running").first() is not None
     all_queued_ids = [
@@ -64,7 +67,38 @@ def dashboard(request: Request, db: Session = Depends(get_db), user=Depends(get_
         db.query(Run.id).filter(Run.status == "queued").order_by(Run.id.asc()).all()
     ]
     queue_positions = {rid: i + 1 for i, rid in enumerate(all_queued_ids)}
-    cost_today = db.query(func.coalesce(func.sum(UsageEvent.cost_usd), 0.0)).filter(UsageEvent.ts >= since).scalar() or 0.0
+
+    # Spend windows. The dashboard now reads as "engine health + spend"
+    # (per the IA reshape — System section frames it that way), so we
+    # surface 24h / 7d / 30d together rather than only the 24h snapshot.
+    def _spend_window(since):
+        cost, calls = db.query(
+            func.coalesce(func.sum(UsageEvent.cost_usd), 0.0),
+            func.count(UsageEvent.id),
+        ).filter(UsageEvent.ts >= since).one()
+        return {"cost": float(cost), "calls": int(calls)}
+
+    spend = {
+        "day":   _spend_window(since_24h),
+        "week":  _spend_window(since_7d),
+        "month": _spend_window(since_30d),
+    }
+
+    # Top spend by provider/model over the last 30d. Keeps the breakdown
+    # short — the full table lives at /admin/usage.
+    top_models = (
+        db.query(
+            UsageEvent.provider,
+            UsageEvent.model,
+            func.coalesce(func.sum(UsageEvent.cost_usd), 0.0).label("cost"),
+            func.count(UsageEvent.id).label("calls"),
+        )
+        .filter(UsageEvent.ts >= since_30d)
+        .group_by(UsageEvent.provider, UsageEvent.model)
+        .order_by(func.sum(UsageEvent.cost_usd).desc())
+        .limit(5)
+        .all()
+    )
 
     return templates.TemplateResponse(request, "dashboard.html", {
         "user": user,
@@ -77,7 +111,10 @@ def dashboard(request: Request, db: Session = Depends(get_db), user=Depends(get_
         "competitor_count": competitor_count,
         "recent_runs": recent_runs,
         "recent_findings": recent_findings,
-        "cost_today": float(cost_today),
+        "spend": spend,
+        "top_models": top_models,
+        # Keep cost_today for any external callers / tests that referenced it.
+        "cost_today": spend["day"]["cost"],
     })
 
 
