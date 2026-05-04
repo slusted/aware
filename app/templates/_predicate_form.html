@@ -204,12 +204,22 @@
   <div class="signal-card-back-row predicate-form-footer">
     {# Keep desktop pin reachable. Tagging is the primary action on
        this back; pin is the secondary "I want to keep this finding
-       visible" gesture. Mobile right-swipe used to land here too. #}
+       visible" gesture. Mobile right-swipe used to land here too.
+       When the finding is already pinned, the same button toggles
+       back to plain `seen` state so the user can unpin in one click. #}
+    {% if view_state == 'pinned' %}
+    <button type="button" class="btn-card-back"
+            hx-post="/partials/stream_view/{{ f.id }}"
+            hx-vals='{"state": "seen"}'
+            hx-target="#card-{{ f.id }}"
+            hx-swap="outerHTML">📌 Unpin</button>
+    {% else %}
     <button type="button" class="btn-card-back"
             hx-post="/partials/stream_view/{{ f.id }}"
             hx-vals='{"state": "pinned"}'
             hx-target="#card-{{ f.id }}"
             hx-swap="outerHTML">📌 Pin</button>
+    {% endif %}
     <button type="button" class="btn-card-back is-cancel" data-flip-action="cancel">Done</button>
   </div>
 </div>
