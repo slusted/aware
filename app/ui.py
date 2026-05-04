@@ -855,21 +855,28 @@ def admin_search_quality(request: Request, days: int = 30, db: Session = Depends
     })
 
 
+_NOISY_RUN_KINDS = ("reply_check",)
+
+
 @router.get("/runs", response_class=HTMLResponse)
 def runs_index(
     request: Request,
     page: int = 1,
+    show: str = "",
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
     page_size = 50
     page = max(1, page)
-    total = db.query(func.count(Run.id)).scalar() or 0
+    show_all = show == "all"
+    base = db.query(Run)
+    if not show_all:
+        base = base.filter(~Run.kind.in_(_NOISY_RUN_KINDS))
+    total = base.with_entities(func.count(Run.id)).scalar() or 0
     total_pages = max(1, (total + page_size - 1) // page_size)
     page = min(page, total_pages)
     rows = (
-        db.query(Run)
-        .order_by(Run.started_at.desc())
+        base.order_by(Run.started_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
@@ -882,6 +889,13 @@ def runs_index(
         db.query(Run.id).filter(Run.status == "queued").order_by(Run.id.asc()).all()
     ]
     queue_positions = {rid: i + 1 for i, rid in enumerate(all_queued_ids)}
+    hidden_count = 0
+    if not show_all:
+        hidden_count = (
+            db.query(func.count(Run.id))
+            .filter(Run.kind.in_(_NOISY_RUN_KINDS))
+            .scalar() or 0
+        )
     return templates.TemplateResponse(request, "runs_index.html", {
         "user": user,
         "runs": rows,
@@ -892,6 +906,8 @@ def runs_index(
         "total_pages": total_pages,
         "total": total,
         "page_size": page_size,
+        "show_all": show_all,
+        "hidden_count": hidden_count,
     })
 
 
