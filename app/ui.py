@@ -1380,6 +1380,13 @@ def _parse_stream_filters(params: dict) -> dict:
     if tagged not in ("any", "untagged"):
         tagged = "any"
 
+    # Pinned-only scope: when on, the stream collapses to the user's pinned
+    # findings in strict chronological order — no windowing, no MMR diversity,
+    # no stale down-weighting. Saved-filter dicts may store a native bool;
+    # form submissions send "1" when checked or omit the key when not.
+    po_raw = params.get("pinned_only")
+    pinned_only = po_raw is True or po_raw == "1"
+
     return {
         "competitor": (params.get("competitor") or "").strip() or None,
         "signal_types": [t for t in raw_types if t],
@@ -1390,6 +1397,7 @@ def _parse_stream_filters(params: dict) -> dict:
         "window": window,
         "explain": explain,
         "tagged": tagged,
+        "pinned_only": pinned_only,
     }
 
 
@@ -1470,7 +1478,12 @@ def _stream_query(db, user, filters):
 
     now = datetime.utcnow()
     has_more = False
-    if filters["since_days"]:
+    pinned_only = filters.get("pinned_only", False)
+    if pinned_only:
+        # Pinned-only is a bookmark view — show every pinned finding, no
+        # date scope and no paging.
+        pass
+    elif filters["since_days"]:
         # Explicit date scope — no windowing, no paging.
         cutoff = now - timedelta(days=filters["since_days"])
         q = q.filter(Finding.created_at >= cutoff)
@@ -1497,7 +1510,10 @@ def _stream_query(db, user, filters):
         SignalView,
         and_(SignalView.finding_id == Finding.id, SignalView.user_id == user.id),
     )
-    if not filters["include_dismissed"]:
+    if pinned_only:
+        # Promote the join to a hard filter — only the user's pinned rows.
+        q = q.filter(SignalView.state == "pinned")
+    elif not filters["include_dismissed"]:
         q = q.filter(or_(SignalView.state.is_(None), SignalView.state != "dismissed"))
 
     # Stage-2: ?tagged=untagged shows only findings with no confirmed
@@ -1529,7 +1545,10 @@ def _stream_query(db, user, filters):
     # content look brand-new in the stream.
     effective_date = func.coalesce(Finding.published_at, Finding.created_at)
 
-    if filters.get("downweight_stale"):
+    if pinned_only:
+        # Pure chronological — no stale down-weighting on a bookmark view.
+        q = q.order_by(effective_date.desc())
+    elif filters.get("downweight_stale"):
         # Stale = published over a year ago. NULL published_at is treated as
         # fresh so we don't penalise signals where the source didn't expose a
         # date (many careers / VoC hits). Sorted 0-before-1 pushes stale rows
@@ -1584,13 +1603,16 @@ def _stream_query(db, user, filters):
     # query shape is untouched. `lead_findings()` stamps `_cluster_size`
     # on each returned Finding so the template can render the "+N more"
     # chip without restructuring.
-    cards = _present_clusters(
-        findings,
-        now=now,
-        seen_count_by_id=seen_count_by_id,
-        user_centroid=user_centroid,
-    )
-    findings = _lead_findings(cards)
+    # Skip the rerank in pinned-only: the user asked for a strict
+    # chronological list and MMR diversity would scramble that.
+    if not pinned_only:
+        cards = _present_clusters(
+            findings,
+            now=now,
+            seen_count_by_id=seen_count_by_id,
+            user_centroid=user_centroid,
+        )
+        findings = _lead_findings(cards)
 
     # Stage-2: stamp f._predicate_evidence so the front-of-card chip
     # partial (_predicate_badges.html) can render without N+1 queries.

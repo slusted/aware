@@ -3,6 +3,25 @@
 
 {% block content %}
 
+{# Tabs above the filter bar — switch between the ranked stream and a
+   strict chronological list of the user's pinned findings. Reuses the
+   shared .tabs/.tab/.active classes (same as market-brief, scenarios,
+   competitor-profile). The buttons drive a hidden `pinned_only` input
+   that lives inside #stream-filters below, so the value travels with
+   every other filter change. #}
+<nav class="tabs" role="tablist" aria-label="Stream view">
+  <button type="button"
+          class="tab {% if not filters.pinned_only %}active{% endif %}"
+          role="tab"
+          aria-selected="{{ 'false' if filters.pinned_only else 'true' }}"
+          data-pinned-only="0">All</button>
+  <button type="button"
+          class="tab {% if filters.pinned_only %}active{% endif %}"
+          role="tab"
+          aria-selected="{{ 'true' if filters.pinned_only else 'false' }}"
+          data-pinned-only="1">Pinned</button>
+</nav>
+
 {# Collapsed filter bar: saved-filter picker stays always visible so the
    user can switch presets with one click. Full filter controls live
    inside .filters-collapsible, toggled by the sibling checkbox. #}
@@ -25,6 +44,11 @@
         hx-target="#stream-list"
         hx-swap="innerHTML"
         hx-trigger="change delay:150ms, input delay:300ms">
+
+    {# Tab state — driven by the .tab buttons in the .tabs nav above.
+       Lives inside this form so it submits with every filter change. #}
+    <input type="hidden" name="pinned_only" id="pinned-only-state"
+           value="{{ '1' if filters.pinned_only else '0' }}">
 
     <div class="filter-row">
       <label class="filter-label">Signal type</label>
@@ -131,6 +155,35 @@
 <div id="stream-list" class="stream-list">
   {% include "_stream_list.html" %}
 </div>
+
+{# Tab clicks: flip the hidden #pinned-only-state input on the filter form
+   and dispatch a change event so the form's hx-trigger="change" reloads
+   the list. Keeps tab state inside the same form as every other filter,
+   so toggling Pinned on then changing competitor preserves both.
+   Scoped to the .tabs nav with aria-label="Stream view" so the script
+   doesn't collide with other .tabs nav strips on shared pages. #}
+<script>
+(() => {
+  const nav = document.querySelector('.tabs[aria-label="Stream view"]');
+  const hidden = document.getElementById('pinned-only-state');
+  const form = document.getElementById('stream-filters');
+  if (!nav || !hidden || !form) return;
+  const tabs = nav.querySelectorAll('.tab');
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const next = tab.dataset.pinnedOnly === '1' ? '1' : '0';
+      if (hidden.value === next) return;
+      hidden.value = next;
+      tabs.forEach((t) => {
+        const active = t.dataset.pinnedOnly === next;
+        t.classList.toggle('active', active);
+        t.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      form.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  });
+})();
+</script>
 
 {# Remember the user's most recent filter state in localStorage so a bare
    /stream visit restores what they were last looking at. A starred saved
