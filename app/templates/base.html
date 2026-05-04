@@ -6,7 +6,7 @@
   <title>{% block title %}Competitor Watch{% endblock %}</title>
   <link rel="preconnect" href="https://rsms.me/">
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
-  <link rel="stylesheet" href="/static/style.css?v=scenarios-2">
+  <link rel="stylesheet" href="/static/style.css?v=scenarios-3">
 
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script>
@@ -58,6 +58,10 @@
       <a href="/market" class="nav-item {% if path.startswith('/market') %}active{% endif %}">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 13V9l3-4 3 3 3-2 3 3v4"/><path d="M2 13h12"/></svg>
         Market brief
+      </a>
+      <a href="/scenarios" class="nav-item {% if path.startswith('/scenarios') %}active{% endif %}">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 12c0-3 2-5 4-5s2 3 4 3 4-2 4-5"/><circle cx="2" cy="12" r="1.2" fill="currentColor"/><circle cx="14" cy="5" r="1.2" fill="currentColor"/></svg>
+        Scenarios
       </a>
     </div>
 

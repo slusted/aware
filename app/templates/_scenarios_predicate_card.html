@@ -1,0 +1,70 @@
+{# One predicate card in the grid.
+   Args:
+     s - PredicateSummary (see app/scenarios/dashboard.py)
+   The card carries an HTMX-loadable expand panel below; clicking the
+   header swaps in the detail partial via /scenarios/predicates/{key}/expand.
+#}
+<article id="predicate-card-{{ s.key }}" class="predicate-card" data-predicate-key="{{ s.key }}">
+  <header class="predicate-card-head">
+    <div class="predicate-card-title">
+      <span class="predicate-card-key mono">{{ s.key }}</span>
+      <span class="predicate-card-name">{{ s.name }}</span>
+    </div>
+    <span class="predicate-card-category muted">{{ s.category }}</span>
+  </header>
+
+  <div class="predicate-card-bars">
+    {% for st in s.states %}
+      <div class="predicate-bar-row" data-ordinal="{{ st.ordinal_position }}">
+        <span class="predicate-bar-label">{{ st.label }}</span>
+        <span class="predicate-bar-track">
+          <span class="predicate-bar-fill ordinal-{{ st.ordinal_position }}"
+                style="width: {{ (st.current * 100)|round(1) }}%"></span>
+        </span>
+        <span class="predicate-bar-value mono">{{ (st.current * 100)|round(1) }}%</span>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="predicate-card-sparkline-wrap">
+    {% with series=s.sparkline_dominant, color_var='var(--text-primary)', height_px=28 %}
+      {% include "_scenarios_sparkline.html" %}
+    {% endwith %}
+  </div>
+
+  <footer class="predicate-card-foot">
+    <span class="predicate-card-stat muted">
+      {{ s.evidence_count }} confirmed evidence
+    </span>
+    <span class="predicate-card-stat predicate-velocity-pill
+        {% if s.dominant_state_velocity_pp_30d|abs < 1 %}is-flat
+        {% elif s.dominant_state_velocity_pp_30d > 0 %}is-up
+        {% else %}is-down{% endif %}"
+        title="{{ s.dominant_state_label }} probability change over the last 30 days">
+      {% if s.dominant_state_velocity_pp_30d > 0 %}+{% endif %}{{ s.dominant_state_velocity_pp_30d|round(1) }}pp · 30d
+    </span>
+    {% if s.last_updated_at %}
+      <span class="predicate-card-stat muted">
+        updated {{ s.last_updated_at.strftime('%b %d, %H:%M') }}
+      </span>
+    {% endif %}
+    {% if not s.has_recent_evidence %}
+      <span class="predicate-card-stat predicate-coverage-warn"
+            title="No confirmed evidence in the last 30 days.">
+        no recent evidence
+      </span>
+    {% endif %}
+    <button type="button" class="btn-ghost predicate-card-expand"
+            hx-get="/scenarios/predicates/{{ s.key }}/expand"
+            hx-target="#predicate-detail-{{ s.key }}"
+            hx-swap="innerHTML"
+            data-predicate-key="{{ s.key }}"
+            aria-expanded="false"
+            aria-controls="predicate-detail-{{ s.key }}">▸ Expand</button>
+  </footer>
+
+  {# Inline expand target. Empty until the user clicks Expand. The
+     detail partial includes its own Collapse button which clears this
+     container and resets aria-expanded via the inline JS in scenarios_index.html. #}
+  <div id="predicate-detail-{{ s.key }}" class="predicate-detail-mount" hidden></div>
+</article>

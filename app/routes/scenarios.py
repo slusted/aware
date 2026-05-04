@@ -29,6 +29,7 @@ from ..models import (
     SignalView,
     User,
 )
+from ..scenarios import dashboard as dashboard_svc
 from ..scenarios.service import recompute_predicate
 
 
@@ -459,3 +460,141 @@ def trigger_classify_sweep(
         "run_id": run.id,
         "queue_position": jobs.queue_position(db, run.id),
     }
+
+
+@router.post("/api/runs/scenarios-recompute", status_code=202)
+def trigger_recompute(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("admin", "analyst")),
+):
+    """Manually enqueue a posterior recompute. Useful when likelihood
+    ratios or decay settings have been edited via SQL — the dashboard
+    won't reflect the new math until a recompute runs against the
+    existing evidence."""
+    run = jobs.enqueue_run(
+        db,
+        "scenarios_recompute",
+        triggered_by="manual",
+    )
+    return {
+        "queued": True,
+        "kind": "scenarios_recompute",
+        "run_id": run.id,
+        "queue_position": jobs.queue_position(db, run.id),
+    }
+
+
+# ── Stage-3: dashboard ──────────────────────────────────────────────────
+
+VALID_PREDICATE_SORTS = ("shifting", "contested", "alpha", "category")
+VALID_EVIDENCE_SORTS = (
+    "observed_desc", "observed_asc", "confirmed_desc",
+    "credibility_desc", "contribution_desc",
+)
+
+
+def _coerce_sort(value: str | None, allowed: tuple[str, ...], default: str) -> str:
+    if not value or value not in allowed:
+        return default
+    return value
+
+
+@router.get("/scenarios", response_class=HTMLResponse)
+def scenarios_index(
+    request: Request,
+    tab: str = "predicates",
+    sort: str = "shifting",
+    category: str | None = None,
+    only_no_recent: int = 0,
+    evidence_sort: str = "observed_desc",
+    evidence_offset: int = 0,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Main /scenarios page. Read-only this stage. Tabs:
+      - predicates (default): grid of cards, sortable, filterable
+      - evidence: flat confirmed evidence table
+      - scenarios / settings: reserved (stage 4 / 5), 404 inside the
+        template via a placeholder panel — no separate route needed.
+    """
+    if tab not in ("predicates", "evidence", "scenarios", "settings"):
+        tab = "predicates"
+    sort = _coerce_sort(sort, VALID_PREDICATE_SORTS, "shifting")
+    evidence_sort = _coerce_sort(evidence_sort, VALID_EVIDENCE_SORTS, "observed_desc")
+
+    summaries = dashboard_svc.predicate_summary(db)
+    if category:
+        summaries = [s for s in summaries if s.category == category]
+    if only_no_recent:
+        summaries = [s for s in summaries if not s.has_recent_evidence]
+    summaries = dashboard_svc.sort_summaries(summaries, sort)
+
+    categories = sorted({s.category for s in dashboard_svc.predicate_summary(db)})
+
+    evidence_rows: list = []
+    evidence_total = 0
+    if tab == "evidence":
+        evidence_rows, evidence_total = dashboard_svc.evidence_list(
+            db, sort=evidence_sort, offset=evidence_offset,
+        )
+
+    return templates.TemplateResponse(request, "scenarios_index.html", {
+        "user": user,
+        "tab": tab,
+        "sort": sort,
+        "category": category,
+        "categories": categories,
+        "only_no_recent": bool(only_no_recent),
+        "summaries": summaries,
+        "evidence_sort": evidence_sort,
+        "evidence_offset": evidence_offset,
+        "evidence_rows": evidence_rows,
+        "evidence_total": evidence_total,
+        "evidence_page_size": dashboard_svc.EVIDENCE_LIST_PAGE_SIZE,
+        "header": dashboard_svc.header_counts(db),
+        "valid_predicate_sorts": VALID_PREDICATE_SORTS,
+        "valid_evidence_sorts": VALID_EVIDENCE_SORTS,
+    })
+
+
+@router.get("/scenarios/evidence", response_class=HTMLResponse)
+def scenarios_evidence_alias(
+    request: Request,
+    sort: str = "observed_desc",
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Deep-link alias for the evidence tab. Calls into the main route
+    so output is identical and the same template handles both."""
+    return scenarios_index(
+        request,
+        tab="evidence",
+        sort="shifting",
+        category=None,
+        only_no_recent=0,
+        evidence_sort=sort,
+        evidence_offset=offset,
+        db=db,
+        user=user,
+    )
+
+
+@router.get(
+    "/scenarios/predicates/{predicate_key}/expand",
+    response_class=HTMLResponse,
+)
+def predicate_expand(
+    predicate_key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """HTMX partial: the inline expand panel for one predicate card.
+    Targets `#predicate-detail-{key}` on the parent page."""
+    detail = dashboard_svc.predicate_detail(db, predicate_key)
+    if detail is None:
+        raise HTTPException(404, f"predicate {predicate_key!r} not found or inactive")
+    return templates.TemplateResponse(request, "_scenarios_predicate_detail.html", {
+        "detail": detail,
+    })
