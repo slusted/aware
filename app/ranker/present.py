@@ -6,11 +6,19 @@ Two jobs, in order:
   2. Diversify the top-of-feed via MMR so the top slots don't collapse
      into a single (competitor, signal_type) combo.
 
-Pure post-processing: no DB, no LLM, no embeddings. Input is a list of
-Finding rows (already filtered and initially ordered by the caller);
-output is a list of ClusterCard ordered for render.
+Clustering buckets by competitor only and uses embedding cosine when
+both findings carry a current-model vector, falling back to title
+Jaccard otherwise. The signal_type is no longer part of the bucket key:
+the LLM classifier sometimes splits two reports of the same event into
+different signal_types (e.g. one tagged `news`, the other `funding`),
+which used to leave duplicates uncollapsed.
 
-Runtime-only — clusters are recomputed per request and never persisted.
+Pure post-processing: no DB, no LLM calls. Embedding bytes are read
+straight off the Finding row via the voyage adapter's unpacker — no
+network. Input is a list of Finding rows (already filtered and initially
+ordered by the caller); output is a list of ClusterCard ordered for
+render. Runtime-only — clusters are recomputed per request and never
+persisted.
 """
 from __future__ import annotations
 
@@ -131,11 +139,46 @@ def title_jaccard(a: str | None, b: str | None) -> float:
 
 # ── Clustering ──────────────────────────────────────────────────────
 
-def _bucket_key(finding: Finding) -> tuple[str, str | None]:
-    """Bucket by (normalized competitor, signal_type). Only findings in
-    the same bucket are candidates for clustering."""
-    competitor = (finding.competitor or "").strip().lower()
-    return (competitor, finding.signal_type)
+def _bucket_key(finding: Finding) -> str:
+    """Bucket by normalized competitor only. Different competitors never
+    cluster; everything else is decided by similarity inside the bucket.
+    Dropping signal_type fixes the case where the same event was split
+    across two signal_types by the classifier and never collapsed."""
+    return (finding.competitor or "").strip().lower()
+
+
+def _finding_embedding(finding: Finding):
+    """Unpack a Finding's embedding when it matches the current model.
+    Returns a numpy array (L2-normalized at write time → cosine = dot)
+    or None when the column is empty or the row predates the active
+    model — in either case the caller falls back to title Jaccard."""
+    if finding.embedding is None:
+        return None
+    if finding.embedding_model != rcfg.EMBEDDING_MODEL:
+        return None
+    return _voyage.unpack(finding.embedding)
+
+
+def _are_duplicates(
+    a: Finding,
+    b: Finding,
+    *,
+    a_emb,
+    b_emb,
+    cosine_threshold: float,
+    jaccard_threshold: float,
+) -> bool:
+    """Embedding cosine when both vectors are available (the norm now
+    that the backfill has run); title Jaccard fallback when either side
+    is missing a vector — so a Voyage outage or pre-embedding row can't
+    silently turn dedup off."""
+    if a_emb is not None and b_emb is not None:
+        try:
+            cos = float((a_emb * b_emb).sum())
+        except Exception:
+            cos = 0.0
+        return cos >= cosine_threshold
+    return title_jaccard(a.title, b.title) >= jaccard_threshold
 
 
 class _UnionFind:
@@ -166,20 +209,26 @@ def cluster(
     *,
     score_fn: Callable[[Finding], float],
     jaccard_threshold: float | None = None,
+    cosine_threshold: float | None = None,
 ) -> list[ClusterCard]:
-    """Group near-duplicates within each (competitor, signal_type)
-    bucket. Returns clusters sorted by lead score desc, ties broken by
-    lead created_at desc."""
-    threshold = jaccard_threshold if jaccard_threshold is not None else rcfg.CLUSTER_JACCARD_THRESHOLD
+    """Group near-duplicates within each competitor bucket. Within a
+    bucket each pair is compared via embedding cosine when both vectors
+    are present, falling back to title Jaccard when either side lacks
+    one. Returns clusters sorted by lead score desc, ties broken by
+    lead effective_date desc."""
+    j_thresh = jaccard_threshold if jaccard_threshold is not None else rcfg.CLUSTER_JACCARD_THRESHOLD
+    c_thresh = cosine_threshold if cosine_threshold is not None else rcfg.CLUSTER_COSINE_THRESHOLD
 
     if not findings:
         return []
 
     scores = [score_fn(f) for f in findings]
+    # Unpack each embedding once up-front; pairwise loop just dots them.
+    embeddings = [_finding_embedding(f) for f in findings]
 
-    # Bucket findings by (competitor, signal_type) so pairwise Jaccard
-    # is only computed within already-similar sets.
-    buckets: dict[tuple[str, str | None], list[int]] = {}
+    # Bucket findings by competitor so pairwise comparison is only
+    # computed within plausible candidate sets.
+    buckets: dict[str, list[int]] = {}
     for idx, f in enumerate(findings):
         buckets.setdefault(_bucket_key(f), []).append(idx)
 
@@ -187,13 +236,17 @@ def cluster(
     for members in buckets.values():
         if len(members) < 2:
             continue
-        # Pairwise Jaccard within the bucket. Buckets stay small in
-        # practice — a single (competitor, signal_type) in a 30-day
-        # window is rarely more than a few dozen items.
+        # Pairwise within the bucket. Buckets stay small in practice —
+        # a single competitor in a 30-day window is rarely more than a
+        # few dozen items, so O(n²) cosine dots are negligible.
         for i_local, i in enumerate(members):
-            ti = findings[i].title
             for j in members[i_local + 1:]:
-                if title_jaccard(ti, findings[j].title) >= threshold:
+                if _are_duplicates(
+                    findings[i], findings[j],
+                    a_emb=embeddings[i], b_emb=embeddings[j],
+                    cosine_threshold=c_thresh,
+                    jaccard_threshold=j_thresh,
+                ):
                     uf.union(i, j)
 
     # Group indices by root → cluster membership list.
@@ -317,6 +370,7 @@ def present(
     mmr_window: int | None = None,
     mmr_lambda: float | None = None,
     jaccard_threshold: float | None = None,
+    cosine_threshold: float | None = None,
 ) -> list[ClusterCard]:
     """Cluster near-duplicates, then diversify the top of the list.
 
@@ -351,7 +405,12 @@ def present(
             )
         score_fn = _score
 
-    clustered = cluster(findings, score_fn=score_fn, jaccard_threshold=jaccard_threshold)
+    clustered = cluster(
+        findings,
+        score_fn=score_fn,
+        jaccard_threshold=jaccard_threshold,
+        cosine_threshold=cosine_threshold,
+    )
     return diversify(clustered, window=mmr_window, lambda_=mmr_lambda)
 
 

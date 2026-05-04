@@ -23,7 +23,10 @@ except Exception:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import numpy as np  # noqa: E402
+
 from app import models  # noqa: E402
+from app.adapters import voyage as _voyage  # noqa: E402
 from app.ranker import config as rcfg  # noqa: E402
 from app.ranker.present import (  # noqa: E402
     ClusterCard,
@@ -72,9 +75,13 @@ def mk(
     source: str = "news",
     materiality: float | None = 0.5,
     age_days: float = 0.0,
+    embedding: "np.ndarray | None" = None,
 ) -> models.Finding:
     """Detached Finding, never hits a DB. Uses bare constructor so
-    SQLAlchemy stays out of the way."""
+    SQLAlchemy stays out of the way. Pass `embedding` (an L2-normalized
+    float32 ndarray of length EMBEDDING_DIM) to exercise the cosine
+    branch of the clusterer; leave None to exercise the Jaccard
+    fallback."""
     f = models.Finding()
     f.id = id
     f.competitor = competitor
@@ -85,7 +92,32 @@ def mk(
     f.materiality = materiality
     f.created_at = NOW - timedelta(days=age_days)
     f.hash = f"h{id}"
+    if embedding is not None:
+        f.embedding = _voyage.pack(embedding)
+        f.embedding_model = rcfg.EMBEDDING_MODEL
+    else:
+        f.embedding = None
+        f.embedding_model = None
     return f
+
+
+def vec(*, axis: int, weight: float = 1.0) -> np.ndarray:
+    """Build a deterministic L2-normalized vector that lives mostly on
+    one axis. Two vectors built with the same `axis` cosine-cluster
+    together; different axes stay below the cosine threshold. `weight`
+    in [0, 1] tunes how strongly the vector points along `axis` — 1.0
+    is pure, 0.5 leans toward axis but mixes the rest in evenly."""
+    arr = np.zeros(rcfg.EMBEDDING_DIM, dtype=np.float32)
+    arr[axis] = weight
+    if weight < 1.0:
+        # Spread the remainder across the other components so the
+        # vector still has full dimensionality before normalization.
+        leftover = (1.0 - weight) / (rcfg.EMBEDDING_DIM - 1)
+        for i in range(rcfg.EMBEDDING_DIM):
+            if i != axis:
+                arr[i] = leftover
+    norm = float(np.linalg.norm(arr))
+    return (arr / norm).astype(np.float32, copy=False)
 
 
 def score_now(f: models.Finding) -> float:
@@ -147,12 +179,15 @@ cards = cluster([c, d], score_fn=score_now)
 check("different competitors with identical titles → two clusters",
       len(cards) == 2 and all(c.size == 1 for c in cards))
 
-# Different signal_type within same competitor → separate.
+# Same competitor + duplicate title across signal_types → ONE cluster.
+# Bucket key dropped signal_type so that classifier disagreement on the
+# same real-world event (e.g. one row tagged `news`, another `funding`)
+# can no longer split a cluster.
 e = mk(id=5, title="Indeed launches pricing", signal_type="product_launch")
 f = mk(id=6, title="Indeed launches pricing", signal_type="new_hire")
 cards = cluster([e, f], score_fn=score_now)
-check("same competitor, different signal_type → two clusters",
-      len(cards) == 2)
+check("same competitor, different signal_type, identical title → one cluster",
+      len(cards) == 1 and cards[0].size == 2)
 
 # Transitive clustering via union-find: A~B, B~C, but A!~C directly.
 t1 = mk(id=7, title="Indeed announces partnership with Acme")
@@ -303,6 +338,81 @@ n1 = mk(id=2001, title="Indeed makes announcement today", signal_type=None)
 n2 = mk(id=2002, title="Indeed announcement today revealed", signal_type=None)
 cards = cluster([n1, n2], score_fn=score_now)
 check("NULL signal_type doesn't prevent same-competitor clustering",
+      len(cards) == 1 and cards[0].size == 2)
+
+
+# ── §7: Embedding-based clustering ─────────────────────────────────
+section("Embedding cosine clustering")
+
+# Two findings whose titles share almost nothing but whose embeddings
+# point the same way → cluster via the cosine path. This is the case
+# the old Jaccard-only path used to miss.
+v_event = vec(axis=7, weight=1.0)  # both vectors identical → cosine 1.0
+e1 = mk(id=3001, title="LinkedIn targets $450m in recruiter revenue",
+        competitor="LinkedIn", signal_type="news",
+        materiality=0.7, embedding=v_event)
+e2 = mk(id=3002, title="Microsoft unit sets ambitious hiring-tools goal",
+        competitor="LinkedIn", signal_type="strategy",
+        materiality=0.6, embedding=v_event)
+# Sanity: titles really would NOT cluster on Jaccard alone.
+check("setup: low title overlap between the two embeddings",
+      title_jaccard(e1.title, e2.title) < rcfg.CLUSTER_JACCARD_THRESHOLD,
+      detail=f"jaccard={title_jaccard(e1.title, e2.title):.3f}")
+cards = cluster([e1, e2], score_fn=score_now)
+check("embeddings cosine ≥ threshold → cluster despite title mismatch",
+      len(cards) == 1 and cards[0].size == 2)
+
+# Two embeddings on different axes → cosine ~0 → stay separate even
+# inside the same competitor bucket.
+e3 = mk(id=3003, title="Some unrelated story",
+        competitor="LinkedIn", embedding=vec(axis=7))
+e4 = mk(id=3004, title="Yet another unrelated story",
+        competitor="LinkedIn", embedding=vec(axis=42))
+cards = cluster([e3, e4], score_fn=score_now)
+check("orthogonal embeddings → two singleton clusters",
+      len(cards) == 2 and all(c.size == 1 for c in cards))
+
+# One side has an embedding, the other doesn't → falls back to Jaccard.
+# Identical titles → Jaccard 1.0 → still cluster.
+e5 = mk(id=3005, title="Indeed announces partnership with Acme",
+        competitor="Indeed", embedding=vec(axis=7))
+e6 = mk(id=3006, title="Indeed announces partnership with Acme",
+        competitor="Indeed", embedding=None)
+cards = cluster([e5, e6], score_fn=score_now)
+check("missing embedding on one side → Jaccard fallback still clusters",
+      len(cards) == 1 and cards[0].size == 2)
+
+# Stale-model embedding (model field doesn't match config) → treated as
+# missing, falls back to Jaccard.
+e7 = mk(id=3007, title="Indeed picks new CFO",
+        competitor="Indeed", embedding=vec(axis=7))
+e7.embedding_model = "voyage-OLD-MODEL-NAME"
+e8 = mk(id=3008, title="Indeed picks new CFO",
+        competitor="Indeed", embedding=vec(axis=7))
+cards = cluster([e7, e8], score_fn=score_now)
+check("stale-model embedding ignored, identical titles still cluster",
+      len(cards) == 1 and cards[0].size == 2)
+
+# Cosine threshold respected — vector pair just below the bar should not
+# cluster. With voyage-3-lite EMBEDDING_DIM=512 and weight=0.5 spread,
+# the cosine of two `vec(axis=7, weight=0.5)` vectors is exactly 1.0
+# (identical), so build a "near miss" by mixing two different axes.
+mix_a = vec(axis=7, weight=1.0)
+mix_b = vec(axis=8, weight=1.0)
+near_miss = ((mix_a + mix_b) / np.linalg.norm(mix_a + mix_b)).astype(np.float32)
+# cos(mix_a, near_miss) = 1/sqrt(2) ≈ 0.707 — below the 0.85 threshold.
+e9  = mk(id=3009, title="Indeed Q1 earnings beat",
+         competitor="Indeed", embedding=mix_a)
+e10 = mk(id=3010, title="Indeed launches enterprise tier",
+         competitor="Indeed", embedding=near_miss)
+cards = cluster([e9, e10], score_fn=score_now)
+check("cosine below threshold → two clusters (no false merge)",
+      len(cards) == 2,
+      detail=f"cos={float((mix_a * near_miss).sum()):.3f}")
+
+# Override threshold via kwarg → can be loosened per-call.
+cards = cluster([e9, e10], score_fn=score_now, cosine_threshold=0.5)
+check("cosine_threshold kwarg loosens clustering at call site",
       len(cards) == 1 and cards[0].size == 2)
 
 
