@@ -24,11 +24,13 @@ from ..models import (
     PredicateState,
     PredicateEvidence,
     PredicatePosteriorSnapshot,
+    PredicateProposal,
     Scenario,
     ScenarioPredicateLink,
     EvidenceLikelihoodRatio,
     SourceCredibilityDefault,
     ScenarioSetting,
+    User,
 )
 from .posterior import (
     EvidenceInput,
@@ -487,3 +489,175 @@ def update_scenario(
 
     db.flush()
     return sc
+
+
+# ─── Stage 6: predicate-review proposal accept / reject ────────────────
+#
+# Accept dispatches to the same authoring functions the chat tool and the
+# admin UI already use (update_predicate / direct evidence mutation).
+# That keeps mutation logic in one place and means the audit trail —
+# Predicate.updated_at, snapshot history — is unchanged.
+#
+# Reject is non-mutating: just status + decided_at + decided_by + reason.
+#
+# The kinds merge_with and new_predicate are reserved by the schema but
+# explicitly out of scope this stage. We raise ValueError on accept
+# rather than silently doing nothing.
+
+
+def accept_proposal(
+    db: Session,
+    proposal_id: int,
+    user: User | None,
+    *,
+    now: datetime | None = None,
+) -> PredicateProposal:
+    """Apply a pending PredicateProposal by dispatching to the matching
+    authoring path. Marks the proposal `accepted` and stamps
+    `decided_by` + `decided_at`.
+
+    Raises ValueError on:
+      - unknown proposal id
+      - proposal not in `pending` status (no double-accept)
+      - reserved kind (merge_with / new_predicate)
+      - downstream validation failure from the authoring function
+    """
+    import json as _json
+    from ..models import PredicateProposal as _PP, PredicateState as _PS
+
+    if now is None:
+        now = datetime.utcnow()
+    p = db.get(_PP, proposal_id)
+    if p is None:
+        raise ValueError(f"proposal {proposal_id} not found")
+    if p.status != "pending":
+        raise ValueError(
+            f"proposal {proposal_id} is {p.status!r}, only pending can be accepted"
+        )
+    if p.kind in ("merge_with", "new_predicate"):
+        raise ValueError(
+            f"proposal kind {p.kind!r} is reserved for the future global "
+            "queue — not accepted via this endpoint."
+        )
+
+    try:
+        payload = _json.loads(p.target_payload_json or "{}")
+    except _json.JSONDecodeError as e:
+        raise ValueError(f"proposal {proposal_id} payload is not valid JSON: {e}")
+
+    pkey = p.source_predicate_key
+    if p.kind == "refine_statement":
+        if not pkey:
+            raise ValueError("refine_statement requires source_predicate_key")
+        new_statement = payload.get("new_statement")
+        if not new_statement or not isinstance(new_statement, str):
+            raise ValueError("refine_statement payload missing 'new_statement' string")
+        update_predicate(db, pkey, statement=new_statement)
+    elif p.kind == "rename_state":
+        if not pkey:
+            raise ValueError("rename_state requires source_predicate_key")
+        sk = payload.get("state_key")
+        new_label = payload.get("new_label")
+        if not sk or not isinstance(new_label, str):
+            raise ValueError(
+                "rename_state payload missing 'state_key' or 'new_label'"
+            )
+        update_predicate(
+            db, pkey,
+            states=[{"state_key": sk, "label": new_label}],
+        )
+    elif p.kind == "reorder_states":
+        if not pkey:
+            raise ValueError("reorder_states requires source_predicate_key")
+        order = payload.get("order")
+        if not isinstance(order, list) or not order:
+            raise ValueError("reorder_states payload missing 'order' list")
+        states_payload = [
+            {"state_key": sk, "ordinal_position": i}
+            for i, sk in enumerate(order)
+        ]
+        update_predicate(db, pkey, states=states_payload)
+    elif p.kind == "split_state":
+        # Authoring split is not supported by update_predicate yet
+        # (adding/removing states is rejected there). Spec acknowledges
+        # this — surface the proposal but require manual follow-up.
+        raise ValueError(
+            "split_state cannot be auto-applied — current update_predicate "
+            "rejects state additions. Use 'Refine in chat' to author the "
+            "split, then accept this proposal as a reject (or via SQL)."
+        )
+    elif p.kind == "retire":
+        if not pkey:
+            raise ValueError("retire requires source_predicate_key")
+        update_predicate(db, pkey, active=False)
+    elif p.kind == "reassign_evidence":
+        ev_id = payload.get("evidence_id")
+        target_pkey = payload.get("to_predicate_key")
+        if not ev_id or not target_pkey:
+            raise ValueError(
+                "reassign_evidence payload missing 'evidence_id' or 'to_predicate_key'"
+            )
+        ev = db.get(PredicateEvidence, ev_id)
+        if ev is None:
+            raise ValueError(f"evidence {ev_id} not found")
+        new_pred = (
+            db.query(Predicate).filter(Predicate.key == target_pkey).one_or_none()
+        )
+        if new_pred is None:
+            raise ValueError(f"target predicate {target_pkey!r} not found")
+        # Default the target_state_key to the first ordinal state of the
+        # new predicate when the payload doesn't specify one. The agent
+        # will usually pin it in payload['to_state_key'], but if not, we
+        # fall back so the FK remains valid.
+        target_sk = payload.get("to_state_key")
+        if not target_sk:
+            first = (
+                db.query(_PS)
+                .filter(_PS.predicate_id == new_pred.id)
+                .order_by(_PS.ordinal_position)
+                .first()
+            )
+            target_sk = first.state_key if first else ev.target_state_key
+        old_predicate_id = ev.predicate_id
+        ev.predicate_id = new_pred.id
+        ev.target_state_key = target_sk
+        # Recompute both predicates so posteriors reflect the move. The
+        # math layer is commutative — recompute order doesn't matter.
+        recompute_predicate(db, old_predicate_id, now=now)
+        recompute_predicate(db, new_pred.id, now=now)
+    else:
+        raise ValueError(f"unknown proposal kind: {p.kind!r}")
+
+    p.status = "accepted"
+    p.decided_at = now
+    p.decided_by = user.id if user else None
+    db.flush()
+    return p
+
+
+def reject_proposal(
+    db: Session,
+    proposal_id: int,
+    user: User | None,
+    *,
+    reason: str | None = None,
+    now: datetime | None = None,
+) -> PredicateProposal:
+    """Mark a pending proposal `rejected`. No predicate / evidence
+    mutation happens. Subsequent monthly runs may re-propose the same
+    shape — that's fine; the analyst can reject again."""
+    if now is None:
+        now = datetime.utcnow()
+    p = db.get(PredicateProposal, proposal_id)
+    if p is None:
+        raise ValueError(f"proposal {proposal_id} not found")
+    if p.status != "pending":
+        raise ValueError(
+            f"proposal {proposal_id} is {p.status!r}, only pending can be rejected"
+        )
+    p.status = "rejected"
+    p.decided_at = now
+    p.decided_by = user.id if user else None
+    p.decision_reason = (reason or "").strip() or None
+    db.flush()
+    return p

@@ -1,0 +1,115 @@
+{# One PredicateProposal rendered with Accept / Reject / Refine-in-chat
+   buttons. Reused inline by the review block; future global queue spec
+   will reuse it unchanged.
+
+   Args:
+     proposal - ProposalView (app/scenarios/review.py)
+     error    - optional error string from a failed accept/reject
+   The accept/reject buttons fire HTMX swaps that re-render this same
+   partial, so a successful Reject flips the card to a "rejected" state
+   in place without a full page reload.
+#}
+<article id="proposal-card-{{ proposal.id }}"
+         class="proposal-card is-{{ proposal.status }}"
+         data-proposal-id="{{ proposal.id }}">
+  <header class="proposal-card-head">
+    <span class="proposal-card-kind mono">{{ proposal.kind }}</span>
+    <span class="proposal-card-status">{{ proposal.status }}</span>
+    {% if proposal.source_predicate_key %}
+      <span class="muted">· {{ proposal.source_predicate_key }}</span>
+    {% endif %}
+  </header>
+
+  <div class="proposal-card-body">
+    {% if proposal.kind == "refine_statement" %}
+      {% if proposal.target_payload.new_statement %}
+        <div class="proposal-card-payload">
+          <div class="proposal-card-payload-label muted">Proposed statement</div>
+          <div>{{ proposal.target_payload.new_statement }}</div>
+        </div>
+      {% endif %}
+    {% elif proposal.kind == "rename_state" %}
+      <div class="proposal-card-payload">
+        Rename
+        <code>{{ proposal.target_payload.state_key }}</code>
+        →
+        <strong>{{ proposal.target_payload.new_label }}</strong>
+      </div>
+    {% elif proposal.kind == "reorder_states" %}
+      <div class="proposal-card-payload">
+        New order:
+        {% for sk in proposal.target_payload.order or [] %}
+          <code>{{ sk }}</code>{% if not loop.last %} → {% endif %}
+        {% endfor %}
+      </div>
+    {% elif proposal.kind == "split_state" %}
+      <div class="proposal-card-payload">
+        Split <code>{{ proposal.target_payload.state_key }}</code> into
+        {% for ns in proposal.target_payload.new_states or [] %}
+          <span><code>{{ ns.state_key }}</code> ({{ ns.label }}){% if not loop.last %}, {% endif %}</span>
+        {% endfor %}
+      </div>
+    {% elif proposal.kind == "reassign_evidence" %}
+      <div class="proposal-card-payload">
+        Move evidence #{{ proposal.target_payload.evidence_id }} →
+        <code>{{ proposal.target_payload.to_predicate_key }}</code>
+      </div>
+    {% elif proposal.kind == "retire" %}
+      <div class="proposal-card-payload">
+        Retire predicate
+        {% if proposal.target_payload.reason_short %}
+          <span class="muted">— {{ proposal.target_payload.reason_short }}</span>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="proposal-card-payload muted">{{ proposal.target_payload }}</div>
+    {% endif %}
+
+    {% if proposal.rationale %}
+      <p class="proposal-card-rationale"><span class="muted">Why:</span> {{ proposal.rationale }}</p>
+    {% endif %}
+
+    {% if proposal.supporting_finding_ids %}
+      <p class="proposal-card-supports muted">
+        Supporting findings:
+        {% for fid in proposal.supporting_finding_ids %}
+          #{{ fid }}{% if not loop.last %}, {% endif %}
+        {% endfor %}
+      </p>
+    {% endif %}
+
+    {% if proposal.status != "pending" %}
+      <p class="muted">
+        Decided {{ proposal.decided_at.strftime('%Y-%m-%d %H:%M') if proposal.decided_at else '?' }}
+        {% if proposal.decision_reason %}— {{ proposal.decision_reason }}{% endif %}
+      </p>
+    {% endif %}
+  </div>
+
+  {% if error %}
+    <p class="proposal-card-error">⚠ {{ error }}</p>
+  {% endif %}
+
+  {% if proposal.status == "pending" %}
+    <footer class="proposal-card-actions">
+      <button type="button"
+              class="btn"
+              hx-post="/scenarios/proposals/{{ proposal.id }}/accept"
+              hx-target="#proposal-card-{{ proposal.id }}"
+              hx-swap="outerHTML">
+        Accept
+      </button>
+      <button type="button"
+              class="btn-ghost"
+              hx-post="/scenarios/proposals/{{ proposal.id }}/reject"
+              hx-target="#proposal-card-{{ proposal.id }}"
+              hx-swap="outerHTML">
+        Reject
+      </button>
+      <a class="btn-ghost"
+         href="/chat?prompt=Refine+predicate+proposal+{{ proposal.id }}+via+scenarios_update_predicate">
+        Refine in chat
+      </a>
+    </footer>
+  {% endif %}
+</article>

@@ -1,0 +1,62 @@
+{# Math view: the Stage-3 evidence table verbatim, wrapped in a
+   <details> so it's collapsed by default after the Stage-6 review-pane
+   refactor. Same data shape — just demoted to "show me the receipt"
+   territory.
+
+   Args:
+     detail - PredicateDetail (app/scenarios/dashboard.py)
+#}
+<details class="predicate-math-view">
+  <summary class="muted">▸ Math view (Δ logit · decay · contribution)</summary>
+
+  {% if detail.evidence_confirmed %}
+    <table class="evidence-table">
+      <thead>
+        <tr>
+          <th>Δ logit</th>
+          <th>Observed</th>
+          <th>State</th>
+          <th>Direction / strength</th>
+          <th>Cred</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ev in detail.evidence_confirmed %}
+          <tr>
+            <td class="evidence-contribution mono
+              {% if ev.contribution > 0 %}is-positive{% elif ev.contribution < 0 %}is-negative{% endif %}">
+              {% if ev.contribution > 0 %}+{% endif %}{{ ev.contribution|round(2) }}
+            </td>
+            <td class="muted">{{ ev.observed_at.strftime('%Y-%m-%d') }}</td>
+            <td>{{ ev.target_state_label }}</td>
+            <td>
+              <span class="evidence-direction-chip is-{{ ev.direction }}">{{ ev.direction }}</span>
+              <span class="muted">/ {{ ev.strength_bucket }}</span>
+            </td>
+            <td class="mono">{{ ev.credibility|round(2) }}</td>
+            <td>
+              {% if ev.finding_url %}
+                <a href="{{ ev.finding_url }}" target="_blank" rel="noopener">
+                  {{ (ev.finding_title or '#' ~ ev.finding_id)[:80] }}
+                </a>
+              {% elif ev.finding_id %}
+                <span class="muted">finding #{{ ev.finding_id }}</span>
+              {% else %}
+                <span class="muted">manual</span>
+              {% endif %}
+              {% if ev.competitor %}
+                <span class="muted"> · {{ ev.competitor }}</span>
+              {% endif %}
+              {% if ev.notes %}
+                <div class="evidence-notes muted">{{ ev.notes }}</div>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No confirmed evidence on this predicate yet.</p>
+  {% endif %}
+</details>

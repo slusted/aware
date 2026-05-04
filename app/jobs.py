@@ -450,6 +450,12 @@ def _dispatch_queued_run(run_id: int, kind: str, args: dict, triggered_by: str) 
                 max_proposals=args.get("max_proposals"),
                 run_id=run_id,
             )
+        elif kind == "predicate_review":
+            run_predicate_review_job(
+                triggered_by=triggered_by,
+                predicate_keys=args.get("predicate_keys"),
+                run_id=run_id,
+            )
         else:
             raise ValueError(f"queue dispatch: unknown run kind {kind!r}")
     except Exception as e:
@@ -2457,6 +2463,65 @@ def run_scenarios_classify_sweep_job(
         )
         level = "warn" if result.skipped_budget > 0 else "info"
         _log(db, run, msg, level)
+        _finish_run(db, run, "ok")
+    except Exception as e:
+        tb = traceback.format_exc()
+        _log(db, run, f"ERROR: {e}\n{tb}", "error")
+        _finish_run(db, run, "error", str(e))
+    finally:
+        current_run_id.reset(token)
+
+
+# ─── Predicate review (docs/scenarios/06-predicate-review.md) ───────────
+# Monthly LLM-driven ontology hygiene pass. One Haiku call per active
+# predicate; with N≈12-20 predicates a run is 12-20 calls. Failure-soft:
+# any single predicate's LLM error is logged + skipped, the rest of the
+# run continues.
+
+def run_predicate_review_job(
+    triggered_by: str = "manual",
+    predicate_keys: list[str] | None = None,
+    run_id: int | None = None,
+) -> None:
+    """Wrap run_predicate_review in a Run row so the monthly pass shows
+    up on /runs alongside scans/digests. With ANTHROPIC_API_KEY unset
+    the underlying pipeline returns a zero-result without writing rows
+    — the run still completes 'ok' with a warning event, so empty
+    months are diagnosable.
+    """
+    run, db = _start_run("predicate_review", triggered_by, run_id=run_id)
+    run_id = run.id
+    token = current_run_id.set(run_id)
+    try:
+        from .scenarios.review import run_predicate_review
+
+        scope = ",".join(predicate_keys) if predicate_keys else "all"
+        _log(db, run, f"reviewing predicates (scope={scope})")
+
+        def _emit(msg: str) -> None:
+            # One RunEvent per per-predicate decision so /runs shows
+            # progress streamingly. Cheap; ≤20 events per run.
+            _log(db, run, msg)
+
+        result = run_predicate_review(
+            db, predicate_keys=predicate_keys, run_id=run_id, log=_emit,
+        )
+        db.commit()
+
+        summary = (
+            f"{result.reviewed} reviewed · "
+            f"{result.clean} clean · "
+            f"{result.wording} wording · "
+            f"{result.structural} structural · "
+            f"{len(result.errors)} errors"
+        )
+        if result.skipped_cooldown:
+            summary += f" · {result.skipped_cooldown} cooldown-skipped"
+        level = "warn" if result.errors else "info"
+        _log(db, run, summary, level)
+        # Keep the count visible on the run row's badges.
+        run.findings_count = result.proposals_created
+        db.commit()
         _finish_run(db, run, "ok")
     except Exception as e:
         tb = traceback.format_exc()

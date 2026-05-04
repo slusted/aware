@@ -33,97 +33,18 @@
   </div>
 
   <div class="predicate-detail-evidence">
-    <h4 class="predicate-detail-h">Evidence (sorted by |contribution|)</h4>
-    {% if detail.evidence_confirmed %}
-      <table class="evidence-table">
-        <thead>
-          <tr>
-            <th>Δ logit</th>
-            <th>Observed</th>
-            <th>State</th>
-            <th>Direction / strength</th>
-            <th>Cred</th>
-            <th>Source</th>
-          </tr>
-        </thead>
-        <tbody>
-        {% for ev in detail.evidence_confirmed %}
-          <tr>
-            <td class="evidence-contribution mono
-              {% if ev.contribution > 0 %}is-positive{% elif ev.contribution < 0 %}is-negative{% endif %}">
-              {% if ev.contribution > 0 %}+{% endif %}{{ ev.contribution|round(2) }}
-            </td>
-            <td class="muted">{{ ev.observed_at.strftime('%Y-%m-%d') }}</td>
-            <td>{{ ev.target_state_label }}</td>
-            <td>
-              <span class="evidence-direction-chip is-{{ ev.direction }}">{{ ev.direction }}</span>
-              <span class="muted">/ {{ ev.strength_bucket }}</span>
-            </td>
-            <td class="mono">{{ ev.credibility|round(2) }}</td>
-            <td>
-              {% if ev.finding_url %}
-                <a href="{{ ev.finding_url }}" target="_blank" rel="noopener">
-                  {{ (ev.finding_title or '#' ~ ev.finding_id)[:80] }}
-                </a>
-              {% elif ev.finding_id %}
-                <span class="muted">finding #{{ ev.finding_id }}</span>
-              {% else %}
-                <span class="muted">manual</span>
-              {% endif %}
-              {% if ev.competitor %}
-                <span class="muted"> · {{ ev.competitor }}</span>
-              {% endif %}
-              {% if ev.notes %}
-                <div class="evidence-notes muted">{{ ev.notes }}</div>
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p class="muted">No confirmed evidence on this predicate yet.</p>
-    {% endif %}
+    <h4 class="predicate-detail-h">Findings under this predicate</h4>
 
-    {% set hidden_total = detail.evidence_pending|length + detail.evidence_rejected|length %}
-    {% if hidden_total > 0 %}
-      <details class="evidence-hidden-toggle">
-        <summary class="muted">▸ Show pending + rejected ({{ hidden_total }} hidden)</summary>
-        <table class="evidence-table evidence-table-muted">
-          <thead>
-            <tr>
-              <th>Δ</th><th>Observed</th><th>State</th><th>Dir / str</th><th>Cred</th><th>Source</th><th>Class</th>
-            </tr>
-          </thead>
-          <tbody>
-          {% for ev in detail.evidence_pending + detail.evidence_rejected %}
-            <tr class="evidence-row-{{ ev.classified_by }}">
-              <td class="mono muted">0.00</td>
-              <td class="muted">{{ ev.observed_at.strftime('%Y-%m-%d') }}</td>
-              <td>{{ ev.target_state_label }}</td>
-              <td>
-                <span class="evidence-direction-chip is-{{ ev.direction }}">{{ ev.direction }}</span>
-                <span class="muted">/ {{ ev.strength_bucket }}</span>
-              </td>
-              <td class="mono">{{ ev.credibility|round(2) }}</td>
-              <td>
-                {% if ev.finding_url %}
-                  <a href="{{ ev.finding_url }}" target="_blank" rel="noopener">
-                    {{ (ev.finding_title or '#' ~ ev.finding_id)[:60] }}
-                  </a>
-                {% elif ev.finding_id %}
-                  <span class="muted">finding #{{ ev.finding_id }}</span>
-                {% else %}
-                  <span class="muted">manual</span>
-                {% endif %}
-              </td>
-              <td class="muted">{{ ev.classified_by }}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </details>
-    {% endif %}
+    {# Stage 6: agent's qualitative read above the findings list, with
+       chips that expand into accept/reject proposal cards. Renders
+       nothing visible until a monthly review has run for this predicate. #}
+    {% include "_predicate_review_block.html" %}
+
+    {# Stage 6: fitness-first findings list (Δ logit demoted to the
+       Math view disclosure below). Same data shape as before. #}
+    {% include "_predicate_findings_list.html" %}
+
+    {% include "_predicate_math_view.html" %}
   </div>
 
   <div class="predicate-detail-foot">

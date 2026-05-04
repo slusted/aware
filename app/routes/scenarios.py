@@ -11,7 +11,7 @@ posterior moves the moment evidence is committed.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -32,8 +32,11 @@ from ..models import (
     User,
 )
 from ..scenarios import dashboard as dashboard_svc
+from ..scenarios import review as review_svc
 from ..scenarios.service import (
+    accept_proposal as svc_accept_proposal,
     recompute_predicate,
+    reject_proposal as svc_reject_proposal,
     update_predicate as svc_update_predicate,
     update_scenario as svc_update_scenario,
 )
@@ -477,6 +480,122 @@ def trigger_classify_sweep(
     }
 
 
+# ── Stage 6: predicate review (docs/scenarios/06-predicate-review.md) ──
+
+
+@router.post(
+    "/scenarios/proposals/{proposal_id}/accept",
+    response_class=HTMLResponse,
+)
+def proposal_accept(
+    proposal_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("admin", "analyst")),
+):
+    """Accept one pending proposal — applies the change via service-layer
+    update_predicate / evidence-mutation paths and marks the row
+    `accepted`. Returns the re-rendered card partial so an HTMX swap
+    shows the new status inline."""
+    try:
+        svc_accept_proposal(db, proposal_id, user)
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        return _render_proposal_card(
+            request, db, proposal_id, error=str(e), status_code=400,
+        )
+    return _render_proposal_card(request, db, proposal_id)
+
+
+@router.post(
+    "/scenarios/proposals/{proposal_id}/reject",
+    response_class=HTMLResponse,
+)
+async def proposal_reject(
+    proposal_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("admin", "analyst")),
+):
+    """Reject one pending proposal. No mutation beyond the proposal row
+    itself. Optional `reason` form field captured for the audit trail."""
+    form = await request.form()
+    reason = (form.get("reason") or "").strip() or None
+    try:
+        svc_reject_proposal(db, proposal_id, user, reason=reason)
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        return _render_proposal_card(
+            request, db, proposal_id, error=str(e), status_code=400,
+        )
+    return _render_proposal_card(request, db, proposal_id)
+
+
+def _render_proposal_card(
+    request: Request,
+    db: Session,
+    proposal_id: int,
+    *,
+    error: str | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    proposal = review_svc.get_proposal_view(db, proposal_id)
+    if proposal is None:
+        raise HTTPException(404, f"proposal {proposal_id} not found")
+    return templates.TemplateResponse(
+        request,
+        "_predicate_proposal_card.html",
+        {"proposal": proposal, "error": error},
+        status_code=status_code,
+    )
+
+
+@router.post(
+    "/scenarios/predicates/{predicate_key}/dismiss-review",
+    status_code=202,
+)
+def predicate_dismiss_review(
+    predicate_key: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("admin", "analyst")),
+):
+    """"Looks good — dismiss for Nd" button. Bumps next_review_due_at
+    so the monthly job skips this predicate until the cooldown elapses.
+    N comes from `predicate_review_dismiss_days` setting (default 30)."""
+    pred = (
+        db.query(Predicate).filter(Predicate.key == predicate_key).one_or_none()
+    )
+    if pred is None:
+        raise HTTPException(404, f"predicate {predicate_key!r} not found")
+    days = review_svc.dismiss_days(db)
+    pred.next_review_due_at = datetime.utcnow() + timedelta(days=days)
+    db.commit()
+    return {"dismissed_until": pred.next_review_due_at.isoformat(), "days": days}
+
+
+@router.post("/api/runs/predicate-review", status_code=202)
+def trigger_predicate_review(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("admin", "analyst")),
+):
+    """Manually enqueue a predicate-review run. Mirrors the recompute
+    pattern. Body-less POST — the agent / dashboard digest button just
+    needs to fire-and-forget."""
+    run = jobs.enqueue_run(
+        db,
+        "predicate_review",
+        triggered_by="manual",
+    )
+    return {
+        "queued": True,
+        "kind": "predicate_review",
+        "run_id": run.id,
+        "queue_position": jobs.queue_position(db, run.id),
+    }
+
+
 @router.post("/api/runs/scenarios-recompute", status_code=202)
 def trigger_recompute(
     db: Session = Depends(get_db),
@@ -575,6 +694,7 @@ def scenarios_index(
         "header": dashboard_svc.header_counts(db),
         "valid_predicate_sorts": VALID_PREDICATE_SORTS,
         "valid_evidence_sorts": VALID_EVIDENCE_SORTS,
+        "review_digest": review_svc.latest_digest(db),
     })
 
 
@@ -616,8 +736,17 @@ def predicate_expand(
     detail = dashboard_svc.predicate_detail(db, predicate_key)
     if detail is None:
         raise HTTPException(404, f"predicate {predicate_key!r} not found or inactive")
+    pred = (
+        db.query(Predicate).filter(Predicate.key == predicate_key).one_or_none()
+    )
+    review = review_svc.latest_review_for(db, predicate_key)
+    proposals = review_svc.pending_proposals_for(db, predicate_key)
     return templates.TemplateResponse(request, "_scenarios_predicate_detail.html", {
         "detail": detail,
+        "p": pred,
+        "review": review,
+        "pending_proposals": proposals,
+        "proposals_by_id": {pr.id: pr for pr in proposals},
     })
 
 
