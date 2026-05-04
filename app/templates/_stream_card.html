@@ -70,6 +70,10 @@
       <span aria-hidden="true">👁</span> {{ view_count }}×
     </span>
     {% endif %}
+    {# Stage-2: predicate-attachment chip(s). Renders nothing when
+       f._predicate_evidence is undefined or empty. See
+       docs/scenarios/02-card-tagging.md §"Card front: predicate tag chip". #}
+    {% include "_predicate_badges.html" %}
     {% if expandable %}
     <span class="card-actions expand-actions">
       <button type="button" class="btn-mini expand-toggle"
@@ -78,13 +82,13 @@
               title="Show details">›</button>
     </span>
     {% else %}
-    {# Spec 09: desktop pin path — flip the card to reveal pin / ask-follow-up
-       actions. On mobile this duplicates the swipe-right gesture. Hidden when
-       the partial is rendered read-only on the competitor profile. #}
+    {# Stage-2 (docs/scenarios/02-card-tagging.md): the flip-toggle now
+       reveals the predicate-tagging form (replacing the half-built
+       follow-up-question textarea). Same gesture, more useful payload. #}
     <span class="card-actions flip-actions">
       <button type="button" class="btn-mini flip-toggle"
-              aria-label="Pin or ask follow-up"
-              title="Pin or ask follow-up">↻</button>
+              aria-label="Tag predicate evidence"
+              title="Tag predicate evidence">↻</button>
     </span>
     {% endif %}
   </header>
@@ -133,22 +137,14 @@
   </div>{# /signal-card-content #}
 
   {% if not expandable %}
-  {# Spec 09: back-of-card actions — single screen, optional textarea.
-     Primary button label adapts: "Pin" when textarea empty, "Pin & ask"
-     when typed. JS picks the endpoint at submit time (stream_view for
-     plain pin, /partials/finding/.../question when there's text). #}
-  <div class="signal-card-back" aria-hidden="true" data-finding-id="{{ f.id }}">
-    <textarea class="signal-card-back-textarea"
-              maxlength="500"
-              rows="3"
-              placeholder="Ask a follow-up about this finding (optional)">{{ view.question if view and view.question else '' }}</textarea>
-    <div class="signal-card-back-row">
-      <button type="button" class="btn-card-back is-primary"
-              data-flip-action="submit">{% if view and view.question %}Pin & ask{% else %}Pin{% endif %}</button>
-      <button type="button" class="btn-card-back is-cancel"
-              data-flip-action="cancel">Cancel</button>
-    </div>
-  </div>
+  {# Stage-2 (docs/scenarios/02-card-tagging.md): on first flip, HTMX
+     loads /partials/finding/{id}/predicate_form into this container.
+     Empty until the user clicks the flip-toggle — keeps initial /stream
+     payload small (one fetch per opened card, not per rendered card). #}
+  <div class="signal-card-back" aria-hidden="true" data-finding-id="{{ f.id }}"
+       hx-get="/partials/finding/{{ f.id }}/predicate_form"
+       hx-trigger="loadPredicateForm from:closest .signal-card"
+       hx-swap="innerHTML"></div>
   {% endif %}
   </div>{# /signal-card-inner #}
 </article>

@@ -179,6 +179,14 @@ class Finding(Base):
     # bump can invalidate stale rows without a destructive migration.
     embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Stamped by app/scenarios/sweep.py once the LLM classifier has looked
+    # at this finding (whether or not it produced any predicate_evidence
+    # rows). NULL = not yet classified; the sweep picks these up. Lets us
+    # re-run the sweep cheaply without re-querying every finding the LLM
+    # has already considered. See docs/scenarios/02-card-tagging.md.
+    scenarios_classified_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, index=True,
+    )
 
 
 class Report(Base):

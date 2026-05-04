@@ -1,0 +1,57 @@
+{# Predicate-attachment chip(s) on the front of the finding card.
+
+   Renders 0–N small pills based on f._predicate_evidence (a list of dicts
+   with keys: id, predicate_key, predicate_name, target_state_key,
+   target_state_label, direction, strength_bucket, classified_by,
+   confirmed_at, notes). Set by app/routes/scenarios.py before the partial
+   is rendered; left undefined elsewhere (legacy /stream renders), in
+   which case nothing shows.
+
+   Variants:
+     - confirmed (green)  : at least one row with confirmed_at set and not
+                            user-rejected. Most informative state.
+     - proposed (amber)   : LLM-proposed rows pending review.
+     - rejected (muted)   : every row was user-rejected. Tag was considered.
+     - none               : no rows; nothing rendered (the flip-toggle on the
+                            card front is the affordance to add one).
+
+   Capped at 2 visible chips on the card front; "+N more" condenses the
+   rest. The full list lives on the back of the card.
+#}
+{% set evidence = f._predicate_evidence if f._predicate_evidence is defined else [] %}
+{% set confirmed = evidence | selectattr('confirmed_at') | rejectattr('classified_by', 'equalto', 'user_rejected') | list %}
+{% set proposed  = evidence | rejectattr('confirmed_at') | rejectattr('classified_by', 'equalto', 'user_rejected') | list %}
+{% set rejected  = evidence | selectattr('classified_by', 'equalto', 'user_rejected') | list %}
+
+{% if confirmed %}
+  {% for ev in confirmed[:2] %}
+    <span class="predicate-tag-chip is-confirmed"
+          title="Confirmed evidence — {{ ev.predicate_name }}: {{ ev.target_state_label }} ({{ ev.direction }} / {{ ev.strength_bucket }})">
+      → {{ ev.predicate_key }} {{ ev.target_state_key }} ✓
+    </span>
+  {% endfor %}
+  {% if confirmed | length > 2 %}
+    <span class="predicate-tag-chip is-more"
+          title="{{ confirmed | length - 2 }} more confirmed predicate evidence rows">
+      +{{ confirmed | length - 2 }} more
+    </span>
+  {% endif %}
+{% elif proposed %}
+  {% for ev in proposed[:2] %}
+    <span class="predicate-tag-chip is-proposed"
+          title="LLM proposal awaiting review — {{ ev.predicate_name }}: {{ ev.target_state_label }} ({{ ev.direction }} / {{ ev.strength_bucket }}). {{ ev.notes or '' }}">
+      → {{ ev.predicate_key }} {{ ev.target_state_key }} (proposed)
+    </span>
+  {% endfor %}
+  {% if proposed | length > 2 %}
+    <span class="predicate-tag-chip is-more"
+          title="{{ proposed | length - 2 }} more proposed predicate evidence rows">
+      +{{ proposed | length - 2 }} more
+    </span>
+  {% endif %}
+{% elif rejected %}
+  <span class="predicate-tag-chip is-rejected"
+        title="LLM proposed predicate evidence; user rejected. Flip the card to revisit.">
+    tag rejected
+  </span>
+{% endif %}

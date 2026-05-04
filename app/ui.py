@@ -1371,6 +1371,15 @@ def _parse_stream_filters(params: dict) -> dict:
     ex_vals = [v for v in ex_vals if v is not None and v != ""]
     explain = bool(ex_vals) and (ex_vals[-1] is True or ex_vals[-1] == "1")
 
+    # Stage-2 (docs/scenarios/02-card-tagging.md): scope the stream to
+    # findings that have no confirmed predicate evidence yet. "any" =
+    # default (no filter). "untagged" = only findings with zero confirmed
+    # evidence rows AND no pending LLM proposal (i.e. genuinely needs
+    # operator attention). Anything else falls back to "any".
+    tagged = (params.get("tagged") or "any").strip().lower()
+    if tagged not in ("any", "untagged"):
+        tagged = "any"
+
     return {
         "competitor": (params.get("competitor") or "").strip() or None,
         "signal_types": [t for t in raw_types if t],
@@ -1380,6 +1389,7 @@ def _parse_stream_filters(params: dict) -> dict:
         "downweight_stale": downweight_stale,
         "window": window,
         "explain": explain,
+        "tagged": tagged,
     }
 
 
@@ -1489,6 +1499,23 @@ def _stream_query(db, user, filters):
     )
     if not filters["include_dismissed"]:
         q = q.filter(or_(SignalView.state.is_(None), SignalView.state != "dismissed"))
+
+    # Stage-2: ?tagged=untagged shows only findings with no confirmed
+    # evidence and no pending LLM proposal (i.e. needs operator attention).
+    # Subquery: finding_ids with at least one row where confirmed_at IS NOT
+    # NULL or classified_by="llm" (i.e. green chip or amber chip).
+    if filters.get("tagged") == "untagged":
+        from .models import PredicateEvidence
+        active_evidence_subq = (
+            db.query(PredicateEvidence.finding_id)
+            .filter(PredicateEvidence.finding_id.isnot(None))
+            .filter(or_(
+                PredicateEvidence.confirmed_at.isnot(None),
+                PredicateEvidence.classified_by == "llm",
+            ))
+            .distinct()
+        )
+        q = q.filter(~Finding.id.in_(active_evidence_subq))
     q = q.filter(or_(
         SignalView.state.is_(None),
         SignalView.state != "snoozed",
@@ -1564,6 +1591,53 @@ def _stream_query(db, user, filters):
         user_centroid=user_centroid,
     )
     findings = _lead_findings(cards)
+
+    # Stage-2: stamp f._predicate_evidence so the front-of-card chip
+    # partial (_predicate_badges.html) can render without N+1 queries.
+    # One batched lookup per page; flat list per finding using the dict
+    # shape app/routes/scenarios.py::_evidence_to_view emits so the chip
+    # template logic stays identical between full-page and post-action
+    # re-renders.
+    if findings:
+        from .models import PredicateEvidence as _PE, Predicate as _Pr, PredicateState as _PS
+        ids = [f.id for f in findings]
+        ev_rows = (
+            db.query(_PE)
+            .filter(_PE.finding_id.in_(ids))
+            .order_by(_PE.id.asc())
+            .all()
+        )
+        if ev_rows:
+            pred_id_to_key = {p.id: p.key for p in db.query(_Pr).all()}
+            pred_id_to_name = {p.id: p.name for p in db.query(_Pr).all()}
+            label_lookup: dict[tuple[str, str], str] = {}
+            for s in db.query(_PS).all():
+                pkey = pred_id_to_key.get(s.predicate_id)
+                if pkey:
+                    label_lookup[(pkey, s.state_key)] = s.label
+            by_finding: dict[int, list[dict]] = {}
+            for ev in ev_rows:
+                pkey = pred_id_to_key.get(ev.predicate_id, "?")
+                by_finding.setdefault(ev.finding_id, []).append({
+                    "id": ev.id,
+                    "predicate_key": pkey,
+                    "predicate_name": pred_id_to_name.get(ev.predicate_id, pkey),
+                    "target_state_key": ev.target_state_key,
+                    "target_state_label": label_lookup.get(
+                        (pkey, ev.target_state_key), ev.target_state_key,
+                    ),
+                    "direction": ev.direction,
+                    "strength_bucket": ev.strength_bucket,
+                    "credibility": ev.credibility,
+                    "classified_by": ev.classified_by,
+                    "confirmed_at": ev.confirmed_at,
+                    "notes": ev.notes,
+                })
+            for f in findings:
+                f._predicate_evidence = by_finding.get(f.id, [])
+        else:
+            for f in findings:
+                f._predicate_evidence = []
 
     # Debug: stamp per-card semantic contribution when ?explain=1. Mirrors
     # the math in default_score so the chip the template shows = exactly
@@ -1671,76 +1745,6 @@ def partial_stream_list(
         "has_more": has_more,
         "logos": _build_logo_map(db, findings),
         "explain": filters.get("explain", False),
-    })
-
-
-@router.post("/partials/finding/{finding_id}/question", response_class=HTMLResponse)
-async def partial_finding_question(
-    finding_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user),
-):
-    """Capture a follow-up question on a finding (spec 09).
-
-    Side effects, in one transaction:
-      1. Upsert SignalView with state='pinned' and question=<text>.
-         Asking a question implies pinning — see spec 09 §Open Questions §1.
-      2. Append a UserSignalEvent of type 'pin' with meta.via='swipe_flip'
-         and meta.question_chars=<len>. Question text deliberately stays
-         on SignalView, not the event log — the log is meant to be
-         minimal append-only events, not user-authored content.
-
-    Returns the re-rendered card via the same template the swipe
-    pin/dismiss path uses, so HTMX swap targets are identical.
-    """
-    form = await request.form()
-    question = (form.get("question") or "").strip()
-    if not question:
-        raise HTTPException(400, "question must not be empty")
-    if len(question) > 500:
-        raise HTTPException(400, "question must be 500 chars or fewer")
-
-    f = db.get(Finding, finding_id)
-    if not f:
-        raise HTTPException(404, "finding not found")
-
-    now = datetime.utcnow()
-    existing = (
-        db.query(SignalView)
-        .filter(SignalView.user_id == user.id, SignalView.finding_id == finding_id)
-        .first()
-    )
-    if existing:
-        existing.state = "pinned"
-        existing.question = question
-        existing.snoozed_until = None
-        existing.updated_at = now
-        v = existing
-    else:
-        v = SignalView(
-            user_id=user.id,
-            finding_id=finding_id,
-            state="pinned",
-            question=question,
-            updated_at=now,
-        )
-        db.add(v)
-
-    db.add(UserSignalEvent(
-        user_id=user.id,
-        finding_id=finding_id,
-        event_type="pin",
-        value=None,
-        source="stream",
-        meta={"via": "swipe_flip", "question_chars": len(question)},
-        ts=now,
-    ))
-    db.commit()
-    return templates.TemplateResponse(request, "_stream_card.html", {
-        "f": f,
-        "view": v,
-        "logos": _build_logo_map(db, [f]),
     })
 
 

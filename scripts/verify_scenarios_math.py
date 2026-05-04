@@ -421,6 +421,361 @@ def test_scenario_probabilities():
           f"a={sp['a']:.3f}, b={sp['b']:.3f}, c={sp['c']:.3f}")
 
 
+# ── Stage-2: classifier output validation (no real API call) ─────────────
+
+class _StubAnthropicResponse:
+    """Mimics what anthropic.Anthropic.messages.create returns. The
+    classifier reads .content[0].text and .usage.{input,output}_tokens.
+    Both attrs work as plain objects so SimpleNamespace would do too —
+    spelled out for clarity."""
+    def __init__(self, json_text: str):
+        class _Block:
+            text = json_text
+        self.content = [_Block()]
+        class _Usage:
+            input_tokens = 100
+            output_tokens = 60
+            cache_read_input_tokens = 0
+            cache_creation_input_tokens = 0
+        self.usage = _Usage()
+
+
+class _StubAnthropicClient:
+    """One canned reply per call, queue-style. Tests push expected JSON
+    onto the queue before invoking the classifier."""
+    def __init__(self, replies: list[str]):
+        self._replies = list(replies)
+        self.calls = 0
+
+        class _Messages:
+            def __init__(inner):
+                inner._cw_wrapped = False
+
+            def create(inner, *args, **kwargs):
+                self.calls += 1
+                if not self._replies:
+                    return _StubAnthropicResponse('{"evidence": []}')
+                return _StubAnthropicResponse(self._replies.pop(0))
+        self.messages = _Messages()
+
+
+def test_classifier_parsing():
+    section("Stage 2: classifier output validation (stubbed Anthropic)")
+    from app.scenarios.classifier import (
+        build_roster,
+        parse_response,
+        build_system_prompt,
+        classify_finding,
+    )
+
+    # Build a roster matching the seed shape (subset).
+    roster = build_roster([
+        {"key": "p1", "name": "...", "statement": "...", "category": "discovery",
+         "states": [{"state_key": "platform", "label": "Platform"},
+                    {"state_key": "agent", "label": "Agent"}]},
+        {"key": "p8", "name": "...", "statement": "...", "category": "control_point",
+         "states": [{"state_key": "marketplace", "label": "Marketplace"},
+                    {"state_key": "external_interface", "label": "External"},
+                    {"state_key": "workflow", "label": "Workflow"}]},
+    ])
+
+    # Pure parse() unit tests first — no API involved.
+    valid_one = '{"evidence": [{"predicate_key": "p1", "target_state_key": "agent", "direction": "support", "strength_bucket": "moderate", "confidence": 0.7, "reasoning": "x"}]}'
+    out = parse_response(valid_one, roster)
+    check("parse: valid 1-entry returns one ProposedEvidence", len(out) == 1)
+    check("parse: predicate_key + target_state preserved",
+          out and out[0].predicate_key == "p1" and out[0].target_state_key == "agent")
+
+    valid_two = '{"evidence": [{"predicate_key": "p1", "target_state_key": "agent", "direction": "support", "strength_bucket": "moderate", "confidence": 0.7, "reasoning": "x"}, {"predicate_key": "p8", "target_state_key": "workflow", "direction": "support", "strength_bucket": "weak", "confidence": 0.5, "reasoning": "y"}]}'
+    out = parse_response(valid_two, roster)
+    check("parse: valid 2-entry returns two", len(out) == 2)
+
+    overshoot = '{"evidence": [{"predicate_key": "p1", "target_state_key": "agent", "direction": "support", "strength_bucket": "moderate", "confidence": 0.7, "reasoning": "a"}, {"predicate_key": "p1", "target_state_key": "platform", "direction": "support", "strength_bucket": "weak", "confidence": 0.5, "reasoning": "b"}, {"predicate_key": "p8", "target_state_key": "workflow", "direction": "support", "strength_bucket": "weak", "confidence": 0.5, "reasoning": "c"}]}'
+    out = parse_response(overshoot, roster)
+    check("parse: overshoot capped at 2", len(out) == 2)
+
+    bad_predicate = '{"evidence": [{"predicate_key": "p99", "target_state_key": "agent", "direction": "support", "strength_bucket": "moderate", "confidence": 0.7, "reasoning": "x"}]}'
+    out = parse_response(bad_predicate, roster)
+    check("parse: unknown predicate skipped", out == [])
+
+    bad_state = '{"evidence": [{"predicate_key": "p1", "target_state_key": "fictional", "direction": "support", "strength_bucket": "moderate", "confidence": 0.7, "reasoning": "x"}]}'
+    out = parse_response(bad_state, roster)
+    check("parse: unknown state skipped", out == [])
+
+    bad_direction = '{"evidence": [{"predicate_key": "p1", "target_state_key": "agent", "direction": "wibble", "strength_bucket": "moderate", "confidence": 0.7, "reasoning": "x"}]}'
+    out = parse_response(bad_direction, roster)
+    check("parse: invalid direction skipped", out == [])
+
+    nope = "this is not JSON at all"
+    out = parse_response(nope, roster)
+    check("parse: garbage returns []", out == [])
+
+    fenced = '```json\n{"evidence": [{"predicate_key": "p1", "target_state_key": "agent", "direction": "support", "strength_bucket": "moderate", "confidence": 0.7, "reasoning": "x"}]}\n```'
+    out = parse_response(fenced, roster)
+    check("parse: tolerates code fences", len(out) == 1)
+
+    # End-to-end with stub client + writes to UsageEvent.
+    from datetime import datetime as _dt
+    from app.models import UsageEvent
+    db = SessionLocal()
+    try:
+        before_usage = db.query(UsageEvent).count()
+    finally:
+        db.close()
+
+    stub = _StubAnthropicClient([
+        '{"evidence": [{"predicate_key": "p1", "target_state_key": "agent", "direction": "support", "strength_bucket": "strong", "confidence": 0.9, "reasoning": "stub"}]}',
+    ])
+    finding = {
+        "id": 1, "competitor": "TestCo", "source": "manual",
+        "signal_type": "product_launch",
+        "title": "stub finding", "summary": "stub", "content": "stub",
+        "published_at": None, "created_at": _dt.utcnow(),
+    }
+    sysp = build_system_prompt(roster)
+    out = classify_finding(finding, roster, system_prompt=sysp, client=stub)
+    check("classify_finding: stub returns one ProposedEvidence",
+          len(out) == 1 and out[0].predicate_key == "p1")
+    check("classify_finding: stub client was called once", stub.calls == 1)
+
+    db = SessionLocal()
+    try:
+        after_usage = db.query(UsageEvent).count()
+        last = db.query(UsageEvent).order_by(UsageEvent.id.desc()).first()
+    finally:
+        db.close()
+    check("classify_finding: writes one UsageEvent", after_usage - before_usage == 1)
+    check("classify_finding: UsageEvent extra.caller is set",
+          last is not None
+          and isinstance(last.extra, dict)
+          and last.extra.get("caller") == "scenarios_classifier")
+
+
+# ── Stage-2: sweep idempotency + budget guard ────────────────────────────
+
+def test_sweep_idempotency():
+    section("Stage 2: sweep idempotency + budget guard")
+    from app.scenarios import sweep as sweep_mod
+    from app.scenarios.classifier import classify_finding as real_classify
+    from app.models import Finding as _Finding
+
+    # Sandbox: insert 3 fresh findings (no scenarios_classified_at).
+    db = SessionLocal()
+    try:
+        from datetime import datetime as _dt
+        for i in range(3):
+            db.add(_Finding(
+                competitor="StubCo",
+                source="manual",
+                title=f"sweep test {i}",
+                summary=f"sweep test {i}",
+                hash=f"sweepteststub{i}",
+                created_at=_dt.utcnow(),
+            ))
+        db.commit()
+        unclassified_before = (
+            db.query(_Finding).filter(_Finding.scenarios_classified_at.is_(None)).count()
+        )
+    finally:
+        db.close()
+    check("sweep setup: at least 3 unclassified findings",
+          unclassified_before >= 3, f"got {unclassified_before}")
+
+    # Run sweep with a stub classifier_fn that always proposes p1=agent
+    # (so we can check evidence rows actually land).
+    from app.scenarios.classifier import ProposedEvidence
+
+    def stub_classifier_fn(finding_dict, roster, **kwargs):
+        return [ProposedEvidence(
+            predicate_key="p1",
+            target_state_key="agent",
+            direction="support",
+            strength_bucket="moderate",
+            confidence=0.7,
+            reasoning="stub-sweep",
+        )]
+
+    db = SessionLocal()
+    try:
+        result1 = sweep_mod.classify_unclassified(
+            db, limit=10, classifier_fn=stub_classifier_fn,
+        )
+    finally:
+        db.close()
+    check(
+        "sweep: processes >=3 findings",
+        result1.findings_processed >= 3,
+        f"processed={result1.findings_processed}",
+    )
+    check(
+        "sweep: proposes >=3 evidence rows",
+        result1.evidence_proposed >= 3,
+        f"proposed={result1.evidence_proposed}",
+    )
+
+    # Re-run — every previously-classified finding should be skipped now.
+    db = SessionLocal()
+    try:
+        result2 = sweep_mod.classify_unclassified(
+            db, limit=10, classifier_fn=stub_classifier_fn,
+        )
+    finally:
+        db.close()
+    check(
+        "sweep: re-run processes 0 findings (idempotent)",
+        result2.findings_processed == 0,
+        f"processed={result2.findings_processed}",
+    )
+
+    # Budget guard: pretend yesterday's spend filled the bucket. We do
+    # this by setting the env to 0.0 and confirming sweep skips. Insert
+    # a fresh unclassified finding so there's something to skip.
+    import os as _os
+    db = SessionLocal()
+    try:
+        from datetime import datetime as _dt
+        db.add(_Finding(
+            competitor="BudgetCo",
+            source="manual",
+            title="budget probe",
+            summary="budget probe",
+            hash="budgetprobesweep",
+            created_at=_dt.utcnow(),
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+    prev_budget = _os.environ.get("SCENARIOS_CLASSIFIER_DAILY_BUDGET_USD")
+    _os.environ["SCENARIOS_CLASSIFIER_DAILY_BUDGET_USD"] = "0.00001"
+    try:
+        db = SessionLocal()
+        try:
+            result3 = sweep_mod.classify_unclassified(
+                db, limit=10, classifier_fn=stub_classifier_fn,
+            )
+        finally:
+            db.close()
+    finally:
+        if prev_budget is None:
+            _os.environ.pop("SCENARIOS_CLASSIFIER_DAILY_BUDGET_USD", None)
+        else:
+            _os.environ["SCENARIOS_CLASSIFIER_DAILY_BUDGET_USD"] = prev_budget
+
+    check(
+        "sweep: budget guard blocks new classification (0 processed when over cap)",
+        result3.findings_processed == 0 and result3.skipped_budget >= 1,
+        f"processed={result3.findings_processed}, skipped_budget={result3.skipped_budget}",
+    )
+
+
+# ── Stage-2: confirm / reject route logic ────────────────────────────────
+
+def test_confirm_reject_flow():
+    section("Stage 2: confirm + reject affect recompute correctly")
+    from datetime import datetime as _dt
+    from app.scenarios.service import recompute_predicate
+
+    # Create one LLM-proposed (unconfirmed) evidence row directly. Verify
+    # recompute leaves the predicate at prior. Confirm. Verify recompute
+    # moves the predicate. Reject. Verify recompute returns to prior.
+    db = SessionLocal()
+    try:
+        p1 = db.query(Predicate).filter(Predicate.key == "p1").one()
+        # Wipe any p1 evidence + reset cache so we start clean.
+        db.query(PredicateEvidence).filter(PredicateEvidence.predicate_id == p1.id).delete()
+        for s in db.query(PredicateState).filter(PredicateState.predicate_id == p1.id).all():
+            s.current_probability = s.prior_probability
+        db.commit()
+        prior_agent = next(
+            s.prior_probability for s in
+            db.query(PredicateState).filter(PredicateState.predicate_id == p1.id).all()
+            if s.state_key == "agent"
+        )
+        ev = PredicateEvidence(
+            predicate_id=p1.id,
+            target_state_key="agent",
+            direction="support",
+            strength_bucket="strong",
+            credibility=1.0,
+            classified_by="llm",
+            observed_at=_dt.utcnow(),
+            confirmed_at=None,
+            notes="route-flow stub",
+        )
+        db.add(ev)
+        db.commit()
+
+        # Recompute with unconfirmed evidence — should be a no-op.
+        recompute_predicate(db, p1.id)
+        db.commit()
+        agent_after_unconfirmed = next(
+            s.current_probability for s in
+            db.query(PredicateState).filter(PredicateState.predicate_id == p1.id).all()
+            if s.state_key == "agent"
+        )
+    finally:
+        db.close()
+    check(
+        "unconfirmed evidence: posterior == prior (no contribution)",
+        almost(agent_after_unconfirmed, prior_agent, tol=1e-9),
+        f"prior={prior_agent:.4f} after={agent_after_unconfirmed:.4f}",
+    )
+
+    # Confirm and recompute.
+    db = SessionLocal()
+    try:
+        ev = (
+            db.query(PredicateEvidence)
+            .filter(PredicateEvidence.notes == "route-flow stub")
+            .one()
+        )
+        ev.confirmed_at = _dt.utcnow()
+        db.commit()
+        recompute_predicate(db, ev.predicate_id)
+        db.commit()
+        p1 = db.query(Predicate).filter(Predicate.key == "p1").one()
+        agent_after_confirmed = next(
+            s.current_probability for s in
+            db.query(PredicateState).filter(PredicateState.predicate_id == p1.id).all()
+            if s.state_key == "agent"
+        )
+    finally:
+        db.close()
+    check(
+        "confirmed evidence: posterior moved (agent > prior)",
+        agent_after_confirmed > prior_agent + 1e-6,
+        f"prior={prior_agent:.4f} after={agent_after_confirmed:.4f}",
+    )
+
+    # Reject (soft) and recompute → back to prior.
+    db = SessionLocal()
+    try:
+        ev = (
+            db.query(PredicateEvidence)
+            .filter(PredicateEvidence.notes == "route-flow stub")
+            .one()
+        )
+        ev.classified_by = "user_rejected"
+        ev.confirmed_at = None
+        db.commit()
+        recompute_predicate(db, ev.predicate_id)
+        db.commit()
+        p1 = db.query(Predicate).filter(Predicate.key == "p1").one()
+        agent_after_rejected = next(
+            s.current_probability for s in
+            db.query(PredicateState).filter(PredicateState.predicate_id == p1.id).all()
+            if s.state_key == "agent"
+        )
+    finally:
+        db.close()
+    check(
+        "rejected evidence: posterior back to prior",
+        almost(agent_after_rejected, prior_agent, tol=1e-9),
+        f"prior={prior_agent:.4f} after={agent_after_rejected:.4f}",
+    )
+
+
 # ── Main ────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -430,6 +785,9 @@ def main() -> int:
     test_recompute_no_evidence()
     test_recompute_with_evidence()
     test_scenario_probabilities()
+    test_classifier_parsing()
+    test_sweep_idempotency()
+    test_confirm_reject_flow()
 
     print(f"\n{_passes} passed, {len(_failures)} failed.")
     if _failures:
