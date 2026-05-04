@@ -1058,6 +1058,18 @@ class SourceCredibilityDefault(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class AgentBrand(Base):
+    """App-wide brand for the in-product agent (name + uploaded avatar).
+    Single-row table — id is always 1. The avatar binary lives on disk
+    (DATA_DIR/uploads/agent.png); only the version counter is stored here
+    so URL cache-busting is trivial."""
+    __tablename__ = "agent_brand"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), default="Flo")
+    avatar_version: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class ScenarioSetting(Base):
     """Key-value bag for global knobs. JSON value so each setting can have
     whatever shape it needs. Seeded keys:

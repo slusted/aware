@@ -77,8 +77,8 @@
        tissue across Findings/Present/Future/Execute, not just one nav
        item among many. Styled as a launcher button to read accordingly. #}
     <a href="/chat" class="nav-agent {% if path.startswith('/chat') %}active{% endif %}">
-      <img src="/static/florian.png?v=flo-1" alt="" class="nav-agent-avatar">
-      <span class="nav-agent-label">Agent flo</span>
+      <img src="{{ agent_brand.avatar_url }}" alt="" class="nav-agent-avatar">
+      <span class="nav-agent-label">Agent {{ agent_brand.name }}</span>
       <span class="nav-agent-arrow" aria-hidden="true">→</span>
     </a>
 
@@ -250,9 +250,9 @@
   <button type="button"
           id="chat-launcher"
           class="chat-launcher"
-          aria-label="Open chat with Florian (Ctrl+/)"
+          aria-label="Open chat with {{ agent_brand.name }} (Ctrl+/)"
           aria-expanded="false">
-    <img src="/static/florian.png?v=flo-1" alt="" width="56" height="56">
+    <img src="{{ agent_brand.avatar_url }}" alt="" width="56" height="56">
   </button>
   {% include "_chat_drawer.html" %}
 {% endif %}
