@@ -6,7 +6,7 @@
   <title>{% block title %}Competitor Watch{% endblock %}</title>
   <link rel="preconnect" href="https://rsms.me/">
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
-  <link rel="stylesheet" href="/static/style.css?v=scenarios-3">
+  <link rel="stylesheet" href="/static/style.css?v=clamp-1">
 
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script>
@@ -16,6 +16,44 @@
       html.dataset.theme = next;
       document.cookie = 'theme=' + next + '; path=/; max-age=' + (60*60*24*365*5) + '; SameSite=Lax';
     }
+
+    // Clamp long .signal-title / .signal-snippet to 3 lines and surface a
+    // subtle "more" / "less" toggle when the content actually overflows.
+    // Re-runs after HTMX swaps in new cards.
+    (function () {
+      var SELECTOR = '.signal-card-body .signal-title, .signal-card-body .signal-snippet';
+      function process(el) {
+        if (el.dataset.clampChecked) return;
+        el.dataset.clampChecked = '1';
+        el.classList.add('is-clamped');
+        if (el.scrollHeight <= el.clientHeight + 1) {
+          el.classList.remove('is-clamped');
+          return;
+        }
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'signal-clamp-toggle';
+        btn.textContent = 'more';
+        btn.setAttribute('aria-expanded', 'false');
+        btn.addEventListener('click', function () {
+          var nowClamped = el.classList.toggle('is-clamped');
+          btn.textContent = nowClamped ? 'more' : 'less';
+          btn.setAttribute('aria-expanded', nowClamped ? 'false' : 'true');
+        });
+        el.insertAdjacentElement('afterend', btn);
+      }
+      function processAll(root) {
+        (root || document).querySelectorAll(SELECTOR).forEach(process);
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { processAll(); });
+      } else {
+        processAll();
+      }
+      document.addEventListener('htmx:afterSettle', function (e) {
+        processAll(e.target instanceof Element ? e.target : null);
+      });
+    })();
   </script>
 </head>
 <body>
