@@ -1,2 +1,2 @@
 web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-release: alembic upgrade head && python scripts/import_state.py
+release: alembic upgrade head && python scripts/import_state.py && python -m scripts.seed_scenarios
