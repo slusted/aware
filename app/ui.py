@@ -40,6 +40,11 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 router = APIRouter(include_in_schema=False)
 
 
+# Run kinds that fire on a tight schedule and produce no findings — drop
+# them from the dashboard "Recent runs" widget and from /runs by default.
+_NOISY_RUN_KINDS = ("reply_check",)
+
+
 @router.get("/", response_class=HTMLResponse)
 def root(request: Request, db: Session = Depends(get_db)):
     # Public marketing page for unauthenticated visitors; signed-in users
@@ -52,8 +57,9 @@ def root(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    last_run = db.query(Run).order_by(Run.started_at.desc()).first()
-    recent_runs = db.query(Run).order_by(Run.started_at.desc()).limit(10).all()
+    meaningful_runs = db.query(Run).filter(~Run.kind.in_(_NOISY_RUN_KINDS))
+    last_run = meaningful_runs.order_by(Run.started_at.desc()).first()
+    recent_runs = meaningful_runs.order_by(Run.started_at.desc()).limit(10).all()
     recent_findings = db.query(Finding).order_by(Finding.created_at.desc()).limit(20).all()
     since = datetime.utcnow() - timedelta(days=1)
     findings_today = db.query(func.count(Finding.id)).filter(Finding.created_at >= since).scalar() or 0
@@ -853,9 +859,6 @@ def admin_search_quality(request: Request, days: int = 30, db: Session = Depends
         "table": table,
         "windows": [7, 30, 90],
     })
-
-
-_NOISY_RUN_KINDS = ("reply_check",)
 
 
 @router.get("/runs", response_class=HTMLResponse)
