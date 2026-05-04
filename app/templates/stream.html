@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Stream{% endblock %}
+{% block title %}Evidence Stream{% endblock %}
 
 {% block content %}
 
@@ -9,7 +9,7 @@
    competitor-profile). The buttons drive a hidden `pinned_only` input
    that lives inside #stream-filters below, so the value travels with
    every other filter change. #}
-<nav class="tabs" role="tablist" aria-label="Stream view">
+<nav class="tabs" role="tablist" aria-label="Evidence stream view">
   <button type="button"
           class="tab {% if not filters.pinned_only %}active{% endif %}"
           role="tab"
@@ -160,11 +160,11 @@
    and dispatch a change event so the form's hx-trigger="change" reloads
    the list. Keeps tab state inside the same form as every other filter,
    so toggling Pinned on then changing competitor preserves both.
-   Scoped to the .tabs nav with aria-label="Stream view" so the script
+   Scoped to the .tabs nav with aria-label="Evidence stream view" so the script
    doesn't collide with other .tabs nav strips on shared pages. #}
 <script>
 (() => {
-  const nav = document.querySelector('.tabs[aria-label="Stream view"]');
+  const nav = document.querySelector('.tabs[aria-label="Evidence stream view"]');
   const hidden = document.getElementById('pinned-only-state');
   const form = document.getElementById('stream-filters');
   if (!nav || !hidden || !form) return;
