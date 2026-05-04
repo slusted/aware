@@ -6,6 +6,16 @@
 
 {% block content %}
 <div class="panel">
+  <div style="display:flex; align-items:center; justify-content:flex-end; padding:10px 16px; border-bottom:1px solid var(--border-subtle); font-size:12px;">
+    {% if show_all %}
+      <a href="/runs" class="muted">Hide reply checks</a>
+    {% else %}
+      <span class="muted">
+        {% if hidden_count %}{{ hidden_count }} reply check{{ '' if hidden_count == 1 else 's' }} hidden · {% endif %}
+        <a href="/runs?show=all">Show all</a>
+      </span>
+    {% endif %}
+  </div>
   <table>
     <thead><tr><th>When</th><th>Kind</th><th>Status</th><th style="text-align:right">Findings</th><th>Duration</th><th>Trigger</th><th>Actions</th></tr></thead>
     <tbody>
