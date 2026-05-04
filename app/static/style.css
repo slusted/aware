@@ -3544,32 +3544,53 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 .predicate-card-edit,
 .scenario-card-edit {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-translucent, rgba(80, 120, 220, 0.15));
+  box-shadow: 0 0 0 1px var(--accent-soft-strong, rgba(94,106,210,0.25));
 }
 
 .predicate-edit-form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 4px 0;
+  gap: 18px;
+  padding: 6px 0 2px;
+}
+
+/* Override the dim/12px label baseline from .predicate-form-label so
+   inline edit forms read clearly. Labels become real form headings. */
+.predicate-edit-form .predicate-form-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  opacity: 0.85;
 }
 
 .predicate-edit-row {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 .predicate-edit-row .predicate-form-label {
-  flex: 1 1 140px;
+  flex: 1 1 160px;
 }
 
-.predicate-form-checkbox {
+.predicate-edit-form .predicate-form-checkbox {
   flex-direction: row;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  font-weight: 500;
+  align-self: end;
+  padding-bottom: 8px;
 }
-.predicate-form-checkbox input {
+.predicate-edit-form .predicate-form-checkbox input {
   width: auto;
+  accent-color: var(--accent);
 }
 
 .predicate-edit-form textarea,
@@ -3577,79 +3598,140 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 .predicate-edit-form input[type="text"],
 .predicate-edit-form select {
   width: 100%;
-  padding: 6px 8px;
-  background: var(--bg-input, var(--bg-secondary));
+  padding: 9px 11px;
+  background: var(--surface-0);
   color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
   font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  text-transform: none;
+  letter-spacing: 0;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.predicate-edit-form textarea:hover,
+.predicate-edit-form input[type="number"]:hover,
+.predicate-edit-form input[type="text"]:hover,
+.predicate-edit-form select:hover {
+  border-color: var(--text-secondary);
+}
+.predicate-edit-form textarea:focus,
+.predicate-edit-form input[type="number"]:focus,
+.predicate-edit-form input[type="text"]:focus,
+.predicate-edit-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .predicate-edit-form textarea {
   resize: vertical;
-  min-height: 60px;
+  min-height: 84px;
+}
+
+/* Custom-styled select so the dropdown trigger matches the inputs
+   instead of falling back to the browser's white default (which made
+   the option list nearly unreadable on dark surfaces). */
+.predicate-edit-form select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'><path d='M1 1.5L6 6.5L11 1.5' stroke='%238a8d93' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+  cursor: pointer;
+}
+.predicate-edit-form select option {
+  background: var(--surface-0);
+  color: var(--text-primary);
 }
 
 .predicate-edit-states {
-  border: 1px dashed var(--border-subtle);
-  border-radius: 6px;
-  padding: 8px 10px 10px;
-  margin: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 14px 14px 14px;
+  margin: 4px 0 0;
+  background: var(--surface-1);
 }
 .predicate-edit-states legend {
-  padding: 0 6px;
-  color: var(--text-secondary);
-  font-size: 0.85rem;
+  padding: 0 8px;
+  margin-left: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.85;
 }
 .predicate-edit-states-grid {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .predicate-edit-state-row {
   display: grid;
-  grid-template-columns: 64px 1fr 100px;
-  gap: 8px;
+  grid-template-columns: 64px 1fr 110px;
+  gap: 10px;
   align-items: center;
 }
 .predicate-edit-state-key {
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .predicate-edit-state-prior {
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .predicate-edit-sum {
-  margin-top: 8px;
-  font-size: 0.9rem;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 13px;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .predicate-edit-sum [data-prior-sum],
 .predicate-edit-sum [data-weight-sum] {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   color: var(--text-primary);
+  background: var(--surface-0);
+  border: 1px solid var(--border-subtle);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
 }
 .predicate-edit-sum [data-prior-sum].is-off,
 .predicate-edit-sum [data-weight-sum].is-off {
-  color: #b45309;
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.08);
 }
 .predicate-edit-sum-hint {
-  margin-left: 6px;
+  margin-left: 0;
 }
 
 .predicate-edit-error {
-  background: rgba(180, 83, 9, 0.12);
-  border: 1px solid rgba(180, 83, 9, 0.4);
-  color: #b45309;
-  padding: 8px 10px;
-  border-radius: 4px;
-  font-size: 0.9rem;
+  background: rgba(220, 38, 38, 0.10);
+  border: 1px solid rgba(220, 38, 38, 0.4);
+  color: #f87171;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
 }
 
 .predicate-edit-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   justify-content: flex-end;
+  padding-top: 4px;
 }
 
 .predicate-card-stub,
