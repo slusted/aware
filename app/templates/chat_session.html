@@ -8,13 +8,14 @@
 {% block content %}
 
 <div class="chat-session"
+     data-mode="page"
      data-session-id="{{ session.id }}"
      data-has-pending="{{ '1' if has_pending else '0' }}">
 
   <div class="chat-header">
     <div class="chat-title-wrap">
-      <h2 id="chat-title" class="chat-title" data-title="{{ session.title }}">{{ session.title }}</h2>
-      <button type="button" id="chat-rename-btn" class="btn-mini" title="Rename this conversation">Rename</button>
+      <h2 class="chat-title" data-title="{{ session.title }}">{{ session.title }}</h2>
+      <button type="button" class="chat-rename-btn btn-mini" title="Rename this conversation">Rename</button>
     </div>
     <div class="chat-header-meta muted">
       {% if session.scheduled_id %}
@@ -29,13 +30,13 @@
            title="Forked from another conversation">forked</a>
         <span aria-hidden="true">·</span>
       {% endif %}
-      <span id="chat-cost">${{ '%.4f'|format(session.total_cost_usd or 0) }}</span>
+      <span class="chat-cost">${{ '%.4f'|format(session.total_cost_usd or 0) }}</span>
       <span aria-hidden="true">·</span>
       <span>{{ session.model }}</span>
     </div>
   </div>
 
-  <div id="chat-thread" class="chat-thread">
+  <div class="chat-thread">
     {% for msg in messages %}
       {% include "_chat_message.html" %}
     {% endfor %}
@@ -44,15 +45,15 @@
   {# Poll for chat-triggered jobs (deep research) that finished while
      the page is open. Server returns 204 when nothing's new — HTMX
      no-ops the swap. New rows append at the end of the thread. #}
-  <div id="chat-notifications-poller"
+  <div class="chat-notifications-poller"
        hx-get="/api/chat/{{ session.id }}/notifications"
        hx-trigger="every 15s"
        hx-swap="beforeend"
-       hx-target="#chat-thread"
+       hx-target="previous .chat-thread"
        style="display:none"></div>
 
-  <form id="chat-input-form" class="chat-input-form" data-session-id="{{ session.id }}">
-    <textarea id="chat-input" name="text" rows="2"
+  <form class="chat-input-form" data-session-id="{{ session.id }}">
+    <textarea name="text" rows="2"
               placeholder="Ask anything about the watch — competitors, findings, market, runs."
               autofocus
               {% if session.status != 'active' %}disabled{% endif %}></textarea>
@@ -65,7 +66,4 @@
   {% endif %}
 
 </div>
-
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script src="/static/chat.js?v=chat-1"></script>
 {% endblock %}
