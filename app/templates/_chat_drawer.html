@@ -1,0 +1,15 @@
+{# Floating chat drawer shell. Included once on every authenticated
+   page (see base.html). Hidden by default; chat-drawer.js toggles
+   .chat-drawer-open and lazy-fetches the body via /api/chat/drawer.
+   Per docs/chat/03-floating-chat-panel.md. #}
+<div class="chat-drawer-backdrop" data-chat-drawer-backdrop hidden></div>
+<aside class="chat-drawer"
+       id="chat-drawer"
+       role="dialog"
+       aria-modal="false"
+       aria-labelledby="chat-drawer-title"
+       aria-hidden="true">
+  <div class="chat-drawer-body" data-chat-drawer-body>
+    <div class="chat-drawer-loading muted" style="padding:24px">Loading…</div>
+  </div>
+</aside>

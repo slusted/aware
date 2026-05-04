@@ -149,5 +149,28 @@
   </main>
 
 </div>
+
+{# Floating chat — available on every authenticated page except /chat
+   itself (the deep view). See docs/chat/03-floating-chat-panel.md. #}
+{% if user and not request.url.path.startswith('/chat') %}
+  <button type="button"
+          id="chat-launcher"
+          class="chat-launcher"
+          aria-label="Open chat (Ctrl+/)"
+          aria-expanded="false">
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 6.5C3 5.1 4.1 4 5.5 4h13C19.9 4 21 5.1 21 6.5v8c0 1.4-1.1 2.5-2.5 2.5H10l-4 4v-4H5.5C4.1 17 3 15.9 3 14.5z"/>
+    </svg>
+  </button>
+  {% include "_chat_drawer.html" %}
+{% endif %}
+
+{% if user %}
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="/static/chat.js?v=chat-2"></script>
+  {% if not request.url.path.startswith('/chat') %}
+    <script src="/static/chat-drawer.js?v=drawer-1"></script>
+  {% endif %}
+{% endif %}
 </body>
 </html>

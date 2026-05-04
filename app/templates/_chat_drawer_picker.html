@@ -1,0 +1,65 @@
+{# Drawer body when no session is active — recent sessions + a
+   start-new-chat form. Mirrors chat_index.html in compact form. #}
+<div class="chat-drawer-picker">
+  <div class="chat-drawer-header">
+    <div class="chat-drawer-header-row">
+      <h2 id="chat-drawer-title" class="chat-title">Chat</h2>
+      <div class="chat-drawer-header-actions">
+        <button type="button" class="btn-mini chat-drawer-close" data-chat-drawer-close title="Close (Esc)" aria-label="Close">×</button>
+      </div>
+    </div>
+  </div>
+
+  {% if not anthropic_key_set %}
+    <div class="panel" style="margin:12px">
+      <div class="panel-body">
+        <h3 style="margin-top:0">Add an Anthropic API key</h3>
+        <p class="muted">
+          Set <code>ANTHROPIC_API_KEY</code> on
+          <a href="/settings/keys">/settings/keys</a> to enable chat.
+        </p>
+      </div>
+    </div>
+  {% else %}
+
+  <div class="chat-drawer-new" data-chat-drawer-new>
+    <textarea data-chat-drawer-new-input rows="3"
+              placeholder="Start a new chat — what's new with Ashby this week?"></textarea>
+    <div class="chat-drawer-new-row">
+      <div class="chat-examples-inline">
+        {% for prompt in example_prompts %}
+          <button type="button" class="chat-example chat-example-mini"
+                  data-prompt="{{ prompt }}">{{ prompt }}</button>
+        {% endfor %}
+      </div>
+      <button type="button" class="btn" data-chat-drawer-new-submit>Start</button>
+    </div>
+  </div>
+
+  <div class="chat-drawer-list-header">
+    <span class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.04em">
+      Recent conversations
+    </span>
+  </div>
+  {% if sessions %}
+    <ul class="chat-drawer-session-list">
+      {% for s in sessions %}
+        <li>
+          <button type="button"
+                  class="chat-drawer-session-link"
+                  data-chat-drawer-open-session="{{ s.id }}">
+            <span class="chat-session-title">{{ s.title }}</span>
+            <span class="chat-session-meta muted">
+              {% if s.total_cost_usd and s.total_cost_usd > 0 %}${{ '%.3f'|format(s.total_cost_usd) }} · {% endif %}
+              {{ s.updated_at.strftime('%b %d') }}
+            </span>
+          </button>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted" style="padding:8px 14px; font-size:12px">No conversations yet.</p>
+  {% endif %}
+
+  {% endif %}
+</div>

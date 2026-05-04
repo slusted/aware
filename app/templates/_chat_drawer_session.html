@@ -1,0 +1,55 @@
+{# Drawer body when a session is active. Mirrors the body of
+   chat_session.html but without page chrome. Mounted into
+   .chat-drawer-body via fetch by chat-drawer.js, then handed off
+   to window.AwareChat.init(). #}
+<div class="chat-session chat-session-drawer"
+     data-mode="drawer"
+     data-session-id="{{ session.id }}"
+     data-has-pending="{{ '1' if has_pending else '0' }}"
+     {% if initial %}data-initial="{{ initial }}"{% endif %}>
+
+  <div class="chat-drawer-header">
+    <div class="chat-drawer-header-row">
+      <h2 id="chat-drawer-title" class="chat-title" data-title="{{ session.title }}">
+        {{ session.title }}
+      </h2>
+      <div class="chat-drawer-header-actions">
+        <button type="button" class="chat-rename-btn btn-mini" title="Rename">Rename</button>
+        <button type="button" class="btn-mini chat-drawer-pick" data-chat-drawer-pick title="Conversations">⋯</button>
+        <button type="button" class="btn-mini chat-drawer-close" data-chat-drawer-close title="Close (Esc)" aria-label="Close">×</button>
+      </div>
+    </div>
+    <div class="chat-drawer-meta muted">
+      <span class="chat-cost">${{ '%.4f'|format(session.total_cost_usd or 0) }}</span>
+      <span aria-hidden="true">·</span>
+      <span>{{ session.model }}</span>
+      <span aria-hidden="true">·</span>
+      <a href="/chat/{{ session.id }}" class="chat-drawer-expand muted" title="Open full view">Expand →</a>
+    </div>
+  </div>
+
+  <div class="chat-thread">
+    {% for msg in messages %}
+      {% include "_chat_message.html" %}
+    {% endfor %}
+  </div>
+
+  <div class="chat-notifications-poller"
+       hx-get="/api/chat/{{ session.id }}/notifications"
+       hx-trigger="every 15s"
+       hx-swap="beforeend"
+       hx-target="previous .chat-thread"
+       style="display:none"></div>
+
+  <form class="chat-input-form" data-session-id="{{ session.id }}">
+    <textarea name="text" rows="2"
+              placeholder="Ask anything about the watch."
+              {% if session.status != 'active' %}disabled{% endif %}></textarea>
+    <button type="submit" class="btn"
+            {% if session.status != 'active' %}disabled{% endif %}>Send</button>
+  </form>
+
+  {% if session.status != 'active' %}
+    <p class="muted" style="margin:8px 12px">This session is archived.</p>
+  {% endif %}
+</div>

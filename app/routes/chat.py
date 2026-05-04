@@ -28,6 +28,9 @@ from ..chat.notifications import discover_completed_research
 from ..deps import get_current_user, get_db
 from ..models import ChatMessage, ChatSession, User
 
+# Example prompts shown in the picker. Kept in sync with ui.CHAT_EXAMPLE_PROMPTS;
+# imported lazily inside the handler to avoid a circular import at module load.
+
 
 templates = Jinja2Templates(
     directory=str(Path(__file__).parent.parent / "templates")
@@ -185,6 +188,68 @@ def rename_session(
     session.title = title[:255]
     db.commit()
     return {"id": session.id, "title": session.title}
+
+
+@router.get("/drawer", response_class=HTMLResponse)
+def drawer_partial(
+    request: Request,
+    session_id: Optional[int] = None,
+    initial: Optional[str] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Renders the drawer body. With ``session_id`` → the session view
+    partial; without → the picker (recent sessions + new-chat form).
+
+    Per docs/chat/03-floating-chat-panel.md — same chat data, second view.
+    """
+    if not chat_agent.has_api_key():
+        return templates.TemplateResponse(request, "_chat_drawer_picker.html", {
+            "user": user,
+            "sessions": [],
+            "anthropic_key_set": False,
+            "example_prompts": [],
+            "active_id": None,
+        })
+
+    sessions = (
+        db.query(ChatSession)
+        .filter(ChatSession.user_id == user.id, ChatSession.status == "active")
+        .order_by(ChatSession.updated_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    if session_id is None:
+        from ..ui import CHAT_EXAMPLE_PROMPTS
+        return templates.TemplateResponse(request, "_chat_drawer_picker.html", {
+            "user": user,
+            "sessions": sessions,
+            "anthropic_key_set": True,
+            "example_prompts": CHAT_EXAMPLE_PROMPTS,
+            "active_id": None,
+        })
+
+    session = _get_session_or_404(db, user, session_id)
+    messages = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.session_id == session.id)
+        .order_by(ChatMessage.id.asc())
+        .all()
+    )
+    has_pending = any(
+        m.role == "tool_use"
+        and (m.tool_payload or {}).get("requires_confirmation")
+        and (m.tool_payload or {}).get("confirmation_status") == "pending"
+        for m in messages
+    )
+    return templates.TemplateResponse(request, "_chat_drawer_session.html", {
+        "user": user,
+        "session": session,
+        "messages": messages,
+        "has_pending": has_pending,
+        "initial": initial or "",
+    })
 
 
 @router.get("/{session_id}/notifications", response_class=HTMLResponse)
