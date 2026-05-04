@@ -872,6 +872,20 @@ class Predicate(Base):
     # Inactive predicates don't contribute to scenario derivation. Kept
     # rather than deleted so snapshot history remains readable.
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    # 'user' | 'llm_proposed' | 'llm_promoted'. Free-form so adding a
+    # new source (a different model, a CSV import, etc.) doesn't need a
+    # migration. The review-queue UI filters on this. Backfilled to
+    # 'user' for all rows that pre-date the 3a migration.
+    source: Mapped[str] = mapped_column(
+        String(32), default="user", server_default="user", index=True,
+    )
+    # Provenance for LLM-proposed predicates. NULL for user-authored.
+    # Shape: {"finding_ids": [int], "reason": str, "model": str,
+    # "proposed_at": isoformat}. Used by the review UI to show "this
+    # was proposed because of these findings."
+    proposal_metadata: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
