@@ -43,6 +43,13 @@
             data-scenario-key="{{ s.key }}"
             aria-expanded="false"
             aria-controls="scenario-detail-{{ s.key }}">▸ Expand</button>
+    {% if user is defined and user and user.role in ("admin", "analyst") %}
+      <button type="button" class="btn-ghost scenario-card-edit"
+              hx-get="/scenarios/scenarios/{{ s.key }}/edit"
+              hx-target="#scenario-card-{{ s.key }}"
+              hx-swap="outerHTML"
+              data-scenario-key="{{ s.key }}">✎ Edit</button>
+    {% endif %}
   </footer>
 
   <div id="scenario-detail-{{ s.key }}" class="scenario-detail-mount" hidden></div>

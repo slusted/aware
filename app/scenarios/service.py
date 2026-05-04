@@ -271,3 +271,219 @@ def scenario_sensitivity(
     return compute_sensitivity(
         posteriors, scenarios, predicate_key, target_state_key, delta
     )
+
+
+# ─── Authoring writes (Stage 5: assumption controls) ───────────────────
+#
+# These mutate the same predicate/scenario tables the seed loader writes
+# to. They share the seed loader's invariants: per-predicate priors must
+# sum to 1.0, per-scenario weights must sum to 1.0, and every scenario
+# link's required_state_key must reference a real PredicateState. We
+# validate per-row instead of running the full integrity.validate_seed
+# so a single edit doesn't fail because some other unrelated row is
+# already broken.
+#
+# Scope this stage: edit fields and parameters of EXISTING predicates /
+# scenarios / states / links. Adding or removing rows is deliberately out
+# of scope until we have UI for the create flow.
+#
+# Caller owns the transaction. Functions raise ValueError on validation
+# failure so the route layer can surface a 400 with the message and the
+# DB stays untouched.
+
+# Reuse the same float-arithmetic tolerance the integrity validator uses,
+# so prior/weight sums authored as 0.55 + 0.45 don't fail at 1.0000…001.
+_SUM_TOL = 1e-6
+
+
+def update_predicate(
+    db: Session,
+    predicate_key: str,
+    *,
+    name: str | None = None,
+    statement: str | None = None,
+    category: str | None = None,
+    active: bool | None = None,
+    decay_half_life_days: int | None = None,
+    decay_half_life_days_explicit: bool = False,
+    states: list[dict] | None = None,
+) -> Predicate:
+    """Apply an authoring edit to one existing predicate.
+
+    All field args are optional — None means "leave alone". The exception
+    is `decay_half_life_days`: passing None is ambiguous between "no
+    change" and "clear the override and fall back to the global default",
+    so callers that intend to clear the override must additionally set
+    `decay_half_life_days_explicit=True`.
+
+    `states`, when supplied, must list every existing state of the
+    predicate keyed by `state_key`. Each entry may include any of
+    {label, prior_probability, ordinal_position}; missing keys leave the
+    existing value alone. Adding or removing states is rejected — that's
+    a future story (would invalidate confirmed evidence rows pointing at
+    the old state_key).
+
+    Raises ValueError on validation failure: unknown predicate, unknown
+    state_key, prior sum outside [1.0 ± SUM_TOL], or fewer than 2 active
+    states implied.
+    """
+    pred = (
+        db.query(Predicate)
+        .filter(Predicate.key == predicate_key)
+        .one_or_none()
+    )
+    if pred is None:
+        raise ValueError(f"predicate not found: {predicate_key!r}")
+
+    if name is not None:
+        pred.name = name
+    if statement is not None:
+        pred.statement = statement
+    if category is not None:
+        pred.category = category
+    if active is not None:
+        pred.active = active
+    if decay_half_life_days_explicit:
+        pred.decay_half_life_days = decay_half_life_days
+    pred.updated_at = datetime.utcnow()
+
+    if states is not None:
+        existing = (
+            db.query(PredicateState)
+            .filter(PredicateState.predicate_id == pred.id)
+            .all()
+        )
+        by_key = {s.state_key: s for s in existing}
+        # Check the supplied list mentions only existing state_keys.
+        unknown = [s["state_key"] for s in states if s["state_key"] not in by_key]
+        if unknown:
+            raise ValueError(
+                f"unknown state_key(s) for predicate {predicate_key!r}: "
+                f"{unknown}. Adding/removing states is not supported via "
+                "update_predicate."
+            )
+        for s in states:
+            row = by_key[s["state_key"]]
+            if "label" in s and s["label"] is not None:
+                row.label = s["label"]
+            if "ordinal_position" in s and s["ordinal_position"] is not None:
+                row.ordinal_position = int(s["ordinal_position"])
+            if "prior_probability" in s and s["prior_probability"] is not None:
+                row.prior_probability = float(s["prior_probability"])
+            row.updated_at = datetime.utcnow()
+
+        # Validate prior sum across ALL states (including untouched ones)
+        # so partial edits can't drift the predicate out of [0, 1].
+        prior_sum = sum(r.prior_probability for r in existing)
+        if abs(prior_sum - 1.0) > _SUM_TOL:
+            raise ValueError(
+                f"predicate {predicate_key!r} prior_probability would sum to "
+                f"{prior_sum:.6f}, expected 1.0 (±{_SUM_TOL})"
+            )
+
+    if pred.active:
+        # Active predicates need ≥2 states or scenario derivation breaks.
+        n_states = (
+            db.query(PredicateState)
+            .filter(PredicateState.predicate_id == pred.id)
+            .count()
+        )
+        if n_states < 2:
+            raise ValueError(
+                f"predicate {predicate_key!r} would have {n_states} state(s); "
+                "active predicates need at least 2."
+            )
+
+    db.flush()
+    return pred
+
+
+def update_scenario(
+    db: Session,
+    scenario_key: str,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    active: bool | None = None,
+    links: list[dict] | None = None,
+) -> Scenario:
+    """Apply an authoring edit to one existing scenario.
+
+    All args are optional. `links`, when supplied, must list every
+    existing link of the scenario keyed by `predicate_key`. Each entry
+    may include `weight` and/or `required_state_key`; missing keys leave
+    the existing value alone. Adding or removing links is rejected.
+
+    Raises ValueError on validation failure: unknown scenario, unknown
+    predicate_key in a link, required_state_key not a real state of that
+    predicate, or weight sum outside [1.0 ± SUM_TOL].
+    """
+    sc = (
+        db.query(Scenario)
+        .filter(Scenario.key == scenario_key)
+        .one_or_none()
+    )
+    if sc is None:
+        raise ValueError(f"scenario not found: {scenario_key!r}")
+
+    if name is not None:
+        sc.name = name
+    if description is not None:
+        sc.description = description
+    if active is not None:
+        sc.active = active
+    sc.updated_at = datetime.utcnow()
+
+    if links is not None:
+        existing_links = (
+            db.query(ScenarioPredicateLink)
+            .filter(ScenarioPredicateLink.scenario_id == sc.id)
+            .all()
+        )
+        # Index existing links by their predicate's key (not predicate_id)
+        # so the API can speak in stable identifiers.
+        pred_id_to_key = {p.id: p.key for p in db.query(Predicate).all()}
+        by_pkey = {pred_id_to_key.get(ln.predicate_id): ln for ln in existing_links}
+        by_pkey.pop(None, None)
+
+        unknown = [
+            ln["predicate_key"] for ln in links
+            if ln.get("predicate_key") not in by_pkey
+        ]
+        if unknown:
+            raise ValueError(
+                f"unknown predicate_key(s) for scenario {scenario_key!r}: "
+                f"{unknown}. Adding/removing links is not supported via "
+                "update_scenario."
+            )
+
+        # Pre-load every (predicate_id, state_key) pair so we can validate
+        # required_state_key changes without a per-link query.
+        valid_pred_states = {
+            (s.predicate_id, s.state_key)
+            for s in db.query(PredicateState).all()
+        }
+
+        for ln in links:
+            row = by_pkey[ln["predicate_key"]]
+            if "weight" in ln and ln["weight"] is not None:
+                row.weight = float(ln["weight"])
+            if "required_state_key" in ln and ln["required_state_key"] is not None:
+                if (row.predicate_id, ln["required_state_key"]) not in valid_pred_states:
+                    raise ValueError(
+                        f"scenario {scenario_key!r} link → predicate "
+                        f"{ln['predicate_key']!r}: required_state_key "
+                        f"{ln['required_state_key']!r} is not a state of "
+                        "that predicate."
+                    )
+                row.required_state_key = ln["required_state_key"]
+
+        weight_sum = sum(r.weight for r in existing_links)
+        if abs(weight_sum - 1.0) > _SUM_TOL:
+            raise ValueError(
+                f"scenario {scenario_key!r} weights would sum to "
+                f"{weight_sum:.6f}, expected 1.0 (±{_SUM_TOL})"
+            )
+
+    db.flush()
+    return sc

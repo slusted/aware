@@ -61,6 +61,13 @@
             data-predicate-key="{{ s.key }}"
             aria-expanded="false"
             aria-controls="predicate-detail-{{ s.key }}">▸ Expand</button>
+    {% if user is defined and user and user.role in ("admin", "analyst") %}
+      <button type="button" class="btn-ghost predicate-card-edit"
+              hx-get="/scenarios/predicates/{{ s.key }}/edit"
+              hx-target="#predicate-card-{{ s.key }}"
+              hx-swap="outerHTML"
+              data-predicate-key="{{ s.key }}">✎ Edit</button>
+    {% endif %}
   </footer>
 
   {# Inline expand target. Empty until the user clicks Expand. The

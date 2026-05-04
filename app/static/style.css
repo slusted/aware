@@ -3538,3 +3538,131 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   display: flex;
   justify-content: flex-end;
 }
+
+/* ─── Stage 5: predicate / scenario edit forms ─────────────────────── */
+
+.predicate-card-edit,
+.scenario-card-edit {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-translucent, rgba(80, 120, 220, 0.15));
+}
+
+.predicate-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.predicate-edit-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.predicate-edit-row .predicate-form-label {
+  flex: 1 1 140px;
+}
+
+.predicate-form-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.predicate-form-checkbox input {
+  width: auto;
+}
+
+.predicate-edit-form textarea,
+.predicate-edit-form input[type="number"],
+.predicate-edit-form input[type="text"],
+.predicate-edit-form select {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg-input, var(--bg-secondary));
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+}
+.predicate-edit-form textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.predicate-edit-states {
+  border: 1px dashed var(--border-subtle);
+  border-radius: 6px;
+  padding: 8px 10px 10px;
+  margin: 0;
+}
+.predicate-edit-states legend {
+  padding: 0 6px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+.predicate-edit-states-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.predicate-edit-state-row {
+  display: grid;
+  grid-template-columns: 64px 1fr 100px;
+  gap: 8px;
+  align-items: center;
+}
+.predicate-edit-state-key {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+.predicate-edit-state-prior {
+  text-align: right;
+}
+
+.predicate-edit-sum {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+.predicate-edit-sum [data-prior-sum],
+.predicate-edit-sum [data-weight-sum] {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: var(--text-primary);
+}
+.predicate-edit-sum [data-prior-sum].is-off,
+.predicate-edit-sum [data-weight-sum].is-off {
+  color: #b45309;
+}
+.predicate-edit-sum-hint {
+  margin-left: 6px;
+}
+
+.predicate-edit-error {
+  background: rgba(180, 83, 9, 0.12);
+  border: 1px solid rgba(180, 83, 9, 0.4);
+  color: #b45309;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.predicate-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.predicate-card-stub,
+.scenario-card-stub {
+  opacity: 0.65;
+}
+.predicate-card-stub p,
+.scenario-card-stub p {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+}
+
+.predicate-card-edit .btn-ghost,
+.scenario-card-edit .btn-ghost {
+  /* Existing card buttons render compact; nothing to override here. */
+}
