@@ -1,0 +1,13 @@
+{# Rendered when a predicate has just been deactivated mid-edit. The
+   active-only Predicates grid no longer includes it, so we leave a tiny
+   "deactivated" marker in the slot to give the user a clear receipt
+   instead of a silent disappearance. Reload to drop it. #}
+<article id="predicate-card-{{ key }}"
+         class="predicate-card predicate-card-stub muted"
+         data-predicate-key="{{ key }}">
+  <header class="predicate-card-head">
+    <span class="predicate-card-key mono">{{ key }}</span>
+    <span class="predicate-card-name">Deactivated</span>
+  </header>
+  <p class="muted">Reload to drop this card. Re-activate from the chat tool or via SQL.</p>
+</article>

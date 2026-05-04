@@ -26,11 +26,17 @@ from ..models import (
     Predicate,
     PredicateState,
     PredicateEvidence,
+    Scenario,
+    ScenarioPredicateLink,
     SignalView,
     User,
 )
 from ..scenarios import dashboard as dashboard_svc
-from ..scenarios.service import recompute_predicate
+from ..scenarios.service import (
+    recompute_predicate,
+    update_predicate as svc_update_predicate,
+    update_scenario as svc_update_scenario,
+)
 
 
 router = APIRouter(tags=["scenarios"], include_in_schema=False)
@@ -633,3 +639,355 @@ def scenario_expand(
     return templates.TemplateResponse(request, "_scenarios_scenario_detail.html", {
         "detail": detail,
     })
+
+
+# ── Stage-5: predicate / scenario edit affordances ─────────────────────
+#
+# GET routes return an inline form partial that swaps over the card via
+# `outerHTML` on `#predicate-card-{key}` (or `#scenario-card-{key}`).
+# Cancelling re-renders the card from server state. POST applies the
+# edit through the service layer and re-renders the card on success or
+# the form (with an error banner) on validation failure.
+
+PREDICATE_CATEGORIES = ("discovery", "evaluation", "transaction", "control_point")
+
+
+@router.get(
+    "/scenarios/predicates/{predicate_key}/card",
+    response_class=HTMLResponse,
+)
+def predicate_card_partial(
+    predicate_key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Render just one predicate card. Used by the edit form's Cancel
+    handler to swap the form back out for the read-only card."""
+    summary = _summary_for_predicate(db, predicate_key)
+    if summary is None:
+        return templates.TemplateResponse(
+            request,
+            "_scenarios_predicate_inactive_stub.html",
+            {"key": predicate_key},
+        )
+    return templates.TemplateResponse(
+        request,
+        "_scenarios_predicate_card.html",
+        {"s": summary},
+    )
+
+
+@router.get(
+    "/scenarios/scenarios/{scenario_key}/card",
+    response_class=HTMLResponse,
+)
+def scenario_card_partial(
+    scenario_key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Render just one scenario card — Cancel target for scenario edits."""
+    summary = _summary_for_scenario(db, scenario_key)
+    if summary is None:
+        return templates.TemplateResponse(
+            request,
+            "_scenarios_scenario_inactive_stub.html",
+            {"key": scenario_key},
+        )
+    return templates.TemplateResponse(
+        request,
+        "_scenarios_scenario_card.html",
+        {"s": summary},
+    )
+
+
+def _summary_for_predicate(db: Session, predicate_key: str):
+    """Find one predicate's PredicateSummary by linear scan over the
+    full list. Cheap — N < 50 in practice — and reuses the same query
+    path the grid already exercises so the card render is identical."""
+    for s in dashboard_svc.predicate_summary(db):
+        if s.key == predicate_key:
+            return s
+    return None
+
+
+def _summary_for_scenario(db: Session, scenario_key: str):
+    for s in dashboard_svc.scenario_summary(db):
+        if s.key == scenario_key:
+            return s
+    return None
+
+
+@router.get(
+    "/scenarios/predicates/{predicate_key}/edit",
+    response_class=HTMLResponse,
+)
+def predicate_edit_form(
+    predicate_key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("analyst", "admin")),
+):
+    """Return the inline edit form pre-filled with the current predicate
+    fields and state rows. Targets `#predicate-card-{key}` with
+    `outerHTML` swap so the form replaces the card while editing."""
+    pred = (
+        db.query(Predicate).filter(Predicate.key == predicate_key).one_or_none()
+    )
+    if pred is None:
+        raise HTTPException(404, f"predicate {predicate_key!r} not found")
+    states = (
+        db.query(PredicateState)
+        .filter(PredicateState.predicate_id == pred.id)
+        .order_by(PredicateState.ordinal_position)
+        .all()
+    )
+    return templates.TemplateResponse(
+        request,
+        "_scenarios_predicate_edit_form.html",
+        {
+            "p": pred,
+            "states": states,
+            "categories": PREDICATE_CATEGORIES,
+            "error": None,
+        },
+    )
+
+
+@router.post(
+    "/scenarios/predicates/{predicate_key}/edit",
+    response_class=HTMLResponse,
+)
+async def predicate_edit_apply(
+    predicate_key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("analyst", "admin")),
+):
+    """Apply the form post. On success re-render the card; on validation
+    failure re-render the form with the error message inline so the user
+    keeps their in-progress edits."""
+    form = await request.form()
+    name = form.get("name") or None
+    statement = form.get("statement") or None
+    category = form.get("category") or None
+    active = form.get("active") == "on"
+    half_raw = (form.get("decay_half_life_days") or "").strip()
+    if half_raw == "":
+        half_life: int | None = None
+    else:
+        try:
+            half_life = int(half_raw)
+        except ValueError:
+            return _predicate_edit_with_error(
+                request, db, predicate_key,
+                "decay_half_life_days must be an integer or blank.",
+            )
+
+    # State rows: keys like state_label_<state_key>, state_prior_<state_key>.
+    states_payload: list[dict] = []
+    for k, v in form.multi_items():
+        if k.startswith("state_prior_"):
+            sk = k[len("state_prior_"):]
+            try:
+                prior = float(v)
+            except (TypeError, ValueError):
+                return _predicate_edit_with_error(
+                    request, db, predicate_key,
+                    f"prior for state {sk!r} must be a number.",
+                )
+            label = form.get(f"state_label_{sk}") or None
+            states_payload.append({
+                "state_key": sk,
+                "label": label,
+                "prior_probability": prior,
+            })
+
+    try:
+        svc_update_predicate(
+            db, predicate_key,
+            name=name, statement=statement, category=category, active=active,
+            decay_half_life_days=half_life,
+            decay_half_life_days_explicit=True,
+            states=states_payload or None,
+        )
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        return _predicate_edit_with_error(request, db, predicate_key, str(e))
+
+    summary = _summary_for_predicate(db, predicate_key)
+    if summary is None:
+        # Predicate was just deactivated → the active-only summary list
+        # no longer includes it. Render a minimal "card stub" so the
+        # HTMX swap target is replaced with something visible rather
+        # than disappearing silently.
+        return templates.TemplateResponse(
+            request,
+            "_scenarios_predicate_inactive_stub.html",
+            {"key": predicate_key},
+        )
+    return templates.TemplateResponse(
+        request,
+        "_scenarios_predicate_card.html",
+        {"s": summary},
+    )
+
+
+def _predicate_edit_with_error(
+    request: Request, db: Session, predicate_key: str, msg: str,
+) -> HTMLResponse:
+    pred = (
+        db.query(Predicate).filter(Predicate.key == predicate_key).one_or_none()
+    )
+    if pred is None:
+        raise HTTPException(404, f"predicate {predicate_key!r} not found")
+    states = (
+        db.query(PredicateState)
+        .filter(PredicateState.predicate_id == pred.id)
+        .order_by(PredicateState.ordinal_position)
+        .all()
+    )
+    return templates.TemplateResponse(
+        request,
+        "_scenarios_predicate_edit_form.html",
+        {
+            "p": pred,
+            "states": states,
+            "categories": PREDICATE_CATEGORIES,
+            "error": msg,
+        },
+        status_code=400,
+    )
+
+
+@router.get(
+    "/scenarios/scenarios/{scenario_key}/edit",
+    response_class=HTMLResponse,
+)
+def scenario_edit_form(
+    scenario_key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("analyst", "admin")),
+):
+    """Return the inline edit form for one scenario, pre-filled with its
+    fields + per-link weight + required_state rows."""
+    sc = db.query(Scenario).filter(Scenario.key == scenario_key).one_or_none()
+    if sc is None:
+        raise HTTPException(404, f"scenario {scenario_key!r} not found")
+    return templates.TemplateResponse(
+        request,
+        "_scenarios_scenario_edit_form.html",
+        _scenario_edit_context(db, sc, error=None),
+    )
+
+
+@router.post(
+    "/scenarios/scenarios/{scenario_key}/edit",
+    response_class=HTMLResponse,
+)
+async def scenario_edit_apply(
+    scenario_key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("analyst", "admin")),
+):
+    form = await request.form()
+    name = form.get("name") or None
+    description = form.get("description")
+    if description is None:
+        description = None
+    active = form.get("active") == "on"
+
+    links_payload: list[dict] = []
+    for k, v in form.multi_items():
+        if k.startswith("link_weight_"):
+            pkey = k[len("link_weight_"):]
+            try:
+                weight = float(v)
+            except (TypeError, ValueError):
+                return _scenario_edit_with_error(
+                    request, db, scenario_key,
+                    f"weight for link → {pkey!r} must be a number.",
+                )
+            req_state = form.get(f"link_state_{pkey}") or None
+            links_payload.append({
+                "predicate_key": pkey,
+                "weight": weight,
+                "required_state_key": req_state,
+            })
+
+    try:
+        svc_update_scenario(
+            db, scenario_key,
+            name=name, description=description, active=active,
+            links=links_payload or None,
+        )
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        return _scenario_edit_with_error(request, db, scenario_key, str(e))
+
+    summary = _summary_for_scenario(db, scenario_key)
+    if summary is None:
+        return templates.TemplateResponse(
+            request,
+            "_scenarios_scenario_inactive_stub.html",
+            {"key": scenario_key},
+        )
+    return templates.TemplateResponse(
+        request,
+        "_scenarios_scenario_card.html",
+        {"s": summary},
+    )
+
+
+def _scenario_edit_context(db: Session, sc: Scenario, *, error: str | None) -> dict:
+    """Build the template ctx with each link enriched by the predicate
+    name + the candidate states for the required_state_key dropdown."""
+    pred_id_to_row = {p.id: p for p in db.query(Predicate).all()}
+    states_by_pred: dict[int, list[PredicateState]] = {}
+    for s in db.query(PredicateState).order_by(PredicateState.ordinal_position).all():
+        states_by_pred.setdefault(s.predicate_id, []).append(s)
+
+    links_view: list[dict] = []
+    for ln in (
+        db.query(ScenarioPredicateLink)
+        .filter(ScenarioPredicateLink.scenario_id == sc.id)
+        .all()
+    ):
+        pred = pred_id_to_row.get(ln.predicate_id)
+        if pred is None:
+            continue
+        candidate_states = [
+            {"state_key": s.state_key, "label": s.label}
+            for s in states_by_pred.get(pred.id, [])
+        ]
+        links_view.append({
+            "predicate_key": pred.key,
+            "predicate_name": pred.name,
+            "required_state_key": ln.required_state_key,
+            "weight": ln.weight,
+            "candidate_states": candidate_states,
+        })
+    # Stable sort by predicate key so re-renders don't reshuffle rows on
+    # the user mid-edit.
+    links_view.sort(key=lambda r: r["predicate_key"])
+    return {"sc": sc, "links": links_view, "error": error}
+
+
+def _scenario_edit_with_error(
+    request: Request, db: Session, scenario_key: str, msg: str,
+) -> HTMLResponse:
+    sc = db.query(Scenario).filter(Scenario.key == scenario_key).one_or_none()
+    if sc is None:
+        raise HTTPException(404, f"scenario {scenario_key!r} not found")
+    return templates.TemplateResponse(
+        request,
+        "_scenarios_scenario_edit_form.html",
+        _scenario_edit_context(db, sc, error=msg),
+        status_code=400,
+    )

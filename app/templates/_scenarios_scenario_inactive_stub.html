@@ -1,0 +1,12 @@
+{# Same idea as _scenarios_predicate_inactive_stub.html — leave a marker
+   when a scenario was just deactivated mid-edit so the swap target
+   doesn't go blank. #}
+<article id="scenario-card-{{ key }}"
+         class="scenario-card scenario-card-stub muted"
+         data-scenario-key="{{ key }}">
+  <header class="scenario-card-head">
+    <span class="scenario-card-key mono">{{ key|upper }}</span>
+    <span class="scenario-card-name">Deactivated</span>
+  </header>
+  <p class="muted">Reload to drop this card.</p>
+</article>

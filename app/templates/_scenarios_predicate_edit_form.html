@@ -1,0 +1,142 @@
+{# Inline edit form for one predicate. Replaces the predicate-card on
+   the /scenarios Predicates tab while editing.
+   Args:
+     p          - Predicate row
+     states     - PredicateState rows ordered by ordinal_position
+     categories - tuple of allowed category keys for the select
+     error      - optional validation error string from the server
+#}
+<article id="predicate-card-{{ p.key }}"
+         class="predicate-card predicate-card-edit"
+         data-predicate-key="{{ p.key }}">
+  <header class="predicate-card-head">
+    <div class="predicate-card-title">
+      <span class="predicate-card-key mono">{{ p.key }}</span>
+      <span class="predicate-card-name">Editing</span>
+    </div>
+    <span class="predicate-card-category muted">{{ p.category }}</span>
+  </header>
+
+  {% if error %}
+    <div class="predicate-edit-error" role="alert">
+      <strong>Couldn't save:</strong> {{ error }}
+    </div>
+  {% endif %}
+
+  <form class="predicate-edit-form"
+        hx-post="/scenarios/predicates/{{ p.key }}/edit"
+        hx-target="#predicate-card-{{ p.key }}"
+        hx-swap="outerHTML">
+
+    <label class="predicate-form-label">
+      Name
+      <input type="text" name="name" value="{{ p.name }}" maxlength="255" required>
+    </label>
+
+    <label class="predicate-form-label">
+      Statement
+      <textarea name="statement" rows="3" maxlength="2000" required>{{ p.statement }}</textarea>
+    </label>
+
+    <div class="predicate-edit-row">
+      <label class="predicate-form-label">
+        Category
+        <select name="category">
+          {% for c in categories %}
+            <option value="{{ c }}"{% if c == p.category %} selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+          {# Preserve a non-canonical existing category so editing such a
+             predicate doesn't silently coerce it. #}
+          {% if p.category not in categories %}
+            <option value="{{ p.category }}" selected>{{ p.category }}</option>
+          {% endif %}
+        </select>
+      </label>
+
+      <label class="predicate-form-label">
+        Decay half-life (days)
+        <input type="number" name="decay_half_life_days"
+               min="1" max="3650"
+               value="{{ p.decay_half_life_days if p.decay_half_life_days is not none else '' }}"
+               placeholder="(use global default)">
+      </label>
+
+      <label class="predicate-form-label predicate-form-checkbox">
+        <input type="checkbox" name="active"{% if p.active %} checked{% endif %}>
+        Active
+      </label>
+    </div>
+
+    <fieldset class="predicate-edit-states">
+      <legend>States — priors must sum to 1.0</legend>
+      <div class="predicate-edit-states-grid">
+        {% for s in states %}
+          <div class="predicate-edit-state-row" data-state-key="{{ s.state_key }}">
+            <span class="predicate-edit-state-key mono">{{ s.state_key }}</span>
+            <input type="text"
+                   name="state_label_{{ s.state_key }}"
+                   value="{{ s.label }}"
+                   maxlength="128"
+                   class="predicate-edit-state-label">
+            <input type="number"
+                   name="state_prior_{{ s.state_key }}"
+                   value="{{ '%.4f' % s.prior_probability }}"
+                   step="0.01" min="0" max="1"
+                   class="predicate-edit-state-prior"
+                   data-prior-input>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="predicate-edit-sum">
+        Σ priors = <span data-prior-sum>1.0000</span>
+        <span class="predicate-edit-sum-hint muted">(must equal 1.0)</span>
+      </div>
+    </fieldset>
+
+    <div class="predicate-edit-actions">
+      <button type="submit" class="btn-card-back is-primary">Save</button>
+      <button type="button" class="btn-card-back is-cancel"
+              hx-get="/scenarios/predicates/{{ p.key }}/expand"
+              hx-target="#predicate-card-{{ p.key }}"
+              hx-swap="none"
+              data-cancel-edit
+              data-predicate-key="{{ p.key }}">Cancel</button>
+    </div>
+  </form>
+
+  {# Cancel needs to put the card back; the simplest reliable path is a
+     fresh GET of /scenarios?tab=predicates anchored on the card, but
+     that reloads the page. Instead, the inline JS below intercepts
+     Cancel and HTMX-swaps in just this one card by hitting the
+     dedicated card endpoint. #}
+  <script>
+    (() => {
+      const root = document.currentScript.previousElementSibling;
+      // Live prior-sum indicator.
+      const sumEl = root.querySelector("[data-prior-sum]");
+      const inputs = root.querySelectorAll("[data-prior-input]");
+      const recompute = () => {
+        let total = 0;
+        inputs.forEach(i => { total += parseFloat(i.value) || 0; });
+        sumEl.textContent = total.toFixed(4);
+        sumEl.classList.toggle("is-off", Math.abs(total - 1) > 1e-4);
+      };
+      inputs.forEach(i => i.addEventListener("input", recompute));
+      recompute();
+
+      // Cancel: HTMX-load the read-only card endpoint and swap the
+      // whole article. /scenarios/predicates/{key}/card is a thin
+      // helper added alongside this form (see route).
+      const cancelBtn = root.querySelector("[data-cancel-edit]");
+      if (cancelBtn) {
+        cancelBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          const key = cancelBtn.dataset.predicateKey;
+          fetch(`/scenarios/predicates/${key}/card`, {credentials: "same-origin"})
+            .then(r => r.text())
+            .then(html => { root.outerHTML = html; });
+        });
+      }
+    })();
+  </script>
+</article>

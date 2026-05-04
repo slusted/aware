@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from ..chat.tools import Tool
 from ..models import User
 from . import dashboard as dash
+from . import service as svc
 
 
 def _nt_list(items) -> list[dict]:
@@ -103,6 +104,86 @@ def _h_get_evidence_for_finding(
         "finding_id": finding_id,
         "results": _nt_list(rows),
         "total": len(rows),
+    }
+
+
+# ── write handlers (Stage 5: assumption controls) ──────────────────────
+#
+# Both handlers call into the service layer's update_* functions which
+# do the validation. We catch ValueError so the chat dispatcher gets a
+# friendly {"error": ...} dict rather than a 500.
+
+def _h_update_predicate(
+    db: Session,
+    user: User,
+    *,
+    predicate_key: str,
+    name: str | None = None,
+    statement: str | None = None,
+    category: str | None = None,
+    active: bool | None = None,
+    decay_half_life_days: Any = "__unset__",
+    states: list[dict] | None = None,
+    **_: Any,
+) -> dict:
+    """Apply authoring edits to one predicate. Returns the post-edit
+    summary so the chat agent can read back what landed."""
+    # JSON has no way to distinguish "I want to clear the override
+    # (set NULL)" from "I'm not changing this field" — the chat schema
+    # would send `null` for both. Treat the sentinel "__unset__" as
+    # "no change"; explicit null then unambiguously clears the override.
+    explicit = decay_half_life_days != "__unset__"
+    half_life = None if not explicit else decay_half_life_days
+    try:
+        svc.update_predicate(
+            db, predicate_key,
+            name=name, statement=statement, category=category, active=active,
+            decay_half_life_days=half_life,
+            decay_half_life_days_explicit=explicit,
+            states=states,
+        )
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        return {"error": str(e)}
+    detail = dash.predicate_detail(db, predicate_key)
+    if detail is None:
+        return {"error": f"predicate {predicate_key!r} disappeared after update"}
+    summary = detail.summary._asdict()
+    summary.pop("sparkline_dominant", None)
+    summary["states"] = [st._asdict() for st in detail.summary.states]
+    return {"updated": True, "summary": summary}
+
+
+def _h_update_scenario(
+    db: Session,
+    user: User,
+    *,
+    scenario_key: str,
+    name: str | None = None,
+    description: str | None = None,
+    active: bool | None = None,
+    links: list[dict] | None = None,
+    **_: Any,
+) -> dict:
+    """Apply authoring edits to one scenario. Returns the post-edit
+    detail so the chat agent can read back what landed."""
+    try:
+        svc.update_scenario(
+            db, scenario_key,
+            name=name, description=description, active=active, links=links,
+        )
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        return {"error": str(e)}
+    detail = dash.scenario_detail(db, scenario_key)
+    if detail is None:
+        return {"error": f"scenario {scenario_key!r} disappeared after update"}
+    return {
+        "updated": True,
+        "summary": detail.summary._asdict(),
+        "contributions": _nt_list(detail.contributions),
     }
 
 
@@ -203,5 +284,140 @@ SCENARIO_TOOLS: list[Tool] = [
         },
         handler=_h_get_evidence_for_finding,
         requires_role="viewer",
+    ),
+    Tool(
+        name="scenarios_update_predicate",
+        description=(
+            "Edit fields and parameters of one existing predicate. All "
+            "fields except predicate_key are optional — omit a field to "
+            "leave it unchanged. To edit state priors or labels, pass a "
+            "`states` list keyed by state_key; only the listed states are "
+            "touched. Validates that priors sum to 1.0 across ALL states "
+            "(including unchanged ones) and that an active predicate has "
+            "≥2 states. Adding or removing states is not supported here. "
+            "Use this to retune a predicate after re-reading the spec or "
+            "when fresh evidence implies the prior was off."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "predicate_key": {
+                    "type": "string",
+                    "description": "Predicate key (e.g. 'p1', 'p8').",
+                },
+                "name": {"type": "string"},
+                "statement": {
+                    "type": "string",
+                    "description": (
+                        "Long-form unambiguous statement of the claim. "
+                        "Stage-2 LLM mapping prompts hinge on this — keep "
+                        "it precise."
+                    ),
+                },
+                "category": {
+                    "type": "string",
+                    "description": "discovery | evaluation | transaction | control_point | other",
+                },
+                "active": {"type": "boolean"},
+                "decay_half_life_days": {
+                    "type": ["integer", "null"],
+                    "description": (
+                        "Per-predicate decay override in days. Pass null "
+                        "to clear and fall back to the global default. "
+                        "Omit to leave unchanged."
+                    ),
+                },
+                "states": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "state_key": {"type": "string"},
+                            "label": {"type": "string"},
+                            "ordinal_position": {"type": "integer"},
+                            "prior_probability": {"type": "number", "minimum": 0, "maximum": 1},
+                        },
+                        "required": ["state_key"],
+                        "additionalProperties": False,
+                    },
+                    "description": (
+                        "Per-state edits keyed by state_key. Each item may "
+                        "include any of label/ordinal_position/prior_probability "
+                        "— missing keys leave that field alone. The full set of "
+                        "priors across the predicate must sum to 1.0."
+                    ),
+                },
+            },
+            "required": ["predicate_key"],
+            "additionalProperties": False,
+        },
+        handler=_h_update_predicate,
+        requires_role="analyst",
+        requires_confirmation=True,
+        confirmation_summary=lambda i: (
+            f"Update predicate {i.get('predicate_key')!r}? "
+            + (
+                f"{len(i['states'])} state edit(s)"
+                if i.get("states") else "field edits only"
+            )
+            + ". This rewrites authoring data; cached posterior is preserved."
+        ),
+    ),
+    Tool(
+        name="scenarios_update_scenario",
+        description=(
+            "Edit fields and parameters of one existing scenario. All "
+            "fields except scenario_key are optional — omit to leave "
+            "unchanged. To edit link weights or required states, pass a "
+            "`links` list keyed by predicate_key; only the listed links "
+            "are touched. Validates that weights sum to 1.0 across ALL "
+            "links (including unchanged ones) and that every "
+            "required_state_key references a real state of that "
+            "predicate. Adding or removing links is not supported here."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "scenario_key": {
+                    "type": "string",
+                    "description": "Scenario key (e.g. 'a', 'b', 'c').",
+                },
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "active": {"type": "boolean"},
+                "links": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "predicate_key": {"type": "string"},
+                            "required_state_key": {"type": "string"},
+                            "weight": {"type": "number", "minimum": 0, "maximum": 1},
+                        },
+                        "required": ["predicate_key"],
+                        "additionalProperties": False,
+                    },
+                    "description": (
+                        "Per-link edits keyed by predicate_key. Each item may "
+                        "include weight and/or required_state_key — missing "
+                        "keys leave that field alone. The full set of weights "
+                        "across the scenario must sum to 1.0."
+                    ),
+                },
+            },
+            "required": ["scenario_key"],
+            "additionalProperties": False,
+        },
+        handler=_h_update_scenario,
+        requires_role="analyst",
+        requires_confirmation=True,
+        confirmation_summary=lambda i: (
+            f"Update scenario {i.get('scenario_key')!r}? "
+            + (
+                f"{len(i['links'])} link edit(s)"
+                if i.get("links") else "field edits only"
+            )
+            + "."
+        ),
     ),
 ]

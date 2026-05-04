@@ -1,0 +1,107 @@
+{# Inline edit form for one scenario. Replaces the scenario-card on the
+   /scenarios Scenarios tab while editing.
+   Args:
+     sc    - Scenario row
+     links - list of {predicate_key, predicate_name, required_state_key,
+             weight, candidate_states} dicts (see _scenario_edit_context)
+     error - optional validation error string
+#}
+<article id="scenario-card-{{ sc.key }}"
+         class="scenario-card scenario-card-edit"
+         data-scenario-key="{{ sc.key }}">
+  <header class="scenario-card-head">
+    <div class="scenario-card-title">
+      <span class="scenario-card-key mono">{{ sc.key|upper }}</span>
+      <span class="scenario-card-name">Editing</span>
+    </div>
+  </header>
+
+  {% if error %}
+    <div class="predicate-edit-error" role="alert">
+      <strong>Couldn't save:</strong> {{ error }}
+    </div>
+  {% endif %}
+
+  <form class="predicate-edit-form"
+        hx-post="/scenarios/scenarios/{{ sc.key }}/edit"
+        hx-target="#scenario-card-{{ sc.key }}"
+        hx-swap="outerHTML">
+
+    <label class="predicate-form-label">
+      Name
+      <input type="text" name="name" value="{{ sc.name }}" maxlength="255" required>
+    </label>
+
+    <label class="predicate-form-label">
+      Description
+      <textarea name="description" rows="3" maxlength="2000">{{ sc.description }}</textarea>
+    </label>
+
+    <label class="predicate-form-label predicate-form-checkbox">
+      <input type="checkbox" name="active"{% if sc.active %} checked{% endif %}>
+      Active
+    </label>
+
+    <fieldset class="predicate-edit-states">
+      <legend>Predicate links — weights must sum to 1.0</legend>
+      <div class="predicate-edit-states-grid">
+        {% for ln in links %}
+          <div class="predicate-edit-state-row" data-predicate-key="{{ ln.predicate_key }}">
+            <span class="predicate-edit-state-key mono">{{ ln.predicate_key }}</span>
+            <select name="link_state_{{ ln.predicate_key }}"
+                    class="predicate-edit-state-label"
+                    title="{{ ln.predicate_name }}">
+              {% for s in ln.candidate_states %}
+                <option value="{{ s.state_key }}"{% if s.state_key == ln.required_state_key %} selected{% endif %}>{{ s.label }}</option>
+              {% endfor %}
+            </select>
+            <input type="number"
+                   name="link_weight_{{ ln.predicate_key }}"
+                   value="{{ '%.4f' % ln.weight }}"
+                   step="0.01" min="0" max="1"
+                   class="predicate-edit-state-prior"
+                   data-weight-input>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="predicate-edit-sum">
+        Σ weights = <span data-weight-sum>1.0000</span>
+        <span class="predicate-edit-sum-hint muted">(must equal 1.0)</span>
+      </div>
+    </fieldset>
+
+    <div class="predicate-edit-actions">
+      <button type="submit" class="btn-card-back is-primary">Save</button>
+      <button type="button" class="btn-card-back is-cancel"
+              data-cancel-scenario-edit
+              data-scenario-key="{{ sc.key }}">Cancel</button>
+    </div>
+  </form>
+
+  <script>
+    (() => {
+      const root = document.currentScript.previousElementSibling;
+      const sumEl = root.querySelector("[data-weight-sum]");
+      const inputs = root.querySelectorAll("[data-weight-input]");
+      const recompute = () => {
+        let total = 0;
+        inputs.forEach(i => { total += parseFloat(i.value) || 0; });
+        sumEl.textContent = total.toFixed(4);
+        sumEl.classList.toggle("is-off", Math.abs(total - 1) > 1e-4);
+      };
+      inputs.forEach(i => i.addEventListener("input", recompute));
+      recompute();
+
+      const cancelBtn = root.querySelector("[data-cancel-scenario-edit]");
+      if (cancelBtn) {
+        cancelBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          const key = cancelBtn.dataset.scenarioKey;
+          fetch(`/scenarios/scenarios/${key}/card`, {credentials: "same-origin"})
+            .then(r => r.text())
+            .then(html => { root.outerHTML = html; });
+        });
+      }
+    })();
+  </script>
+</article>
