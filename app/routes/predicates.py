@@ -45,6 +45,11 @@ router = APIRouter(tags=["predicates"], include_in_schema=False)
 templates = Jinja2Templates(
     directory=str(Path(__file__).parent.parent / "templates")
 )
+# Re-register the agent_brand Jinja global on this route's env. Missed
+# from #109 — every Templates instance needs this so base.html's
+# `{{ agent_brand.name }}` / `{{ agent_brand.avatar_url }}` resolve.
+from .. import agent_brand as _agent_brand
+_agent_brand.register_template_globals(templates)
 
 
 def _coerce_sort(value: str | None, allowed: tuple[str, ...], default: str) -> str:
