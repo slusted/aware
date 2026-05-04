@@ -21,9 +21,11 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from .. import jobs
 from ..chat.tools import Tool
 from ..models import User
 from . import dashboard as dash
+from . import proposer as prop
 from . import service as svc
 
 
@@ -153,6 +155,93 @@ def _h_update_predicate(
     summary.pop("sparkline_dominant", None)
     summary["states"] = [st._asdict() for st in detail.summary.states]
     return {"updated": True, "summary": summary}
+
+
+def _h_predicate_propose(
+    db: Session,
+    user: User,
+    *,
+    key: str,
+    name: str,
+    statement: str,
+    category: str,
+    states: list[dict],
+    source_finding_ids: list[int],
+    reason: str = "",
+    **_: Any,
+) -> dict:
+    """Persist a single LLM-proposed predicate inline from chat.
+
+    Same provenance shape as a batch proposer run: source='llm_proposed',
+    proposal_metadata carries finding_ids + reason + model + timestamp.
+    Lands in /predicates?source=llm_proposed where the reviewer can
+    promote or reject. Validation errors return as {"error": ...} so the
+    Agent surfaces them rather than 500ing.
+    """
+    pred, err = prop.persist_proposal(
+        db,
+        {
+            "key": key,
+            "name": name,
+            "statement": statement,
+            "category": category,
+            "states": states,
+            "source_finding_ids": source_finding_ids,
+            "reason": reason,
+        },
+        model="agent",
+    )
+    if err or not pred:
+        return {"error": err or "unknown failure persisting proposal"}
+    return {
+        "proposed": True,
+        "predicate": {
+            "key": pred.key,
+            "name": pred.name,
+            "statement": pred.statement,
+            "category": pred.category,
+            "source": pred.source,
+            "url": f"/scenarios/predicates/{pred.key}",
+        },
+        "review_url": "/predicates?source=llm_proposed",
+    }
+
+
+def _h_run_predicate_proposer(
+    db: Session,
+    user: User,
+    *,
+    finding_window_days: int | None = None,
+    finding_limit: int | None = None,
+    max_proposals: int | None = None,
+    **_: Any,
+) -> dict:
+    """Enqueue a batch predicate-proposal Run (the Phase 3b background
+    job). Returns the Run id + queue position so the Agent can tell the
+    user what to watch for. Run output streams into /runs/<id> as
+    RunEvent log lines."""
+    args = {}
+    if finding_window_days is not None:
+        args["finding_window_days"] = int(finding_window_days)
+    if finding_limit is not None:
+        args["finding_limit"] = int(finding_limit)
+    if max_proposals is not None:
+        args["max_proposals"] = int(max_proposals)
+
+    run = jobs.enqueue_run(
+        db,
+        "predicate_proposal",
+        triggered_by="manual",
+        job_args=args,
+    )
+    return {
+        "queued": True,
+        "kind": "predicate_proposal",
+        "run_id": run.id,
+        "queue_position": jobs.queue_position(db, run.id),
+        "review_url": "/predicates?source=llm_proposed",
+        "run_url": f"/runs/{run.id}",
+    }
 
 
 def _h_update_scenario(
@@ -361,6 +450,156 @@ SCENARIO_TOOLS: list[Tool] = [
                 if i.get("states") else "field edits only"
             )
             + ". This rewrites authoring data; cached posterior is preserved."
+        ),
+    ),
+    Tool(
+        name="scenarios_propose_predicate",
+        description=(
+            "Persist one LLM-proposed predicate inline. Same provenance "
+            "shape as a batch proposer run — lands in the /predicates "
+            "review queue with source='llm_proposed' so a reviewer "
+            "can Promote or Reject. Use this when conversation surfaces "
+            "a new structural claim worth tracking that isn't covered by "
+            "the existing roster (call scenarios_list_predicates first if "
+            "unsure). Cite at least 2 finding ids that inspired the "
+            "proposal — single-finding speculation is rejected."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": (
+                        "Lowercase snake_case slug, 3–5 words, ≤32 chars. "
+                        "Descriptive of the claim, not the topic. e.g. "
+                        "'agentic_apply_dominates_inbound'."
+                    ),
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Short human label.",
+                },
+                "statement": {
+                    "type": "string",
+                    "description": (
+                        "Long-form precise statement framed as a "
+                        "structural claim about the market. Must be "
+                        "testable — the classifier reads this later "
+                        "to map findings to states."
+                    ),
+                },
+                "category": {
+                    "type": "string",
+                    "description": (
+                        "discovery | evaluation | transaction | "
+                        "control_point. Free-form if none fit."
+                    ),
+                },
+                "states": {
+                    "type": "array",
+                    "minItems": 2,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "state_key": {
+                                "type": "string",
+                                "description": "Lowercase, no spaces. Stable across renames.",
+                            },
+                            "label": {"type": "string"},
+                            "prior_probability": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1,
+                            },
+                        },
+                        "required": ["state_key", "label", "prior_probability"],
+                        "additionalProperties": False,
+                    },
+                    "description": (
+                        "≥2 mutually-exclusive states. Priors must sum "
+                        "to 1.0 ± 0.001."
+                    ),
+                },
+                "source_finding_ids": {
+                    "type": "array",
+                    "minItems": 2,
+                    "items": {"type": "integer"},
+                    "description": (
+                        "Real Finding ids that inspired this proposal. "
+                        "Cite the strongest 2–5; don't dump every "
+                        "adjacent one. Single-finding proposals are "
+                        "rejected."
+                    ),
+                },
+                "reason": {
+                    "type": "string",
+                    "description": (
+                        "One sentence on why these findings together "
+                        "warrant a new predicate rather than evidence "
+                        "for an existing one."
+                    ),
+                },
+            },
+            "required": [
+                "key", "name", "statement", "category",
+                "states", "source_finding_ids",
+            ],
+            "additionalProperties": False,
+        },
+        handler=_h_predicate_propose,
+        requires_role="analyst",
+        requires_confirmation=True,
+        confirmation_summary=lambda i: (
+            f"Propose new predicate {i.get('key')!r} "
+            f"({len(i.get('states', []))} states, "
+            f"{len(i.get('source_finding_ids', []))} cited findings)? "
+            "Lands in the /predicates review queue."
+        ),
+    ),
+    Tool(
+        name="scenarios_run_predicate_proposer",
+        description=(
+            "Kick off a batch predicate-proposal Run — the LLM scans "
+            "recent findings + the current roster and writes 0–N new "
+            "predicates with source='llm_proposed'. Use when the user "
+            "asks to 'sweep for new predicates' or 'find what we're "
+            "missing'. Returns the run id + a link; the run streams "
+            "log lines into /runs/<id>. For one-off inline proposals, "
+            "prefer scenarios_propose_predicate."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "finding_window_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 365,
+                    "description": "Window of recent findings to scan. Default 14.",
+                },
+                "finding_limit": {
+                    "type": "integer",
+                    "minimum": 5,
+                    "maximum": 500,
+                    "description": "Cap on findings fed to the LLM. Default 60.",
+                },
+                "max_proposals": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "description": "Cap on persisted proposals per run. Default 5.",
+                },
+            },
+            "additionalProperties": False,
+        },
+        handler=_h_run_predicate_proposer,
+        requires_role="analyst",
+        requires_confirmation=True,
+        confirmation_summary=lambda i: (
+            "Kick off a predicate-proposer run "
+            f"(window={i.get('finding_window_days', 14)}d, "
+            f"limit={i.get('finding_limit', 60)} findings, "
+            f"max_proposals={i.get('max_proposals', 5)})? "
+            "Costs roughly $0.05–$0.20 of LLM time."
         ),
     ),
     Tool(
