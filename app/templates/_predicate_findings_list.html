@@ -1,0 +1,75 @@
+{# Reframed findings list: per-row fitness chip + agent's read-as gloss
+   instead of the Δ-logit math. The math is still available under the
+   _predicate_math_view.html disclosure below.
+
+   Args:
+     detail - PredicateDetail (app/scenarios/dashboard.py)
+   Each evidence row carries the post-review columns (fitness,
+   fitness_read_as) when the monthly job has touched it; rows untouched
+   by review still render — they just skip the chip.
+#}
+{% if detail.evidence_confirmed %}
+  <ul class="predicate-findings-list">
+    {% for ev in detail.evidence_confirmed %}
+      <li class="predicate-finding-row{% if ev.fitness %} fitness-{{ ev.fitness }}{% endif %}">
+        <div class="predicate-finding-row-head">
+          {% if ev.fitness %}
+            <span class="fitness-chip is-{{ ev.fitness }}">
+              {% if ev.fitness == "fits" %}✓ fits
+              {% elif ev.fitness == "awkward" %}⚠ awkward
+              {% elif ev.fitness == "misfit" %}✗ misfit
+              {% endif %}
+            </span>
+          {% endif %}
+          <span class="predicate-finding-date muted mono">
+            {{ ev.observed_at.strftime('%Y-%m-%d') }}
+          </span>
+          {% if ev.finding_url %}
+            <a class="predicate-finding-title"
+               href="{{ ev.finding_url }}" target="_blank" rel="noopener">
+              {{ (ev.finding_title or '#' ~ ev.finding_id)[:120] }}
+            </a>
+          {% elif ev.finding_id %}
+            <span class="predicate-finding-title">finding #{{ ev.finding_id }}</span>
+          {% else %}
+            <span class="predicate-finding-title muted">manual</span>
+          {% endif %}
+          {% if ev.competitor %}
+            <span class="muted">· {{ ev.competitor }}</span>
+          {% endif %}
+        </div>
+        {% if ev.fitness_read_as %}
+          <p class="predicate-finding-read-as muted">Read as: {{ ev.fitness_read_as }}</p>
+        {% elif ev.notes %}
+          <p class="predicate-finding-read-as muted">{{ ev.notes }}</p>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="muted">No confirmed evidence on this predicate yet.</p>
+{% endif %}
+
+{% set hidden_total = detail.evidence_pending|length + detail.evidence_rejected|length %}
+{% if hidden_total > 0 %}
+  <details class="predicate-findings-hidden">
+    <summary class="muted">▸ Show pending + rejected ({{ hidden_total }})</summary>
+    <ul class="predicate-findings-list is-muted">
+      {% for ev in detail.evidence_pending + detail.evidence_rejected %}
+        <li class="predicate-finding-row">
+          <span class="muted mono">{{ ev.observed_at.strftime('%Y-%m-%d') }}</span>
+          {% if ev.finding_url %}
+            <a href="{{ ev.finding_url }}" target="_blank" rel="noopener">
+              {{ (ev.finding_title or '#' ~ ev.finding_id)[:80] }}
+            </a>
+          {% elif ev.finding_id %}
+            <span class="muted">finding #{{ ev.finding_id }}</span>
+          {% else %}
+            <span class="muted">manual</span>
+          {% endif %}
+          <span class="muted">· {{ ev.classified_by }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </details>
+{% endif %}

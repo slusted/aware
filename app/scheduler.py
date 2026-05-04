@@ -26,6 +26,37 @@ def _load_config_safe() -> dict:
         return {}
 
 
+def _run_predicate_review_scheduled():
+    """Cron entrypoint for the monthly predicate review. Enqueues a Run
+    of kind 'predicate_review' so the existing run-queue drain handles
+    dispatch — same pattern as on-demand triggers from the API."""
+    from .db import SessionLocal
+    db = SessionLocal()
+    try:
+        # Skip if a review run is already queued or running — protects
+        # against rapid manual triggers + the cron firing in the same
+        # window (e.g. timezone misconfig at boot).
+        from .models import Run
+        in_flight = (
+            db.query(Run)
+            .filter(
+                Run.kind == "predicate_review",
+                Run.status.in_(("queued", "running", "cancelling")),
+            )
+            .first()
+        )
+        if in_flight is not None:
+            print(
+                "  [scheduler] predicate_review_monthly skipped — "
+                f"run #{in_flight.id} already {in_flight.status}",
+                flush=True,
+            )
+            return
+        jobs.enqueue_run(db, "predicate_review", triggered_by="schedule")
+    finally:
+        db.close()
+
+
 def _run_market_synthesis_scheduled():
     """Cron entrypoint for the weekly market synthesis. Skips (does not
     queue) when a synthesis is already in flight — manual runs take
@@ -163,6 +194,28 @@ def start():
             print(
                 f"[scheduler] invalid MARKET_SYNTHESIS_CRON={ms_cron!r}; "
                 "expected 'min hour dow'. Skipping weekly synthesis."
+            )
+
+    # Monthly predicate review (docs/scenarios/06-predicate-review.md).
+    # 06:00 UTC on the 1st of each month by default. Wrapped in a Run row
+    # so progress + errors land on /runs like every other job. With
+    # ANTHROPIC_API_KEY unset the job exits cleanly without writing rows.
+    # Cron is configurable via PREDICATE_REVIEW_CRON in standard
+    # five-field form ("min hour dom month dow"); empty disables.
+    pr_cron = os.environ.get("PREDICATE_REVIEW_CRON", "0 6 1 * *")
+    if pr_cron.strip():
+        try:
+            sched.add_job(
+                _run_predicate_review_scheduled,
+                CronTrigger.from_crontab(pr_cron),
+                id="predicate_review_monthly",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
+        except ValueError:
+            print(
+                f"[scheduler] invalid PREDICATE_REVIEW_CRON={pr_cron!r}; "
+                "expected five-field cron. Skipping monthly review."
             )
 
     # App-store reviews ingest (docs/voc/01-app-reviews.md). Daily, 2 hours

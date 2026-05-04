@@ -1,0 +1,63 @@
+{# Monthly review digest strip on /scenarios root. Auto-collapses ≥7
+   days after the run completes — the route only passes a non-None
+   `review_digest` when within the freshness window.
+
+   Args:
+     review_digest - ReviewDigest (app/scenarios/review.py)
+     user          - current user (for the Re-review button gate)
+#}
+{% if review_digest %}
+  <aside class="review-digest-strip">
+    <header class="review-digest-strip-head">
+      <strong>Monthly review</strong>
+      {% if review_digest.completed_at %}
+        <span class="muted">·
+          ran {{ review_digest.completed_at.strftime('%Y-%m-%d %H:%M') }}
+        </span>
+      {% endif %}
+    </header>
+
+    <p class="review-digest-strip-body">
+      <strong>{{ review_digest.reviewed }}</strong> predicate{% if review_digest.reviewed != 1 %}s{% endif %} reviewed
+      · <strong>{{ review_digest.clean }}</strong> clean
+      · <strong>{{ review_digest.wording }}</strong> wording suggestion{% if review_digest.wording != 1 %}s{% endif %}
+      · <strong>{{ review_digest.structural }}</strong> structural proposal{% if review_digest.structural != 1 %}s{% endif %}
+      · <strong>{{ review_digest.errors }}</strong> error{% if review_digest.errors != 1 %}s{% endif %}
+    </p>
+
+    <footer class="review-digest-strip-foot">
+      {% for pkey in review_digest.predicates_with_proposals %}
+        <a class="btn-ghost" href="/scenarios/predicates/{{ pkey }}">Open {{ pkey }}</a>
+      {% endfor %}
+      {% if user and user.role in ("admin", "analyst") %}
+        <button type="button" id="predicate-review-rerun-btn" class="btn-ghost">Re-review now</button>
+      {% endif %}
+    </footer>
+  </aside>
+
+  <script>
+  (() => {
+    const btn = document.getElementById('predicate-review-rerun-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = 'Queueing…';
+      try {
+        const r = await fetch('/api/runs/predicate-review', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {'Accept': 'application/json'},
+        });
+        if (!r.ok) throw new Error('http ' + r.status);
+        const data = await r.json();
+        btn.textContent = 'Queued · run #' + data.run_id;
+      } catch (err) {
+        btn.textContent = 'Failed — ' + err;
+      } finally {
+        setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 4000);
+      }
+    });
+  })();
+  </script>
+{% endif %}

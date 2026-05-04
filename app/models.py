@@ -886,6 +886,13 @@ class Predicate(Base):
     proposal_metadata: Mapped[dict | None] = mapped_column(
         JSON, nullable=True,
     )
+    # Cooldown stamp set by the "Looks good — dismiss for Nd" button on
+    # the predicate-review block (Stage 6). NULL = eligible for review
+    # next run. run_predicate_review skips a predicate while this is in
+    # the future. See docs/scenarios/06-predicate-review.md.
+    next_review_due_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -994,6 +1001,17 @@ class PredicateEvidence(Base):
     # Set when a human commits the mapping. NULL = pending review (Stage 2).
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Stage 6 review fitness — written by run_predicate_review only.
+    # NULL across all three columns means "the monthly review hasn't
+    # touched this row yet"; the predicate-page UI hides the chip and
+    # falls back to today's plain row layout. fitness ∈
+    # ("fits","awkward","misfit"); fitness_read_as is the agent's
+    # one-line gloss. See docs/scenarios/06-predicate-review.md.
+    fitness: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    fitness_read_as: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fitness_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
@@ -1081,3 +1099,98 @@ class ScenarioSetting(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# ─── Stage 6: monthly predicate review (docs/scenarios/06-predicate-review.md)
+# Append-only history of the agent's qualitative read on each predicate +
+# a queue of accept/reject proposals. Authoring still flows through
+# update_predicate / update_scenario; this is just the prep layer.
+
+
+class PredicateReview(Base):
+    """One row per (predicate, run) review pass. Append-only — every
+    monthly run writes a fresh row, never updates a prior one. The most
+    recent row drives the per-predicate page's review block.
+
+    `suggested_actions_json` and `proposal_ids_json` are stored as TEXT
+    (JSON-encoded) rather than JSON columns so SQLite + the legacy
+    DB-on-volume setup don't need JSON1 — same convention the run-event
+    meta column already uses.
+    """
+    __tablename__ = "predicate_reviews"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    predicate_id: Mapped[int] = mapped_column(
+        ForeignKey("predicates.id", ondelete="CASCADE"), index=True
+    )
+    run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("runs.id"), nullable=True, index=True
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow,
+    )
+    findings_seen_count: Mapped[int] = mapped_column(Integer, default=0)
+    # True iff no proposals AND no fitness flagged ⚠/✗. The block
+    # collapses to a single summary line in that case.
+    decided_no_change: Mapped[bool] = mapped_column(Boolean, default=True)
+    summary_text: Mapped[str] = mapped_column(Text, default="")
+    # JSON list of {kind,label,proposal_id?} chips rendered above the
+    # findings list. Always at least one entry on a non-empty review.
+    suggested_actions_json: Mapped[str] = mapped_column(Text, default="[]")
+    # JSON list of created predicate_proposals.id values. Lets the
+    # template link a chip straight to its card without re-querying.
+    proposal_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+
+    __table_args__ = (
+        Index("ix_predicate_reviews_pred_reviewed",
+              "predicate_id", "reviewed_at"),
+        Index("ix_predicate_reviews_run", "run_id"),
+    )
+
+
+class PredicateProposal(Base):
+    """One pending change to a predicate. Created by the monthly review
+    when the LLM proposes an action AND the action passes its server-side
+    gate. Lives until a human Accept (which dispatches into the existing
+    update_predicate / evidence-mutation paths) or Reject.
+
+    `kind` ∈
+        refine_statement | rename_state | reorder_states |
+        split_state | reassign_evidence | retire
+    The schema also accepts merge_with and new_predicate; the spec
+    explicitly defers UI for those to a future global-queue stage, so
+    no current code path writes them.
+    """
+    __tablename__ = "predicate_proposals"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    # NULL only for new_predicate (reserved). Otherwise the predicate
+    # this proposal is "about". Stored as the predicate.key (not id) so
+    # a renamed/inactivated predicate is still legible in the queue.
+    source_predicate_key: Mapped[str | None] = mapped_column(
+        String(32), nullable=True,
+    )
+    # Kind-specific shape; see docs/scenarios/06-predicate-review.md
+    # §"Payload shapes per kind". Stored as TEXT (JSON-encoded).
+    target_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    supporting_finding_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    # pending | accepted | rejected | superseded.
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow,
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    decided_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True,
+    )
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_review_id: Mapped[int | None] = mapped_column(
+        ForeignKey("predicate_reviews.id"), nullable=True,
+    )
+
+    __table_args__ = (
+        Index("ix_predicate_proposals_pred_status",
+              "source_predicate_key", "status"),
+        Index("ix_predicate_proposals_status_created",
+              "status", "created_at"),
+    )

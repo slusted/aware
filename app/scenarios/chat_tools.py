@@ -26,6 +26,7 @@ from ..chat.tools import Tool
 from ..models import User
 from . import dashboard as dash
 from . import proposer as prop
+from . import review as review_mod
 from . import service as svc
 
 
@@ -273,6 +274,82 @@ def _h_update_scenario(
         "updated": True,
         "summary": detail.summary._asdict(),
         "contributions": _nt_list(detail.contributions),
+    }
+
+
+# ── Stage 6: predicate-review tools ────────────────────────────────────
+
+
+def _h_run_predicate_review(
+    db: Session,
+    user: User,
+    *,
+    predicate_keys: list[str] | None = None,
+    **_: Any,
+) -> dict:
+    """Enqueue an on-demand predicate-review run. Same path the
+    /scenarios "Re-review now" button uses. Returns the queue position
+    so the chat can read back what the user just kicked off."""
+    run = jobs.enqueue_run(
+        db,
+        "predicate_review",
+        triggered_by="manual",
+        job_args={"predicate_keys": predicate_keys} if predicate_keys else None,
+    )
+    return {
+        "queued": True,
+        "kind": "predicate_review",
+        "run_id": run.id,
+        "queue_position": jobs.queue_position(db, run.id),
+        "scope": predicate_keys or "all",
+    }
+
+
+def _h_list_pending_proposals(
+    db: Session,
+    user: User,
+    *,
+    predicate_key: str | None = None,
+    **_: Any,
+) -> dict:
+    """List predicate-review proposals still in `pending` status —
+    optionally scoped to one predicate. Read-only."""
+    proposals = review_mod.pending_proposals_for(db, predicate_key)
+    return {
+        "predicate_key": predicate_key,
+        "results": [p._asdict() for p in proposals],
+        "total": len(proposals),
+    }
+
+
+def _h_decide_proposal(
+    db: Session,
+    user: User,
+    *,
+    proposal_id: int,
+    decision: str,
+    reason: str | None = None,
+    **_: Any,
+) -> dict:
+    """Accept or reject one pending proposal. Calls the same service-
+    layer functions the HTTP routes use. Validates `decision`
+    explicitly so a typo doesn't silently no-op."""
+    if decision not in ("accept", "reject"):
+        return {"error": f"decision must be 'accept' or 'reject', got {decision!r}"}
+    try:
+        if decision == "accept":
+            p = svc.accept_proposal(db, proposal_id, user)
+        else:
+            p = svc.reject_proposal(db, proposal_id, user, reason=reason)
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        return {"error": str(e)}
+    view = review_mod.get_proposal_view(db, p.id)
+    return {
+        "decided": True,
+        "decision": decision,
+        "proposal": view._asdict() if view else None,
     }
 
 
@@ -657,6 +734,97 @@ SCENARIO_TOOLS: list[Tool] = [
                 if i.get("links") else "field edits only"
             )
             + "."
+        ),
+    ),
+    Tool(
+        name="scenarios_run_predicate_review",
+        description=(
+            "Enqueue an on-demand monthly-style predicate review. With "
+            "no args, reviews every active predicate. Pass "
+            "`predicate_keys` to scope to a subset. The job runs through "
+            "the run queue (one Haiku call per predicate); it doesn't "
+            "block this tool call. Use scenarios_list_pending_proposals "
+            "afterwards to read the results."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "predicate_keys": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Optional. Predicate keys (e.g. ['p1','p4']) to "
+                        "review. Omit to review every active predicate."
+                    ),
+                },
+            },
+            "additionalProperties": False,
+        },
+        handler=_h_run_predicate_review,
+        requires_role="analyst",
+        requires_confirmation=True,
+        confirmation_summary=lambda i: (
+            "Enqueue predicate review (one LLM call per predicate). Scope: "
+            + (",".join(i.get("predicate_keys") or []) or "all active predicates")
+            + "."
+        ),
+    ),
+    Tool(
+        name="scenarios_list_pending_proposals",
+        description=(
+            "List predicate-review proposals still in `pending` status. "
+            "Optionally scope to one predicate via `predicate_key`. "
+            "Each row carries kind (refine_statement / rename_state / "
+            "reorder_states / split_state / reassign_evidence / retire), "
+            "rationale, supporting findings, and the proposed payload."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "predicate_key": {
+                    "type": "string",
+                    "description": (
+                        "Predicate key (e.g. 'p1'). Omit for the global "
+                        "pending queue across every predicate."
+                    ),
+                },
+            },
+            "additionalProperties": False,
+        },
+        handler=_h_list_pending_proposals,
+        requires_role="viewer",
+    ),
+    Tool(
+        name="scenarios_decide_proposal",
+        description=(
+            "Accept or reject one pending PredicateProposal. Accept "
+            "applies the change via the existing authoring path "
+            "(scenarios_update_predicate semantics); reject is "
+            "non-mutating beyond the proposal row. `decision` must be "
+            "'accept' or 'reject'."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "proposal_id": {"type": "integer"},
+                "decision": {
+                    "type": "string",
+                    "enum": ["accept", "reject"],
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Optional reason captured on reject.",
+                },
+            },
+            "required": ["proposal_id", "decision"],
+            "additionalProperties": False,
+        },
+        handler=_h_decide_proposal,
+        requires_role="analyst",
+        requires_confirmation=True,
+        confirmation_summary=lambda i: (
+            f"{i.get('decision', '?').capitalize()} predicate proposal "
+            f"#{i.get('proposal_id')!r}?"
         ),
     ),
 ]

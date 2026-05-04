@@ -146,8 +146,13 @@
   ],
 
   "scenario_settings": [
-    {"key": "default_decay_half_life_days",         "value": {"value": 60}},
-    {"key": "independence_assumption_acknowledged", "value": {"value": true}},
-    {"key": "min_evidence_for_movement",            "value": {"value": 0}}
+    {"key": "default_decay_half_life_days",            "value": {"value": 60}},
+    {"key": "independence_assumption_acknowledged",    "value": {"value": true}},
+    {"key": "min_evidence_for_movement",               "value": {"value": 0}},
+    {"key": "predicate_review_cron",                   "value": {"value": "0 6 1 * *"}},
+    {"key": "predicate_review_misfit_threshold",       "value": {"value": 3}},
+    {"key": "predicate_review_better_fit_threshold",   "value": {"value": 2}},
+    {"key": "predicate_review_dismiss_days",           "value": {"value": 30}},
+    {"key": "predicate_review_max_evidence_in_prompt", "value": {"value": 40}}
   ]
 }

@@ -4035,3 +4035,238 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 .scenario-card-edit .btn-ghost {
   /* Existing card buttons render compact; nothing to override here. */
 }
+
+/* ─── Stage 6: Predicate review (docs/scenarios/06-predicate-review.md) ─ */
+
+.predicate-review-block {
+  margin: 16px 0 24px;
+  padding: 14px 16px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.18));
+  border-radius: 8px;
+  background: var(--surface-soft, rgba(127, 127, 127, 0.04));
+}
+
+.predicate-review-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+}
+
+.predicate-review-tag {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.predicate-review-summary {
+  margin: 4px 0 12px;
+  line-height: 1.5;
+}
+
+.predicate-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.predicate-review-action-chip {
+  display: inline-block;
+  padding: 4px 10px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.3));
+  border-radius: 999px;
+  font-size: 0.85rem;
+  background: var(--surface, transparent);
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+}
+
+.predicate-review-action-chip:hover {
+  background: var(--surface-hover, rgba(127, 127, 127, 0.08));
+}
+
+.predicate-review-action-chip.is-looks-good {
+  opacity: 0.85;
+}
+
+.predicate-review-action-chip.is-spent {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.predicate-review-action-chip.is-refine_statement,
+.predicate-review-action-chip.is-rename_state,
+.predicate-review-action-chip.is-reorder_states {
+  border-color: var(--accent, #3a7bd5);
+}
+
+.predicate-review-action-chip.is-split_state,
+.predicate-review-action-chip.is-retire {
+  border-color: var(--warn, #c9883a);
+}
+
+.predicate-review-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.proposal-card {
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.2));
+  border-radius: 6px;
+  padding: 12px 14px;
+  background: var(--surface, transparent);
+}
+
+.proposal-card.is-accepted { border-left: 3px solid #4ca866; }
+.proposal-card.is-rejected { border-left: 3px solid #b54848; opacity: 0.7; }
+.proposal-card.is-superseded { opacity: 0.5; }
+.proposal-card.is-pending { border-left: 3px solid var(--accent, #3a7bd5); }
+
+.proposal-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+}
+
+.proposal-card-status {
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
+
+.proposal-card-payload { margin: 4px 0; }
+
+.proposal-card-payload-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.proposal-card-rationale {
+  margin: 6px 0 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.proposal-card-supports {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+}
+
+.proposal-card-error {
+  margin: 8px 0 0;
+  color: var(--danger, #b54848);
+  font-size: 0.85rem;
+}
+
+.proposal-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border, rgba(127, 127, 127, 0.2));
+}
+
+/* Findings list (post-refactor, fitness-first) */
+
+.predicate-findings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.predicate-finding-row {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border, rgba(127, 127, 127, 0.12));
+}
+
+.predicate-finding-row:last-child { border-bottom: none; }
+
+.predicate-finding-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.predicate-finding-title { flex: 1 1 auto; min-width: 0; }
+
+.predicate-finding-read-as {
+  margin: 4px 0 0 22px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.predicate-findings-list.is-muted { opacity: 0.7; }
+
+.predicate-findings-hidden { margin-top: 12px; }
+
+.fitness-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.fitness-chip.is-fits { background: rgba(76, 168, 102, 0.18); color: #4ca866; }
+.fitness-chip.is-awkward { background: rgba(201, 136, 58, 0.2); color: #c9883a; }
+.fitness-chip.is-misfit { background: rgba(181, 72, 72, 0.2); color: #b54848; }
+
+.predicate-finding-row.fitness-misfit {
+  border-left: 2px solid #b54848;
+  padding-left: 10px;
+}
+.predicate-finding-row.fitness-awkward {
+  border-left: 2px solid #c9883a;
+  padding-left: 10px;
+}
+
+.predicate-math-view {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border, rgba(127, 127, 127, 0.2));
+}
+.predicate-math-view summary { cursor: pointer; padding: 4px 0; }
+
+.review-digest-strip {
+  margin: 12px 0 18px;
+  padding: 12px 16px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.2));
+  border-radius: 8px;
+  background: var(--surface-soft, rgba(127, 127, 127, 0.04));
+}
+
+.review-digest-strip-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+}
+
+.review-digest-strip-body {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.review-digest-strip-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+

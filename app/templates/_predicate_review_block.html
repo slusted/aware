@@ -1,0 +1,64 @@
+{# Agent's qualitative read of the predicate, sitting at the top of the
+   Findings section. Renders nothing visible when no review has run yet.
+
+   Args:
+     review            - PredicateReviewView (app/scenarios/review.py) | None
+     pending_proposals - list[ProposalView] for this predicate
+     proposals_by_id   - {id: ProposalView} for chip → card lookup
+     p                 - Predicate ORM row (for the dismiss button form)
+
+   Layout:
+     - Header: "reviewed YYYY-MM-DD, N findings since last review"
+     - Summary text
+     - When decided_no_change: stop here (quiet card)
+     - Otherwise: chip strip, with each chip expanding inline to a
+       proposal card (or "Looks good — dismiss for Nd" firing the
+       dismiss button).
+#}
+{% if review %}
+  <div class="predicate-review-block"
+       data-decided-no-change="{{ 'true' if review.decided_no_change else 'false' }}">
+    <header class="predicate-review-header">
+      <span class="predicate-review-tag">Agent's read</span>
+      <span class="muted">·
+        reviewed {{ review.reviewed_at.strftime('%Y-%m-%d') }}, {{ review.findings_seen_count }} finding{% if review.findings_seen_count != 1 %}s{% endif %} considered
+      </span>
+    </header>
+
+    {% if review.summary_text %}
+      <p class="predicate-review-summary">{{ review.summary_text }}</p>
+    {% else %}
+      <p class="predicate-review-summary muted">Statement still fits, no action recommended.</p>
+    {% endif %}
+
+    {% if not review.decided_no_change and review.suggested_actions %}
+      <div class="predicate-review-actions">
+        {% for chip in review.suggested_actions %}
+          {% if chip.kind == "looks_good" %}
+            <button type="button"
+                    class="predicate-review-action-chip is-looks-good"
+                    hx-post="/scenarios/predicates/{{ p.key }}/dismiss-review"
+                    hx-swap="none">
+              {{ chip.label }}
+            </button>
+          {% elif chip.proposal_id and chip.proposal_id in proposals_by_id %}
+            <a class="predicate-review-action-chip is-{{ chip.kind }}"
+               href="#proposal-card-{{ chip.proposal_id }}">
+              {{ chip.label }}
+            </a>
+          {% else %}
+            <span class="predicate-review-action-chip is-spent muted">{{ chip.label }}</span>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if pending_proposals %}
+      <div class="predicate-review-proposals">
+        {% for proposal in pending_proposals %}
+          {% include "_predicate_proposal_card.html" %}
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
