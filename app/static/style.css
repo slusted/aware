@@ -2831,3 +2831,335 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 
 /* Landing nav: theme toggle sits next to the sign-in link */
 .landing-nav-links .theme-toggle { margin-right: 4px; }
+
+/* ─── Stage 3: Predicate dashboard (docs/scenarios/03-predicate-dashboard.md) ─── */
+
+/* Six-color palette indexed by ordinal_position. Tuned to coexist with
+   the existing badge colors and stay readable in both themes. */
+:root {
+  --ordinal-0: #4a90e2;
+  --ordinal-1: #f5a623;
+  --ordinal-2: #7ed321;
+  --ordinal-3: #bd10e0;
+  --ordinal-4: #d0021b;
+  --ordinal-5: #50e3c2;
+}
+
+.scenarios-page-head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.scenarios-page-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.scenarios-page-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+.scenarios-page-actions { display: flex; gap: 8px; }
+.scenarios-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.scenarios-tab {
+  padding: 8px 14px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  font-size: 14px;
+  font-weight: 500;
+}
+.scenarios-tab:hover { color: var(--text-primary); }
+.scenarios-tab.is-active {
+  color: var(--text-primary);
+  border-bottom-color: var(--text-primary);
+}
+.scenarios-page-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 12px;
+}
+.scenarios-meta-item.independence-pill {
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  cursor: help;
+}
+
+.scenarios-controls-row {
+  display: flex;
+  gap: 16px;
+  margin: 16px 0 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Card grid — auto-fill so the layout adapts to viewport without media queries */
+.predicate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 14px;
+}
+.predicate-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--surface-0);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.predicate-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.predicate-card-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.predicate-card-key {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.predicate-card-name {
+  font-size: 13px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.predicate-card-category {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.predicate-card-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.predicate-bar-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 130px) 1fr 50px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.predicate-bar-label {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.predicate-bar-track {
+  height: 8px;
+  background: var(--surface-2, var(--border-subtle));
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.predicate-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.2s;
+}
+.predicate-bar-fill.ordinal-0 { background: var(--ordinal-0); }
+.predicate-bar-fill.ordinal-1 { background: var(--ordinal-1); }
+.predicate-bar-fill.ordinal-2 { background: var(--ordinal-2); }
+.predicate-bar-fill.ordinal-3 { background: var(--ordinal-3); }
+.predicate-bar-fill.ordinal-4 { background: var(--ordinal-4); }
+.predicate-bar-fill.ordinal-5 { background: var(--ordinal-5); }
+.predicate-bar-value {
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.predicate-card-sparkline-wrap {
+  position: relative;
+  min-height: 32px;
+}
+.predicate-sparkline {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.predicate-sparkline-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.predicate-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  font-size: 11px;
+}
+.predicate-card-stat { white-space: nowrap; }
+.predicate-velocity-pill {
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.predicate-velocity-pill.is-flat { color: var(--text-tertiary); }
+.predicate-velocity-pill.is-up { color: #1b5e20; border-color: rgba(34, 139, 34, 0.4); background: rgba(34, 139, 34, 0.06); }
+.predicate-velocity-pill.is-down { color: #92400e; border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.06); }
+.predicate-coverage-warn {
+  color: #92400e;
+  font-style: italic;
+}
+.predicate-card-expand {
+  margin-left: auto;
+  font-size: 11px;
+}
+
+/* Inline expand panel */
+.predicate-detail-mount { width: 100%; }
+.predicate-detail-panel {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--surface-2, rgba(0, 0, 0, 0.02));
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.predicate-detail-statement {
+  font-size: 12px;
+  line-height: 1.45;
+}
+.predicate-detail-sparklines {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.predicate-detail-sparkline-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.predicate-detail-sparkline-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.ordinal-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.ordinal-swatch.ordinal-0 { background: var(--ordinal-0); }
+.ordinal-swatch.ordinal-1 { background: var(--ordinal-1); }
+.ordinal-swatch.ordinal-2 { background: var(--ordinal-2); }
+.ordinal-swatch.ordinal-3 { background: var(--ordinal-3); }
+.ordinal-swatch.ordinal-4 { background: var(--ordinal-4); }
+.ordinal-swatch.ordinal-5 { background: var(--ordinal-5); }
+.predicate-detail-state-label { color: var(--text-secondary); }
+.predicate-detail-velocity {
+  margin-left: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.predicate-detail-velocity.is-up { color: #1b5e20; }
+.predicate-detail-velocity.is-down { color: #92400e; }
+.predicate-detail-velocity.is-flat { color: var(--text-tertiary); }
+
+.predicate-detail-h {
+  margin: 6px 0 4px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.evidence-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.evidence-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.evidence-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+}
+.evidence-table tr:last-child td { border-bottom: 0; }
+.evidence-contribution.is-positive { color: #1b5e20; }
+.evidence-contribution.is-negative { color: #92400e; }
+.evidence-direction-chip {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  background: var(--surface-0);
+  border: 1px solid var(--border-subtle);
+}
+.evidence-direction-chip.is-support { color: #1b5e20; border-color: rgba(34, 139, 34, 0.4); }
+.evidence-direction-chip.is-contradict { color: #92400e; border-color: rgba(245, 158, 11, 0.4); }
+.evidence-direction-chip.is-neutral { color: var(--text-tertiary); border-style: dashed; }
+.evidence-notes {
+  font-size: 11px;
+  margin-top: 2px;
+  line-height: 1.35;
+}
+.evidence-table-muted { opacity: 0.65; }
+.evidence-row-user_rejected td { text-decoration: line-through; }
+
+.evidence-hidden-toggle { margin-top: 10px; }
+.evidence-hidden-toggle summary { cursor: pointer; font-size: 12px; }
+
+.predicate-detail-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Evidence tab */
+.evidence-tab-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 16px 0 10px;
+}
+.evidence-sort-form {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.evidence-table-flat td { padding: 6px 10px; }
+.evidence-pagination {
+  margin-top: 10px;
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+}

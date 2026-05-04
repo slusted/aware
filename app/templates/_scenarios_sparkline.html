@@ -1,0 +1,40 @@
+{# Tiny inline-SVG sparkline.
+
+   Args:
+     series      - list of (timestamp, probability) — already downsampled
+                   by app/scenarios/dashboard.py to ≤100 points.
+     color_var   - CSS variable (or color) for the polyline. Default: --text-secondary.
+     baseline    - float in [0,1]; faint horizontal line at this y. Default: 0.5.
+     empty_label - what to render when series is empty / single point.
+     height_px   - SVG viewBox height. Default 32.
+
+   The SVG is responsive — width:100% via CSS, viewBox carries the
+   aspect ratio. No JS, no axes, no tooltips. Probabilities map to y by
+   `y = (1 - p) * height` so 1.0 hugs the top.
+#}
+{% set color_var = color_var if color_var is defined else 'var(--text-secondary)' %}
+{% set baseline  = baseline  if baseline  is defined else 0.5 %}
+{% set empty_label = empty_label if empty_label is defined else 'no data yet' %}
+{% set height_px = height_px if height_px is defined else 32 %}
+
+{% if series and series|length >= 2 %}
+  {% set width = 100 %}
+  {% set step = (width / (series|length - 1)) %}
+  <svg class="predicate-sparkline" viewBox="0 0 {{ width }} {{ height_px }}" preserveAspectRatio="none" aria-hidden="true">
+    {# Faint baseline at p = baseline #}
+    <line x1="0" x2="{{ width }}"
+          y1="{{ ((1 - baseline) * height_px)|round(2) }}"
+          y2="{{ ((1 - baseline) * height_px)|round(2) }}"
+          stroke="var(--border-subtle)" stroke-width="0.6" stroke-dasharray="2 2"/>
+    <polyline fill="none" stroke="{{ color_var }}" stroke-width="1.4"
+              vector-effect="non-scaling-stroke"
+              points="{% for ts, p in series %}{{ (loop.index0 * step)|round(2) }},{{ ((1 - p) * height_px)|round(2) }} {% endfor %}"/>
+  </svg>
+{% else %}
+  <svg class="predicate-sparkline is-empty" viewBox="0 0 100 {{ height_px }}" preserveAspectRatio="none" aria-hidden="true">
+    {% set y0 = ((1 - (series[0][1] if series else baseline)) * height_px)|round(2) %}
+    <line x1="0" x2="100" y1="{{ y0 }}" y2="{{ y0 }}"
+          stroke="var(--text-tertiary)" stroke-width="0.8" stroke-dasharray="3 3"/>
+  </svg>
+  <span class="predicate-sparkline-empty muted">{{ empty_label }}</span>
+{% endif %}
