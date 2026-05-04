@@ -13,6 +13,7 @@ See docs/scenarios/03-predicate-dashboard.md.
 """
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta
 from typing import NamedTuple
 
@@ -23,6 +24,8 @@ from ..models import (
     PredicateState,
     PredicateEvidence,
     PredicatePosteriorSnapshot,
+    Scenario,
+    ScenarioPredicateLink,
     Finding,
 )
 from .posterior import (
@@ -32,7 +35,12 @@ from .posterior import (
     shannon_entropy,
     velocity_pp,
 )
-from .service import default_decay_half_life, load_likelihood_table
+from .service import (
+    default_decay_half_life,
+    load_likelihood_table,
+    scenario_probabilities,
+    scenario_sensitivity,
+)
 
 
 SPARKLINE_WINDOW_DAYS = 90
@@ -473,6 +481,281 @@ def evidence_list(
     if sort == "contribution_desc":
         out.sort(key=lambda v: abs(v.contribution), reverse=True)
     return out, total
+
+
+# ─── Stage 4: scenario summary + detail ────────────────────────────────
+
+class ScenarioSummary(NamedTuple):
+    key: str
+    name: str
+    description: str
+    probability: float                  # 0–1, current
+    rank: int                           # 1 = highest probability
+    constraint_count: int               # number of predicate links
+    constraint_satisfaction: float      # weighted avg of P(predicate=required)
+    weakest_link_predicate_key: str
+    weakest_link_required_state: str
+    weakest_link_required_state_label: str
+    weakest_link_current_p: float
+
+
+class ScenarioContribution(NamedTuple):
+    """One row in the contributions breakdown — makes the
+    `unnormalized = exp(Σ weight × log(P))` formula visible per-link."""
+    predicate_key: str
+    predicate_name: str
+    required_state_key: str
+    required_state_label: str
+    weight: float
+    current_p_required: float
+    contribution: float                 # weight * log(P) — signed
+    rank_within_scenario: int           # 1 = biggest |contribution|
+
+
+class SensitivityRow(NamedTuple):
+    predicate_key: str
+    predicate_name: str
+    target_state_key: str
+    target_state_label: str
+    delta_per_pp: float                 # ∂P(scenario) per 1pp move on this state
+
+
+class ScenarioDetail(NamedTuple):
+    summary: ScenarioSummary
+    contributions: list[ScenarioContribution]
+    sensitivity_to_predicates: list[SensitivityRow]
+
+
+def _load_scenario_links_grouped(
+    db: Session,
+) -> tuple[dict[int, list[ScenarioPredicateLink]], dict[int, str], dict[int, str]]:
+    """Returns (links_by_scenario_id, predicate_id_to_key, predicate_id_to_name).
+    One pass per query; reused by both summary and detail."""
+    links_by_scenario: dict[int, list[ScenarioPredicateLink]] = {}
+    for ln in db.query(ScenarioPredicateLink).all():
+        links_by_scenario.setdefault(ln.scenario_id, []).append(ln)
+    pred_id_to_key: dict[int, str] = {}
+    pred_id_to_name: dict[int, str] = {}
+    for p in db.query(Predicate).all():
+        pred_id_to_key[p.id] = p.key
+        pred_id_to_name[p.id] = p.name
+    return links_by_scenario, pred_id_to_key, pred_id_to_name
+
+
+def _current_probabilities_by_predicate(
+    db: Session,
+) -> dict[int, dict[str, float]]:
+    """{predicate_id: {state_key: current_probability}}. One query."""
+    out: dict[int, dict[str, float]] = {}
+    for s in db.query(PredicateState).all():
+        out.setdefault(s.predicate_id, {})[s.state_key] = s.current_probability
+    return out
+
+
+def _state_label_lookup_by_id(db: Session) -> dict[tuple[int, str], str]:
+    """{(predicate_id, state_key): label}. Reused per-row label resolution."""
+    out: dict[tuple[int, str], str] = {}
+    for s in db.query(PredicateState).all():
+        out[(s.predicate_id, s.state_key)] = s.label
+    return out
+
+
+def scenario_summary(db: Session) -> list[ScenarioSummary]:
+    """One ScenarioSummary per active scenario, sorted by probability desc.
+    Cheap: pulls scenarios + links + predicate states in a few queries.
+    Returns [] when no active scenarios are seeded."""
+    scenarios = (
+        db.query(Scenario)
+        .filter(Scenario.active.is_(True))
+        .order_by(Scenario.id)
+        .all()
+    )
+    if not scenarios:
+        return []
+
+    probs = scenario_probabilities(db)
+    links_by_scenario, pred_id_to_key, pred_id_to_name = _load_scenario_links_grouped(db)
+    probs_by_pred = _current_probabilities_by_predicate(db)
+    label_lookup = _state_label_lookup_by_id(db)
+
+    summaries: list[ScenarioSummary] = []
+    for sc in scenarios:
+        links = links_by_scenario.get(sc.id, [])
+        prob = probs.get(sc.key, 0.0)
+
+        # Per-link satisfaction (weighted average of P(req_state)).
+        weighted_sum = 0.0
+        total_weight = 0.0
+        weakest_link = None
+        weakest_p = 1.0
+        for ln in links:
+            p_required = probs_by_pred.get(ln.predicate_id, {}).get(
+                ln.required_state_key, 0.0,
+            )
+            weighted_sum += ln.weight * p_required
+            total_weight += ln.weight
+            if p_required < weakest_p:
+                weakest_p = p_required
+                weakest_link = ln
+        constraint_satisfaction = (
+            weighted_sum / total_weight if total_weight > 0 else 0.0
+        )
+
+        if weakest_link is not None:
+            weakest_pred_key = pred_id_to_key.get(weakest_link.predicate_id, "?")
+            weakest_state_label = label_lookup.get(
+                (weakest_link.predicate_id, weakest_link.required_state_key),
+                weakest_link.required_state_key,
+            )
+            weakest_required_state = weakest_link.required_state_key
+        else:
+            weakest_pred_key = ""
+            weakest_state_label = ""
+            weakest_required_state = ""
+
+        summaries.append(ScenarioSummary(
+            key=sc.key,
+            name=sc.name,
+            description=sc.description or "",
+            probability=prob,
+            rank=0,  # filled in after sort
+            constraint_count=len(links),
+            constraint_satisfaction=constraint_satisfaction,
+            weakest_link_predicate_key=weakest_pred_key,
+            weakest_link_required_state=weakest_required_state,
+            weakest_link_required_state_label=weakest_state_label,
+            weakest_link_current_p=weakest_p if weakest_link else 0.0,
+        ))
+
+    # Rank by probability desc.
+    summaries.sort(key=lambda s: s.probability, reverse=True)
+    return [s._replace(rank=i + 1) for i, s in enumerate(summaries)]
+
+
+def scenario_detail(
+    db: Session,
+    scenario_key: str,
+) -> ScenarioDetail | None:
+    """Per-scenario expansion: contribution table + sensitivity. Returns
+    None when the scenario doesn't exist or is inactive."""
+    sc = (
+        db.query(Scenario)
+        .filter(Scenario.key == scenario_key, Scenario.active.is_(True))
+        .one_or_none()
+    )
+    if sc is None:
+        return None
+
+    summaries = scenario_summary(db)
+    summary = next((s for s in summaries if s.key == scenario_key), None)
+    if summary is None:
+        return None
+
+    links_by_scenario, pred_id_to_key, pred_id_to_name = _load_scenario_links_grouped(db)
+    probs_by_pred = _current_probabilities_by_predicate(db)
+    label_lookup = _state_label_lookup_by_id(db)
+
+    contributions: list[ScenarioContribution] = []
+    for ln in links_by_scenario.get(sc.id, []):
+        p_required = probs_by_pred.get(ln.predicate_id, {}).get(
+            ln.required_state_key, 0.0,
+        )
+        # weight * log(P); guard log(0) by clamping at a tiny floor.
+        if p_required <= 0:
+            contrib = float("-inf")
+        else:
+            contrib = ln.weight * math.log(p_required)
+        contributions.append(ScenarioContribution(
+            predicate_key=pred_id_to_key.get(ln.predicate_id, "?"),
+            predicate_name=pred_id_to_name.get(ln.predicate_id, "?"),
+            required_state_key=ln.required_state_key,
+            required_state_label=label_lookup.get(
+                (ln.predicate_id, ln.required_state_key), ln.required_state_key,
+            ),
+            weight=ln.weight,
+            current_p_required=p_required,
+            contribution=contrib,
+            rank_within_scenario=0,  # filled after sort
+        ))
+    contributions.sort(
+        key=lambda c: abs(c.contribution) if c.contribution != float("-inf") else 1e9,
+        reverse=True,
+    )
+    contributions = [c._replace(rank_within_scenario=i + 1) for i, c in enumerate(contributions)]
+
+    # Sensitivity: walk every (predicate, state) the scenario constrains
+    # and ask compute_sensitivity(...). The result is per-Δ where we
+    # bumped 5pp; normalize to per-1pp so the table reads cleanly.
+    BUMP_PP = 0.05
+    sensitivity_rows: list[SensitivityRow] = []
+    for ln in links_by_scenario.get(sc.id, []):
+        sens = scenario_sensitivity(
+            db,
+            predicate_key=pred_id_to_key.get(ln.predicate_id, ""),
+            target_state_key=ln.required_state_key,
+            delta=BUMP_PP,
+        )
+        delta_per_pp = sens.get(scenario_key, 0.0) / 100.0  # per-pp not per-fraction
+        sensitivity_rows.append(SensitivityRow(
+            predicate_key=pred_id_to_key.get(ln.predicate_id, "?"),
+            predicate_name=pred_id_to_name.get(ln.predicate_id, "?"),
+            target_state_key=ln.required_state_key,
+            target_state_label=label_lookup.get(
+                (ln.predicate_id, ln.required_state_key), ln.required_state_key,
+            ),
+            delta_per_pp=delta_per_pp,
+        ))
+    sensitivity_rows.sort(key=lambda r: abs(r.delta_per_pp), reverse=True)
+
+    return ScenarioDetail(
+        summary=summary,
+        contributions=contributions,
+        sensitivity_to_predicates=sensitivity_rows,
+    )
+
+
+def evidence_for_finding(
+    db: Session,
+    finding_id: int,
+    *,
+    now: datetime | None = None,
+) -> list[EvidenceContribView]:
+    """All evidence rows attached to one finding, with live log-odds
+    contributions. Used by the chat tool that answers "what predicates
+    does finding #X bear on?". Includes pending + rejected; caller can
+    filter by `classified_by` and `confirmed_at` if needed."""
+    if now is None:
+        now = datetime.utcnow()
+    rows = (
+        db.query(PredicateEvidence)
+        .filter(PredicateEvidence.finding_id == finding_id)
+        .order_by(PredicateEvidence.id.asc())
+        .all()
+    )
+    if not rows:
+        return []
+
+    finding_by_id: dict[int, Finding] = {}
+    f = db.get(Finding, finding_id)
+    if f is not None:
+        finding_by_id[finding_id] = f
+
+    state_label_lookup = _state_label_lookup(db)
+    likelihood_table = load_likelihood_table(db)
+    half_life_by_pred: dict[int, float] = {}
+    global_hl = default_decay_half_life(db)
+    for p in db.query(Predicate).all():
+        half_life_by_pred[p.id] = float(p.decay_half_life_days or global_hl)
+
+    out: list[EvidenceContribView] = []
+    for ev in rows:
+        out.append(_evidence_to_contrib_view(
+            ev, state_label_lookup, finding_by_id,
+            likelihood_table,
+            half_life_by_pred.get(ev.predicate_id, global_hl),
+            now,
+        ))
+    return out
 
 
 # ─── Page-level header counts ──────────────────────────────────────────

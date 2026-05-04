@@ -12,9 +12,9 @@
     </div>
   </div>
 
-  <nav class="scenarios-tabs" role="tablist" aria-label="Scenarios sections">
+  <nav class="tabs" role="tablist" aria-label="Scenarios sections">
     {% for t in ("predicates", "scenarios", "evidence", "settings") %}
-      <a class="scenarios-tab {% if tab == t %}is-active{% endif %}"
+      <a class="tab {% if tab == t %}active{% endif %}"
          href="/scenarios?tab={{ t }}"
          role="tab"
          aria-selected="{% if tab == t %}true{% else %}false{% endif %}">
@@ -39,7 +39,7 @@
 </header>
 
 {% if tab == "predicates" %}
-  <section class="scenarios-tab-panel" id="tab-predicates" role="tabpanel">
+  <section class="tab-panel" id="tab-predicates" role="tabpanel">
     <form method="get" action="/scenarios" class="scenarios-controls-row">
       <input type="hidden" name="tab" value="predicates">
       <label class="filter-label">
@@ -85,18 +85,23 @@
     {% endif %}
   </section>
 {% elif tab == "evidence" %}
-  <section class="scenarios-tab-panel" id="tab-evidence" role="tabpanel">
+  <section class="tab-panel" id="tab-evidence" role="tabpanel">
     {% include "_scenarios_evidence_list.html" %}
   </section>
 {% elif tab == "scenarios" %}
-  <section class="scenarios-tab-panel" id="tab-scenarios" role="tabpanel">
-    <p class="muted">
-      Scenario probability widget lands in Spec 04. The data is already in the engine —
-      <a href="?tab=evidence">browse the evidence</a> in the meantime.
-    </p>
+  <section class="tab-panel" id="tab-scenarios" role="tabpanel">
+    {% if scenario_summaries %}
+      <div class="scenario-grid">
+        {% for s in scenario_summaries %}
+          {% include "_scenarios_scenario_card.html" %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No active scenarios. Add some via <code>scripts/scenarios_seed.json</code> and re-run the seed loader.</p>
+    {% endif %}
   </section>
 {% elif tab == "settings" %}
-  <section class="scenarios-tab-panel" id="tab-settings" role="tabpanel">
+  <section class="tab-panel" id="tab-settings" role="tabpanel">
     <p class="muted">
       Editable assumption controls land in Spec 05. Until then, the knobs (likelihoods, source credibility, decay, priors, scenario weights) live in the DB and are edited via SQL — see <code>docs/scenarios/01-foundation.md</code> §Configurability surface.
     </p>
