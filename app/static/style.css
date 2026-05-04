@@ -1442,6 +1442,36 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
   line-height: 1.5;
   margin: 6px 0 0;
 }
+/* Long titles/summaries clamp to 3 lines; the inline script in base.html
+   measures overflow per node and appends a `.signal-clamp-toggle` button
+   only when there's hidden content. Click flips `.is-clamped` off. */
+.signal-card-body .signal-title.is-clamped,
+.signal-card-body .signal-snippet.is-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.signal-card-body .signal-clamp-toggle {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  opacity: 0.75;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.signal-card-body .signal-clamp-toggle:hover {
+  opacity: 1;
+  color: var(--accent);
+}
 .signal-card-foot {
   margin-top: 8px;
   font-size: 11px;
