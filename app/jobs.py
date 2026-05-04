@@ -430,6 +430,18 @@ def _dispatch_queued_run(run_id: int, kind: str, args: dict, triggered_by: str) 
                 force=bool(args.get("force", False)),
                 run_id=run_id,
             )
+        elif kind == "scenarios_recompute":
+            run_scenarios_recompute_job(
+                triggered_by=triggered_by,
+                predicate_keys=args.get("predicate_keys"),
+                run_id=run_id,
+            )
+        elif kind == "scenarios_classify_sweep":
+            run_scenarios_classify_sweep_job(
+                triggered_by=triggered_by,
+                limit=args.get("limit"),
+                run_id=run_id,
+            )
         else:
             raise ValueError(f"queue dispatch: unknown run kind {kind!r}")
     except Exception as e:
@@ -895,6 +907,22 @@ def run_scan_job(
             _log(db, run, "digest emailed")
         except Exception as e:
             _log(db, run, f"email skipped: {e}", "warn")
+
+        # Stage-2 hook (docs/scenarios/02-card-tagging.md): enqueue an
+        # async classify-sweep so new findings get LLM-proposed predicate
+        # evidence by the time the operator next opens /stream. The
+        # sweep is no-op when scenarios isn't seeded; cheap (Haiku +
+        # prompt cache) when it is. Failure to enqueue (queue full,
+        # dispatcher offline) is logged but doesn't fail the scan.
+        try:
+            enqueue_run(
+                db,
+                "scenarios_classify_sweep",
+                triggered_by="scheduled",
+                job_args={"limit": len(all_findings) or None},
+            )
+        except Exception as e:
+            _log(db, run, f"scenarios sweep enqueue skipped: {e}", "warn")
 
         _finish_run(db, run, "ok")
     except RunCancelled:
@@ -2260,6 +2288,97 @@ def run_voc_themes_job(competitor_id: int | None = None,
                     },
                 ))
             db.commit()
+        _finish_run(db, run, "ok")
+    except Exception as e:
+        tb = traceback.format_exc()
+        _log(db, run, f"ERROR: {e}\n{tb}", "error")
+        _finish_run(db, run, "error", str(e))
+    finally:
+        current_run_id.reset(token)
+
+
+# ─── Scenarios recompute (docs/scenarios/01-foundation.md) ──────────────
+# Pure DB-side recompute — no LLM, no scraping. Walks confirmed evidence
+# per active predicate, updates cached current_probability + writes a
+# snapshot row. Cheap; runs end-to-end in well under a second for the
+# stage-1 predicate set.
+
+def run_scenarios_recompute_job(
+    triggered_by: str = "manual",
+    predicate_keys: list[str] | None = None,
+    run_id: int | None = None,
+) -> None:
+    """Recompute Scenarios posteriors. `predicate_keys=None` means all
+    active predicates; pass a list to scope to one or a few (the CLI
+    uses this after adding a single evidence row).
+
+    Wrapped in a Run so the recompute shows up on /runs alongside scans
+    and digests. Failures mark the row 'error' and stash the traceback
+    in Run.error like every other job."""
+    run, db = _start_run("scenarios_recompute", triggered_by, run_id=run_id)
+    run_id = run.id
+    token = current_run_id.set(run_id)
+    try:
+        from .scenarios.service import recompute_all
+
+        scope = ",".join(predicate_keys) if predicate_keys else "all"
+        _log(db, run, f"recomputing scenarios posteriors (scope={scope})")
+
+        out = recompute_all(db, run_id=run_id, predicate_keys=predicate_keys)
+        db.commit()
+
+        _log(
+            db, run,
+            f"recomputed {len(out)} predicate(s); states updated: "
+            + ", ".join(f"{k}({len(v)})" for k, v in sorted(out.items())),
+        )
+        _finish_run(db, run, "ok")
+    except Exception as e:
+        tb = traceback.format_exc()
+        _log(db, run, f"ERROR: {e}\n{tb}", "error")
+        _finish_run(db, run, "error", str(e))
+    finally:
+        current_run_id.reset(token)
+
+
+# ─── Scenarios classifier sweep (docs/scenarios/02-card-tagging.md) ─────
+# Stage-2: walks Findings with scenarios_classified_at IS NULL, calls
+# Haiku to propose 0–2 evidence rows per finding, writes them
+# unconfirmed (classified_by="llm", confirmed_at=NULL). Operator
+# confirms in the stream UI; that's where evidence flows into the engine.
+
+def run_scenarios_classify_sweep_job(
+    triggered_by: str = "manual",
+    limit: int | None = None,
+    run_id: int | None = None,
+) -> None:
+    """LLM-classify unclassified findings. `limit=None` uses the sweep
+    default (200). Idempotent: each finding is classified once, then
+    skipped on subsequent sweeps via `findings.scenarios_classified_at`.
+
+    Hard-stops at the daily $ budget cap (env
+    SCENARIOS_CLASSIFIER_DAILY_BUDGET_USD, default $1.00). Findings
+    skipped by the budget cap stay unclassified — the next sweep,
+    after midnight UTC or budget bump, picks them up."""
+    run, db = _start_run("scenarios_classify_sweep", triggered_by, run_id=run_id)
+    run_id = run.id
+    token = current_run_id.set(run_id)
+    try:
+        from .scenarios.sweep import classify_unclassified
+
+        scope = f"limit={limit}" if limit else "limit=default"
+        _log(db, run, f"sweeping unclassified findings ({scope})")
+
+        result = classify_unclassified(db, limit=limit)
+
+        msg = (
+            f"sweep complete: processed={result.findings_processed}, "
+            f"evidence_proposed={result.evidence_proposed}, "
+            f"skipped_no_signal={result.skipped_no_signal}, "
+            f"skipped_budget={result.skipped_budget}"
+        )
+        level = "warn" if result.skipped_budget > 0 else "info"
+        _log(db, run, msg, level)
         _finish_run(db, run, "ok")
     except Exception as e:
         tb = traceback.format_exc()

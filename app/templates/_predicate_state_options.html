@@ -1,0 +1,9 @@
+{# State <option>s for one predicate, returned by
+   GET /partials/predicates/{key}/states. The form's state dropdown
+   uses HTMX to swap its <option> set when the predicate dropdown
+   changes. Returned as raw <option>s so the swap target can be the
+   <select> itself (the form template gives it id="predicate-state-{{ f.id }}"). #}
+<option value="">Choose state…</option>
+{% for s in states %}
+  <option value="{{ s.state_key }}">{{ s.label }}</option>
+{% endfor %}

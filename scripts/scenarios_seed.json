@@ -1,0 +1,153 @@
+{
+  "predicates": [
+    {
+      "key": "p1",
+      "name": "Distribution control: platform vs agent",
+      "statement": "Distribution control over candidate-job discovery shifts to AI agents and external interfaces, vs remaining with platform UIs that own traffic origination and query routing.",
+      "category": "discovery",
+      "states": [
+        {"state_key": "platform", "label": "Platform-dominant", "ordinal_position": 0, "prior_probability": 0.55},
+        {"state_key": "agent",    "label": "Agent-mediated",    "ordinal_position": 1, "prior_probability": 0.45}
+      ]
+    },
+    {
+      "key": "p2",
+      "name": "Supply aggregation: horizontal vs vertical",
+      "statement": "Supply aggregation favours horizontal cross-role liquidity over specialist vertical depth.",
+      "category": "discovery",
+      "states": [
+        {"state_key": "horizontal", "label": "Horizontal scale", "ordinal_position": 0, "prior_probability": 0.55},
+        {"state_key": "vertical",   "label": "Vertical depth",   "ordinal_position": 1, "prior_probability": 0.45}
+      ]
+    },
+    {
+      "key": "p3",
+      "name": "Candidate intent: implicit vs explicit-continuous",
+      "statement": "Candidate intent becomes explicit and continuously updated (profiles, availability, preferences, real-time signals) rather than inferred implicitly from behaviour.",
+      "category": "evaluation",
+      "states": [
+        {"state_key": "implicit",            "label": "Implicit",            "ordinal_position": 0, "prior_probability": 0.50},
+        {"state_key": "explicit_continuous", "label": "Explicit-continuous", "ordinal_position": 1, "prior_probability": 0.50}
+      ]
+    },
+    {
+      "key": "p4",
+      "name": "Matching: human-led vs model-led",
+      "statement": "Matching, ranking, and recommendation become predominantly model-driven rather than human-filter-driven.",
+      "category": "evaluation",
+      "states": [
+        {"state_key": "human_led", "label": "Human-led", "ordinal_position": 0, "prior_probability": 0.40},
+        {"state_key": "model_led", "label": "Model-led", "ordinal_position": 1, "prior_probability": 0.60}
+      ]
+    },
+    {
+      "key": "p5",
+      "name": "Verification: optional / required-centralized / embedded",
+      "statement": "Verified data (identity, credentials, work rights, references) becomes required, and is delivered either via centralized verification services or embedded inside workflow tools, vs remaining optional.",
+      "category": "evaluation",
+      "states": [
+        {"state_key": "optional",              "label": "Optional",              "ordinal_position": 0, "prior_probability": 0.40},
+        {"state_key": "required_centralized",  "label": "Required, centralized", "ordinal_position": 1, "prior_probability": 0.30},
+        {"state_key": "embedded",              "label": "Embedded in workflow",  "ordinal_position": 2, "prior_probability": 0.30}
+      ]
+    },
+    {
+      "key": "p6",
+      "name": "Pricing: ads / hybrid / outcomes",
+      "statement": "Pricing shifts from advertising-based monetisation toward outcome-based (per-connection, per-hire, SaaS) packaging, with hybrid models in between.",
+      "category": "transaction",
+      "states": [
+        {"state_key": "ads",      "label": "Ads",      "ordinal_position": 0, "prior_probability": 0.45},
+        {"state_key": "hybrid",   "label": "Hybrid",   "ordinal_position": 1, "prior_probability": 0.30},
+        {"state_key": "outcomes", "label": "Outcomes", "ordinal_position": 2, "prior_probability": 0.25}
+      ]
+    },
+    {
+      "key": "p7",
+      "name": "Hiring process: multi-step vs compressed",
+      "statement": "The hiring process compresses (fewer steps, lower time-to-hire, more automation) vs remaining multi-step with manual handoffs.",
+      "category": "transaction",
+      "states": [
+        {"state_key": "multi_step", "label": "Multi-step", "ordinal_position": 0, "prior_probability": 0.55},
+        {"state_key": "compressed", "label": "Compressed", "ordinal_position": 1, "prior_probability": 0.45}
+      ]
+    },
+    {
+      "key": "p8",
+      "name": "Control point: marketplace / external interface / workflow",
+      "statement": "The control point — where decisions, communications, and records live — sits with the marketplace, with an external interface (e.g. AI agent), or with the workflow / ATS layer inside the enterprise.",
+      "category": "control_point",
+      "states": [
+        {"state_key": "marketplace",        "label": "Marketplace",        "ordinal_position": 0, "prior_probability": 0.40},
+        {"state_key": "external_interface", "label": "External interface", "ordinal_position": 1, "prior_probability": 0.25},
+        {"state_key": "workflow",           "label": "Workflow / ATS",     "ordinal_position": 2, "prior_probability": 0.35}
+      ]
+    }
+  ],
+
+  "scenarios": [
+    {
+      "key": "a",
+      "name": "Aggregator dominance",
+      "description": "Marketplace wins. Scale, trust, and discovery remain centralised on horizontal platforms; verification is required and centralised; ads-based monetisation persists; the marketplace is the control point.",
+      "links": [
+        {"predicate_key": "p1", "required_state_key": "platform",            "weight": 0.25},
+        {"predicate_key": "p2", "required_state_key": "horizontal",          "weight": 0.20},
+        {"predicate_key": "p5", "required_state_key": "required_centralized","weight": 0.15},
+        {"predicate_key": "p6", "required_state_key": "ads",                 "weight": 0.15},
+        {"predicate_key": "p8", "required_state_key": "marketplace",         "weight": 0.25}
+      ]
+    },
+    {
+      "key": "b",
+      "name": "Agent-mediated market",
+      "description": "Interface layer captures discovery and routing. Distribution shifts to AI agents; intent becomes explicit and continuous; matching is model-led on the agent side; pricing is outcome-based; the control point sits with the external interface.",
+      "links": [
+        {"predicate_key": "p1", "required_state_key": "agent",                "weight": 0.30},
+        {"predicate_key": "p3", "required_state_key": "explicit_continuous",  "weight": 0.15},
+        {"predicate_key": "p4", "required_state_key": "model_led",            "weight": 0.20},
+        {"predicate_key": "p6", "required_state_key": "outcomes",             "weight": 0.20},
+        {"predicate_key": "p8", "required_state_key": "external_interface",   "weight": 0.15}
+      ]
+    },
+    {
+      "key": "c",
+      "name": "Workflow / ATS dominance",
+      "description": "Value capture moves inside enterprise systems. The control point sits with the workflow / ATS; matching is model-led but embedded; verification is embedded in the workflow; pricing is outcome / SaaS; process is compressed.",
+      "links": [
+        {"predicate_key": "p4", "required_state_key": "model_led",  "weight": 0.15},
+        {"predicate_key": "p5", "required_state_key": "embedded",   "weight": 0.15},
+        {"predicate_key": "p6", "required_state_key": "outcomes",   "weight": 0.20},
+        {"predicate_key": "p7", "required_state_key": "compressed", "weight": 0.15},
+        {"predicate_key": "p8", "required_state_key": "workflow",   "weight": 0.35}
+      ]
+    }
+  ],
+
+  "evidence_likelihood_ratios": [
+    {"direction": "support",     "strength_bucket": "strong",   "multiplier": 3.0},
+    {"direction": "support",     "strength_bucket": "moderate", "multiplier": 1.8},
+    {"direction": "support",     "strength_bucket": "weak",     "multiplier": 1.2},
+    {"direction": "neutral",     "strength_bucket": "weak",     "multiplier": 1.0},
+    {"direction": "neutral",     "strength_bucket": "moderate", "multiplier": 1.0},
+    {"direction": "neutral",     "strength_bucket": "strong",   "multiplier": 1.0},
+    {"direction": "contradict",  "strength_bucket": "weak",     "multiplier": 0.8},
+    {"direction": "contradict",  "strength_bucket": "moderate", "multiplier": 0.55},
+    {"direction": "contradict",  "strength_bucket": "strong",   "multiplier": 0.4}
+  ],
+
+  "source_credibility_defaults": [
+    {"source_type": "manual",   "credibility": 1.0},
+    {"source_type": "voc",      "credibility": 0.85},
+    {"source_type": "ats",      "credibility": 0.85},
+    {"source_type": "newsroom", "credibility": 0.75},
+    {"source_type": "tavily",   "credibility": 0.6},
+    {"source_type": "serper",   "credibility": 0.6}
+  ],
+
+  "scenario_settings": [
+    {"key": "default_decay_half_life_days",         "value": {"value": 60}},
+    {"key": "independence_assumption_acknowledged", "value": {"value": true}},
+    {"key": "min_evidence_for_movement",            "value": {"value": 0}}
+  ]
+}

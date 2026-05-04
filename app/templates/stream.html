@@ -74,6 +74,15 @@
         Show hidden
       </label>
 
+      {# Stage-2 (docs/scenarios/02-card-tagging.md): scope to findings
+         that have no confirmed predicate evidence and no pending LLM
+         proposal — useful when sweeping the queue. #}
+      <label class="filter-label" style="margin-left:16px" title="Show only findings with no confirmed predicate evidence and no pending LLM proposal.">
+        <input type="checkbox" name="tagged" value="untagged"
+               {% if filters.tagged == "untagged" %}checked{% endif %}>
+        Untagged only
+      </label>
+
       {# Down-weight stale: hidden "0" always posts so unchecking is observable;
          when the checkbox is ticked the "1" takes precedence in the form body. #}
       <label class="filter-label" style="margin-left:16px" title="Push findings published over a year ago to the bottom of the list.">
@@ -160,12 +169,13 @@
 })();
 </script>
 
-{# Spec 09 — Mobile swipe + flip-to-pin.
+{# Mobile swipe + flip-to-tag (docs/scenarios/02-card-tagging.md).
    Left swipe past commit threshold = hide (state=dismissed).
-   Right swipe past commit threshold = flip the card to reveal back-of-card
-   actions (pin / ask follow-up / cancel). The actual pin / question hit
-   the SignalView and question endpoints via HTMX from the back of the card.
-   The desktop ↻ button on each card triggers the same flip. #}
+   Right swipe past commit threshold = flip the card to reveal the
+   predicate-tagging form. The form is HTMX-loaded on first flip
+   (hx-trigger="loadPredicateForm" on .signal-card-back) so the initial
+   stream payload stays small.
+   Desktop ↻ button on each card triggers the same flip. #}
 <script>
 (() => {
   const list = document.getElementById('stream-list');
@@ -184,23 +194,8 @@
     card.style.setProperty('--swipe-right-opacity', 0);
   };
 
-  // Re-evaluate the primary button's label from current textarea content.
-  // Called after flips and after edits — covers the case where the
-  // textarea is server-prefilled with a stored question (no input event
-  // fires on initial render).
-  const syncFlipLabel = (card) => {
-    const ta = card.querySelector('.signal-card-back-textarea');
-    const primary = card.querySelector('[data-flip-action="submit"]');
-    if (ta && primary) {
-      primary.textContent = ta.value.trim() ? 'Pin & ask' : 'Pin';
-    }
-  };
-
   const flipToFront = (card) => {
     card.classList.remove('is-flipped');
-    // Deliberately do NOT clear the textarea: if the user typed and
-    // hit Cancel we preserve their work, and for cards with a stored
-    // question the textarea always shows the canonical value.
     const back = card.querySelector('.signal-card-back');
     if (back) back.setAttribute('aria-hidden', 'true');
   };
@@ -208,8 +203,11 @@
   const flipToBack = (card) => {
     card.classList.add('is-flipped');
     const back = card.querySelector('.signal-card-back');
-    if (back) back.setAttribute('aria-hidden', 'false');
-    syncFlipLabel(card);
+    if (!back) return;
+    back.setAttribute('aria-hidden', 'false');
+    // Trigger the HTMX-loaded predicate form. Each flip re-fetches so
+    // the form reflects the current evidence state (cheap; tiny markup).
+    if (window.htmx) window.htmx.trigger(back, 'loadPredicateForm');
   };
 
   // Collapse the card's height to zero, fade it out, then remove from DOM.
@@ -336,21 +334,14 @@
     if (active) { reset(active.card); active = null; }
   });
 
-  // Adapt the primary button label to the textarea state. "Pin" when
-  // empty, "Pin & ask" when there's text. Single delegated handler so
-  // it works for cards swapped in by HTMX after a pin/dismiss.
-  list.addEventListener('input', (e) => {
-    const ta = e.target.closest('.signal-card-back-textarea');
-    if (!ta) return;
-    const card = ta.closest('.signal-card');
-    if (!card) return;
-    const primary = card.querySelector('[data-flip-action="submit"]');
-    if (primary) {
-      primary.textContent = ta.value.trim() ? 'Pin & ask' : 'Pin';
-    }
-  });
-
-  // Click handlers: ↻ flips, Cancel un-flips, Submit picks endpoint.
+  // Click handlers:
+  //   - ↻ flip-toggle  : flip to back (which HTMX-loads the predicate form)
+  //   - data-flip-action="cancel"  : flip back to front
+  //   - data-action="toggle-add"   : show/hide the inline create sub-form
+  //   - data-action="toggle-edit"  : show/hide the edit sub-form for one row
+  // The actual create/edit/confirm/reject POSTs are wired via hx-post
+  // on the form/button elements themselves — HTMX handles them and
+  // outerHTML-swaps the entire card with the server-rendered re-render.
   list.addEventListener('click', (e) => {
     const flipBtn = e.target.closest('.flip-toggle');
     if (flipBtn) {
@@ -358,30 +349,27 @@
       if (card) flipToBack(card);
       return;
     }
-    const action = e.target.closest('[data-flip-action]');
-    if (!action) return;
-    const card = action.closest('.signal-card');
-    if (!card) return;
-    const kind = action.dataset.flipAction;
-    if (kind === 'cancel') {
-      flipToFront(card);
+    const flipAction = e.target.closest('[data-flip-action]');
+    if (flipAction && flipAction.dataset.flipAction === 'cancel') {
+      const card = flipAction.closest('.signal-card');
+      if (card) flipToFront(card);
       return;
     }
-    if (kind === 'submit') {
-      const id = card.id.replace('card-', '');
-      const ta = card.querySelector('.signal-card-back-textarea');
-      const question = ta ? ta.value.trim() : '';
-      // Pin keeps the card in the stream — it's a positive signal, not
-      // "I'm done with this". The re-rendered markup carries state-pinned
-      // styling and the user's natural ranking/recency does the rest.
-      // (Hide is the path that collapses cards out, not pin.)
-      if (question) {
-        postAndReplace(card, '/partials/finding/' + id + '/question',
-                       { question: question });
-      } else {
-        postAndReplace(card, '/partials/stream_view/' + id,
-                       { state: 'pinned' });
-      }
+    const subAction = e.target.closest('[data-action]');
+    if (!subAction) return;
+    const card = subAction.closest('.signal-card');
+    if (!card) return;
+    const kind = subAction.dataset.action;
+    if (kind === 'toggle-add') {
+      const form = card.querySelector('.predicate-evidence-create');
+      if (form) form.hidden = !form.hidden;
+      return;
+    }
+    if (kind === 'toggle-edit') {
+      const evid = subAction.dataset.evidenceId;
+      const form = card.querySelector('.predicate-evidence-edit[data-evidence-edit-id="' + evid + '"]');
+      if (form) form.hidden = !form.hidden;
+      return;
     }
   });
 })();

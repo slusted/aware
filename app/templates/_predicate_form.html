@@ -1,0 +1,215 @@
+{# Back-of-card predicate-tagging form
+   (docs/scenarios/02-card-tagging.md §"Card back: predicate form").
+
+   Loaded into the .signal-card-back container by HTMX on the first flip.
+   Lists existing evidence rows (with confirm / edit / reject buttons),
+   then a "+ Add" affordance that expands an inline create form, gated
+   by a soft cap of MAX_EVIDENCE_PER_FINDING active rows.
+
+   Every form submit POSTs to a route under
+   /partials/finding/{f.id}/evidence/... and HTMX-swaps the entire
+   .signal-card article so the front-of-card chip updates in place.
+
+   Context (from app/routes/scenarios.py::predicate_form):
+     f               - Finding row
+     evidence_rows   - flattened evidence dicts (see _evidence_to_view)
+     predicates      - [{key, name, category, states: [{state_key, label}]}]
+     directions, strengths - tuples of valid choices
+     max_per_finding - soft cap (2)
+     can_add_more    - bool, true if active row count < cap
+#}
+<div class="predicate-form" data-finding-id="{{ f.id }}">
+  <div class="predicate-form-header muted">
+    Predicate evidence for this finding
+    <span class="predicate-form-counter">
+      ({{ evidence_rows | rejectattr('classified_by', 'equalto', 'user_rejected') | list | length }} / {{ max_per_finding }})
+    </span>
+  </div>
+
+  {% if evidence_rows %}
+    <ul class="predicate-evidence-list">
+    {% for ev in evidence_rows %}
+      <li class="predicate-evidence-row state-{{ ev.classified_by }}{% if ev.confirmed_at %} is-confirmed{% endif %}">
+        <div class="predicate-evidence-summary">
+          <span class="predicate-evidence-mapping">
+            <strong>{{ ev.predicate_key }}</strong>
+            <span class="muted">→</span>
+            {{ ev.target_state_label }}
+            <span class="muted">·</span>
+            {{ ev.direction }} / {{ ev.strength_bucket }}
+          </span>
+          <span class="predicate-evidence-meta muted">
+            {% if ev.classified_by == "llm" %}LLM proposal{% endif %}
+            {% if ev.classified_by == "user_override" %}edited{% endif %}
+            {% if ev.classified_by == "manual" %}manual{% endif %}
+            {% if ev.classified_by == "user_rejected" %}rejected{% endif %}
+            {% if ev.confirmed_at %}· confirmed{% endif %}
+          </span>
+        </div>
+        {% if ev.notes %}
+          <div class="predicate-evidence-notes muted">{{ ev.notes }}</div>
+        {% endif %}
+
+        <div class="predicate-evidence-actions">
+          {% if not ev.confirmed_at and ev.classified_by != "user_rejected" %}
+            {# Pending LLM proposal — primary action is one-click confirm. #}
+            <button type="button"
+                    class="btn-card-back is-primary"
+                    hx-post="/partials/finding/{{ f.id }}/evidence/{{ ev.id }}/confirm"
+                    hx-target="#card-{{ f.id }}"
+                    hx-swap="outerHTML">Confirm</button>
+          {% endif %}
+
+          <button type="button"
+                  class="btn-card-back"
+                  data-action="toggle-edit"
+                  data-evidence-id="{{ ev.id }}">
+            Edit
+          </button>
+
+          {% if ev.classified_by != "user_rejected" %}
+            <button type="button"
+                    class="btn-card-back is-cancel"
+                    hx-post="/partials/finding/{{ f.id }}/evidence/{{ ev.id }}/reject"
+                    hx-target="#card-{{ f.id }}"
+                    hx-swap="outerHTML">Reject</button>
+          {% endif %}
+        </div>
+
+        {# Inline edit sub-form, hidden by default. JS toggles
+           data-edit-open. Pre-filled with the row's current values. #}
+        <form class="predicate-evidence-edit"
+              data-evidence-edit-id="{{ ev.id }}"
+              hx-post="/partials/finding/{{ f.id }}/evidence/{{ ev.id }}/edit"
+              hx-target="#card-{{ f.id }}"
+              hx-swap="outerHTML"
+              hidden>
+          <label class="predicate-form-label">
+            Predicate
+            <select name="predicate_key"
+                    hx-get="/partials/predicate_states"
+                    hx-trigger="change"
+                    hx-target="#predicate-edit-state-{{ ev.id }}"
+                    hx-vals='js:{predicate_key: event.target.value}'
+                    hx-swap="innerHTML">
+              {% for p in predicates %}
+                <option value="{{ p.key }}"{% if p.key == ev.predicate_key %} selected{% endif %}>
+                  {{ p.key }} — {{ p.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="predicate-form-label">
+            Target state
+            <select name="target_state_key" id="predicate-edit-state-{{ ev.id }}">
+              {% for p in predicates if p.key == ev.predicate_key %}
+                {% for s in p.states %}
+                  <option value="{{ s.state_key }}"{% if s.state_key == ev.target_state_key %} selected{% endif %}>{{ s.label }}</option>
+                {% endfor %}
+              {% endfor %}
+            </select>
+          </label>
+
+          <fieldset class="predicate-form-radio">
+            <legend>Direction</legend>
+            {% for d in directions %}
+              <label><input type="radio" name="direction" value="{{ d }}"{% if d == ev.direction %} checked{% endif %}> {{ d }}</label>
+            {% endfor %}
+          </fieldset>
+
+          <fieldset class="predicate-form-radio">
+            <legend>Strength</legend>
+            {% for s in strengths %}
+              <label><input type="radio" name="strength_bucket" value="{{ s }}"{% if s == ev.strength_bucket %} checked{% endif %}> {{ s }}</label>
+            {% endfor %}
+          </fieldset>
+
+          <label class="predicate-form-label">
+            Notes
+            <input type="text" name="notes" maxlength="500" value="{{ ev.notes or '' }}">
+          </label>
+
+          <div class="signal-card-back-row">
+            <button type="submit" class="btn-card-back is-primary">Save</button>
+            <button type="button" class="btn-card-back is-cancel" data-action="toggle-edit" data-evidence-id="{{ ev.id }}">Cancel</button>
+          </div>
+        </form>
+      </li>
+    {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if can_add_more %}
+    <div class="predicate-add-row">
+      <button type="button" class="btn-card-back" data-action="toggle-add">
+        + Add{% if evidence_rows %} another{% endif %}
+      </button>
+    </div>
+
+    {# Inline create sub-form, hidden until "+ Add" clicked. #}
+    <form class="predicate-evidence-create"
+          hx-post="/partials/finding/{{ f.id }}/evidence"
+          hx-target="#card-{{ f.id }}"
+          hx-swap="outerHTML"
+          hidden>
+      <label class="predicate-form-label">
+        Predicate
+        <select name="predicate_key"
+                hx-get="/partials/predicate_states"
+                hx-trigger="change"
+                hx-target="#predicate-create-state-{{ f.id }}"
+                hx-vals='js:{predicate_key: event.target.value}'
+                hx-swap="innerHTML">
+          <option value="">Choose predicate…</option>
+          {% for p in predicates %}
+            <option value="{{ p.key }}">{{ p.key }} — {{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label class="predicate-form-label">
+        Target state
+        <select name="target_state_key" id="predicate-create-state-{{ f.id }}">
+          <option value="">Choose state…</option>
+        </select>
+      </label>
+
+      <fieldset class="predicate-form-radio">
+        <legend>Direction</legend>
+        {% for d in directions %}
+          <label><input type="radio" name="direction" value="{{ d }}"{% if d == "support" %} checked{% endif %}> {{ d }}</label>
+        {% endfor %}
+      </fieldset>
+
+      <fieldset class="predicate-form-radio">
+        <legend>Strength</legend>
+        {% for s in strengths %}
+          <label><input type="radio" name="strength_bucket" value="{{ s }}"{% if s == "moderate" %} checked{% endif %}> {{ s }}</label>
+        {% endfor %}
+      </fieldset>
+
+      <label class="predicate-form-label">
+        Notes
+        <input type="text" name="notes" maxlength="500" placeholder="Optional one-line rationale">
+      </label>
+
+      <div class="signal-card-back-row">
+        <button type="submit" class="btn-card-back is-primary">Save</button>
+        <button type="button" class="btn-card-back is-cancel" data-action="toggle-add">Cancel</button>
+      </div>
+    </form>
+  {% endif %}
+
+  <div class="signal-card-back-row predicate-form-footer">
+    {# Keep desktop pin reachable. Tagging is the primary action on
+       this back; pin is the secondary "I want to keep this finding
+       visible" gesture. Mobile right-swipe used to land here too. #}
+    <button type="button" class="btn-card-back"
+            hx-post="/partials/stream_view/{{ f.id }}"
+            hx-vals='{"state": "pinned"}'
+            hx-target="#card-{{ f.id }}"
+            hx-swap="outerHTML">📌 Pin</button>
+    <button type="button" class="btn-card-back is-cancel" data-flip-action="cancel">Done</button>
+  </div>
+</div>

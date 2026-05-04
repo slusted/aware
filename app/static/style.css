@@ -1190,6 +1190,173 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
 }
 .flip-toggle:hover { background: var(--surface-hover-strong); color: var(--text-primary); }
 
+/* Stage-2 — predicate-attachment chips on the front of the finding
+   card (docs/scenarios/02-card-tagging.md §"Card front: predicate
+   tag chip"). Three semantic variants — confirmed (engine knows about
+   this evidence), proposed (LLM has tagged, awaiting human confirm),
+   rejected (operator said no). All small inline-block pills sized to
+   match the existing .badge / .cluster-chip elements in the card head. */
+.predicate-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-0);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+.predicate-tag-chip.is-confirmed {
+  background: var(--pinned-bg-flip, rgba(34, 139, 34, 0.08));
+  border-color: var(--pinned-fg, #2e7d32);
+  color: var(--pinned-fg-strong, #1b5e20);
+}
+.predicate-tag-chip.is-proposed {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #92400e;
+}
+.predicate-tag-chip.is-rejected {
+  background: var(--surface-0);
+  border-style: dashed;
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+.predicate-tag-chip.is-more {
+  background: var(--surface-0);
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* Stage-2 — predicate-tagging form on the back of the card. Sits
+   inside .signal-card-back which already gets show/hide via .is-flipped.
+   The form has its own internal padding/spacing so it's noticeably
+   different in density from the front (less surprise on flip). */
+.predicate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 6px 2px;
+}
+.predicate-form-header {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+.predicate-form-counter {
+  font-weight: 400;
+  margin-left: 4px;
+}
+.predicate-evidence-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.predicate-evidence-row {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--surface-0);
+}
+.predicate-evidence-row.is-confirmed {
+  border-color: var(--pinned-fg, #2e7d32);
+  background: var(--pinned-bg-flip, rgba(34, 139, 34, 0.04));
+}
+.predicate-evidence-row.state-llm:not(.is-confirmed) {
+  border-color: rgba(245, 158, 11, 0.55);
+}
+.predicate-evidence-row.state-user_rejected {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.predicate-evidence-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.predicate-evidence-mapping strong { font-weight: 600; }
+.predicate-evidence-meta { font-size: 11px; }
+.predicate-evidence-notes {
+  font-size: 12px;
+  margin-top: 4px;
+  line-height: 1.35;
+}
+.predicate-evidence-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.predicate-evidence-actions .btn-card-back {
+  flex: 0 1 auto;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.predicate-evidence-edit,
+.predicate-evidence-create {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border-top: 1px dashed var(--border-subtle);
+}
+.predicate-form-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.predicate-form-label select,
+.predicate-form-label input[type="text"] {
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--surface-0);
+  color: var(--text-primary);
+}
+.predicate-form-radio {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.predicate-form-radio legend {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 0;
+  margin-bottom: 4px;
+  width: 100%;
+}
+.predicate-form-radio label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.predicate-add-row {
+  display: flex;
+  justify-content: flex-start;
+}
+.predicate-form-footer {
+  margin-top: 4px;
+}
+
 /* Spec 09 — collapse-and-remove animation for handled cards.
    Triggered after a successful pin or hide; the card shrinks its
    height to 0 while fading out, so the cards below visibly slide
