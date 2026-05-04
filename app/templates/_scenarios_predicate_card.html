@@ -1,14 +1,28 @@
 {# One predicate card in the grid.
    Args:
      s - PredicateSummary (see app/scenarios/dashboard.py)
+     predicate_actions_enabled (optional, default false) - if true and
+       the user is analyst/admin, llm_proposed predicates render
+       Promote / Reject action buttons in the footer. The /predicates
+       page enables this; /scenarios doesn't (source-tagged predicates
+       still show the pill there, but actions live on the library page).
    The card carries an HTMX-loadable expand panel below; clicking the
    header swaps in the detail partial via /scenarios/predicates/{key}/expand.
 #}
-<article id="predicate-card-{{ s.key }}" class="predicate-card" data-predicate-key="{{ s.key }}">
+<article id="predicate-card-{{ s.key }}" class="predicate-card"
+         data-predicate-key="{{ s.key }}"
+         data-predicate-source="{{ s.source }}">
   <header class="predicate-card-head">
     <div class="predicate-card-title">
       <span class="predicate-card-key mono">{{ s.key }}</span>
       <span class="predicate-card-name">{{ s.name }}</span>
+      {% if s.source == 'llm_proposed' %}
+        <span class="predicate-source-pill predicate-source-proposed"
+              title="Proposed by the suggestion model — needs review">proposed</span>
+      {% elif s.source == 'llm_promoted' %}
+        <span class="predicate-source-pill predicate-source-promoted"
+              title="Originally LLM-proposed, accepted by a reviewer">promoted</span>
+      {% endif %}
     </div>
     <span class="predicate-card-category muted">{{ s.category }}</span>
   </header>
@@ -67,6 +81,14 @@
               hx-target="#predicate-card-{{ s.key }}"
               hx-swap="outerHTML"
               data-predicate-key="{{ s.key }}">✎ Edit</button>
+      {% if predicate_actions_enabled and s.source == 'llm_proposed' %}
+        <button type="button" class="btn-ghost predicate-card-promote"
+                data-predicate-key="{{ s.key }}"
+                title="Accept this LLM-proposed predicate">✓ Promote</button>
+        <button type="button" class="btn-ghost predicate-card-reject"
+                data-predicate-key="{{ s.key }}"
+                title="Reject — marks the predicate inactive">✗ Reject</button>
+      {% endif %}
     {% endif %}
   </footer>
 
