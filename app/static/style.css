@@ -3179,11 +3179,15 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 /* ─── Stage 3: Predicate dashboard (docs/scenarios/03-predicate-dashboard.md) ─── */
 
 /* Six-color palette indexed by ordinal_position. Tuned to coexist with
-   the existing badge colors and stay readable in both themes. */
+   the existing badge colors and stay readable in both themes.
+   Note on ordinal-2: was #7ed321 (vivid green), which was being misread
+   as semantic — viewers inferred green = "this option is good" when it
+   was just the third bar. Swapped to a periwinkle that sits in the
+   palette's empty hue zone and carries no traffic-light load. */
 :root {
   --ordinal-0: #4a90e2;
   --ordinal-1: #f5a623;
-  --ordinal-2: #7ed321;
+  --ordinal-2: #7c83e8;
   --ordinal-3: #bd10e0;
   --ordinal-4: #d0021b;
   --ordinal-5: #50e3c2;
