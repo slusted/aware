@@ -28,46 +28,29 @@
 
 {% if tab == "predicates" %}
   <section class="tab-panel" id="tab-predicates" role="tabpanel">
-    <aside class="tab-explainer"
-           data-tab="predicates"
-           data-has-data="{{ 'true' if header.n_predicates > 0 else 'false' }}">
-      <div class="tab-explainer-head">
-        <h2 class="tab-explainer-title">What is a predicate?</h2>
-        <button type="button" class="tab-explainer-toggle" aria-expanded="true">
-          <span class="tab-explainer-toggle-expanded">▾ Hide</span>
-          <span class="tab-explainer-toggle-collapsed">ⓘ What is this?</span>
-        </button>
-      </div>
-      <div class="tab-explainer-body">
-        <p class="tab-explainer-text">
+    <div class="predicates-subhead">
+      <p class="predicates-subhead-line">
+        <strong>{{ header.n_predicates }}</strong> active hypothes{% if header.n_predicates == 1 %}is{% else %}es{% endif %}
+        across <strong>{{ header.n_predicate_categories }}</strong> categor{% if header.n_predicate_categories == 1 %}y{% else %}ies{% endif %}
+        ·
+        {% if sort == 'shifting' %}sorted by largest 30-day shift
+        {% elif sort == 'contested' %}sorted by most contested
+        {% elif sort == 'alpha' %}sorted alphabetically
+        {% elif sort == 'category' %}sorted by category{% endif %}
+        ·
+        {% if header.last_recompute_at %}recomputed {{ header.last_recompute_at.strftime('%b %d, %H:%M') }}{% else %}never recomputed{% endif %}
+      </p>
+      <details class="predicates-subhead-help">
+        <summary>What is a predicate?</summary>
+        <p class="predicates-subhead-help-body">
           A <strong>predicate</strong> is a single claim about the market that
           can take one of a fixed set of states — e.g. <em>"do buyers prefer
           self-serve or sales-led?"</em>. Each piece of evidence we tag nudges
           the predicate's posterior toward one state. Predicates are the atoms
           scenarios are built from.
         </p>
-      </div>
-      <div class="tab-explainer-stats brief-meta">
-        <div class="brief-meta-item">
-          <span class="brief-meta-label">Active</span>
-          <span class="brief-meta-value">{{ header.n_predicates }}</span>
-        </div>
-        <div class="brief-meta-item">
-          <span class="brief-meta-label">Categories</span>
-          <span class="brief-meta-value">{{ header.n_predicate_categories }}</span>
-        </div>
-        <div class="brief-meta-item">
-          <span class="brief-meta-label">Confirmed evidence</span>
-          <span class="brief-meta-value">{{ header.n_evidence_confirmed }}</span>
-        </div>
-        <div class="brief-meta-item">
-          <span class="brief-meta-label">Last recompute</span>
-          <span class="brief-meta-value">
-            {% if header.last_recompute_at %}{{ header.last_recompute_at.strftime('%b %d, %H:%M') }}{% else %}—{% endif %}
-          </span>
-        </div>
-      </div>
-    </aside>
+      </details>
+    </div>
 
     <form method="get" action="/scenarios" class="scenarios-controls-row">
       <input type="hidden" name="tab" value="predicates">

@@ -3331,6 +3331,51 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   }
 }
 
+/* Predicates-tab subhead — replaces the old four-tile counts strip
+   with a single contextual sentence + a collapsible "what is a
+   predicate?" disclosure. The shift signal lives on the cards. */
+.predicates-subhead {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 14px;
+}
+.predicates-subhead-line {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.predicates-subhead-line strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.predicates-subhead-help {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.predicates-subhead-help summary {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-tertiary);
+  user-select: none;
+}
+.predicates-subhead-help summary:hover { color: var(--text-secondary); }
+.predicates-subhead-help[open] summary { color: var(--text-secondary); }
+.predicates-subhead-help-body {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  background: var(--surface-1);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  max-width: 720px;
+}
+.predicates-subhead-help-body strong { color: var(--text-primary); font-weight: 600; }
+.predicates-subhead-help-body em { font-style: normal; color: var(--text-primary); opacity: 0.85; }
+
 /* Card grid — auto-fill so the layout adapts to viewport without media queries */
 .predicate-grid {
   display: grid;
@@ -3349,9 +3394,12 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 .predicate-card-head {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 12px;
 }
+/* Legacy card layout — used by _predicates_card.html (definition card on
+   /predicates) and the edit/inactive stubs. The Bayesian card on
+   /scenarios?tab=predicates uses .predicate-card-title-block instead. */
 .predicate-card-title {
   display: flex;
   align-items: baseline;
@@ -3374,6 +3422,75 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* Bayesian card layout (predicate-card-title-block) — bigger title, dense
+   sub-line with category + key + source pill. Scoped so the legacy
+   .predicate-card-name above (used as a span) is not clobbered. */
+.predicate-card-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.predicate-card-title-block .predicate-card-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+.predicate-card-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.predicate-card-sub .predicate-card-category {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.predicate-card-key-mini {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+/* Shift hero — top-right of the card. The single most actionable signal
+   for "Most shifting" sort, so it earns size and color over the prior
+   small velocity pill in the footer. */
+.predicate-card-shift {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 1.1;
+}
+.predicate-card-shift.is-flat { color: var(--text-tertiary); }
+.predicate-card-shift.is-up { color: #1b5e20; }
+.predicate-card-shift.is-down { color: #92400e; }
+.predicate-card-shift-arrow { font-size: 16px; }
+.predicate-card-shift-window {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-left: 2px;
+}
+.predicate-card-shift-empty {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  font-style: italic;
 }
 
 /* Source provenance pill — sits next to the predicate name in the
@@ -3455,7 +3572,7 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 }
 .predicate-bar-row {
   display: grid;
-  grid-template-columns: minmax(80px, 130px) 1fr 50px;
+  grid-template-columns: minmax(80px, 130px) 1fr 50px 56px;
   align-items: center;
   gap: 8px;
   font-size: 12px;
@@ -3466,6 +3583,15 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.predicate-bar-delta {
+  text-align: right;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+.predicate-bar-delta.is-flat { color: var(--text-tertiary); opacity: 0.55; }
+.predicate-bar-delta.is-up { color: #1b5e20; }
+.predicate-bar-delta.is-down { color: #92400e; }
 .predicate-bar-track {
   height: 8px;
   background: var(--surface-2, var(--border-subtle));
@@ -3491,10 +3617,7 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   color: var(--text-secondary);
 }
 
-.predicate-card-sparkline-wrap {
-  position: relative;
-  min-height: 32px;
-}
+/* Sparkline still used in the expand/detail panel; not in the card. */
 .predicate-sparkline {
   width: 100%;
   height: 100%;
@@ -3516,25 +3639,32 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   gap: 6px 10px;
   align-items: center;
   font-size: 11px;
+  color: var(--text-tertiary);
 }
 .predicate-card-stat { white-space: nowrap; }
-.predicate-velocity-pill {
-  padding: 2px 8px;
-  border-radius: 10px;
-  border: 1px solid var(--border-subtle);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-.predicate-velocity-pill.is-flat { color: var(--text-tertiary); }
-.predicate-velocity-pill.is-up { color: #1b5e20; border-color: rgba(34, 139, 34, 0.4); background: rgba(34, 139, 34, 0.06); }
-.predicate-velocity-pill.is-down { color: #92400e; border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.06); }
 .predicate-coverage-warn {
   color: #92400e;
   font-style: italic;
 }
-.predicate-card-expand {
+.predicate-card-foot-actions {
   margin-left: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.predicate-card-expand {
   font-size: 11px;
+}
+.predicate-card-edit-icon {
+  font-size: 13px;
+  padding: 2px 8px;
+  line-height: 1;
+  opacity: 0.55;
+  transition: opacity 80ms ease;
+}
+.predicate-card:hover .predicate-card-edit-icon,
+.predicate-card-edit-icon:focus-visible {
+  opacity: 1;
 }
 
 /* Definition-focused predicate card */

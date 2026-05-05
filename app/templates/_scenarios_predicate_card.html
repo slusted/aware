@@ -9,57 +9,77 @@
    The card carries an HTMX-loadable expand panel below; clicking the
    header swaps in the detail partial via /scenarios/predicates/{key}/expand.
 #}
+{# Title schema is "{topic}: {opt1} vs {opt2}…" — show the topic only;
+   the bars enumerate the options and the full string lives on hover. #}
+{% set _topic = s.name.split(':', 1)[0]|trim %}
+{% set _shift = s.dominant_state_velocity_pp_30d %}
+{% set _shift_abs = _shift if _shift >= 0 else -_shift %}
 <article id="predicate-card-{{ s.key }}" class="predicate-card"
          data-predicate-key="{{ s.key }}"
          data-predicate-source="{{ s.source }}">
   <header class="predicate-card-head">
-    <div class="predicate-card-title">
-      <span class="predicate-card-key mono">{{ s.key }}</span>
-      <span class="predicate-card-name">{{ s.name }}</span>
-      {% if s.source == 'llm_proposed' %}
-        <span class="predicate-source-pill predicate-source-proposed"
-              title="Proposed by the suggestion model — needs review">proposed</span>
-      {% elif s.source == 'llm_promoted' %}
-        <span class="predicate-source-pill predicate-source-promoted"
-              title="Originally LLM-proposed, accepted by a reviewer">promoted</span>
+    <div class="predicate-card-title-block">
+      <h3 class="predicate-card-name" title="{{ s.name }}">{{ _topic }}</h3>
+      <div class="predicate-card-sub">
+        <span class="predicate-card-category">{{ s.category }}</span>
+        <span class="predicate-card-key-mini mono" title="Predicate key">{{ s.key }}</span>
+        {% if s.source == 'llm_proposed' %}
+          <span class="predicate-source-pill predicate-source-proposed"
+                title="Proposed by the suggestion model — needs review">proposed</span>
+        {% elif s.source == 'llm_promoted' %}
+          <span class="predicate-source-pill predicate-source-promoted"
+                title="Originally LLM-proposed, accepted by a reviewer">promoted</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="predicate-card-shift
+        {% if _shift_abs < 1 %}is-flat
+        {% elif _shift > 0 %}is-up
+        {% else %}is-down{% endif %}"
+        title="{{ s.dominant_state_label }} probability change over the last 30 days">
+      {% if _shift_abs < 0.1 %}
+        <span class="predicate-card-shift-empty">
+          {% if s.has_recent_evidence %}no shift · 30d{% else %}no evidence yet{% endif %}
+        </span>
+      {% else %}
+        <span class="predicate-card-shift-arrow" aria-hidden="true">
+          {% if _shift > 0 %}↑{% else %}↓{% endif %}
+        </span>
+        <span class="predicate-card-shift-num">{{ _shift_abs|round(1) }}pp</span>
+        <span class="predicate-card-shift-window">30d</span>
       {% endif %}
     </div>
-    <span class="predicate-card-category muted">{{ s.category }}</span>
   </header>
 
   <div class="predicate-card-bars">
     {% for st in s.states %}
+      {% set _d = st.velocity_pp_30d %}
+      {% set _d_abs = _d if _d >= 0 else -_d %}
       <div class="predicate-bar-row" data-ordinal="{{ st.ordinal_position }}">
-        <span class="predicate-bar-label">{{ st.label }}</span>
+        <span class="predicate-bar-label" title="{{ st.label }}">{{ st.label }}</span>
         <span class="predicate-bar-track">
           <span class="predicate-bar-fill ordinal-{{ st.ordinal_position }}"
                 style="width: {{ (st.current * 100)|round(1) }}%"></span>
         </span>
         <span class="predicate-bar-value mono">{{ (st.current * 100)|round(1) }}%</span>
+        <span class="predicate-bar-delta mono
+            {% if _d_abs < 0.1 %}is-flat
+            {% elif _d > 0 %}is-up
+            {% else %}is-down{% endif %}"
+            title="30-day change for {{ st.label }}">
+          {% if _d_abs < 0.1 %}±0{% else %}{% if _d > 0 %}+{% endif %}{{ _d|round(1) }}{% endif %}
+        </span>
       </div>
     {% endfor %}
   </div>
 
-  <div class="predicate-card-sparkline-wrap">
-    {% with series=s.sparkline_dominant, color_var='var(--text-primary)', height_px=28 %}
-      {% include "_scenarios_sparkline.html" %}
-    {% endwith %}
-  </div>
-
   <footer class="predicate-card-foot">
     <span class="predicate-card-stat muted">
-      {{ s.evidence_count }} confirmed evidence
-    </span>
-    <span class="predicate-card-stat predicate-velocity-pill
-        {% if s.dominant_state_velocity_pp_30d|abs < 1 %}is-flat
-        {% elif s.dominant_state_velocity_pp_30d > 0 %}is-up
-        {% else %}is-down{% endif %}"
-        title="{{ s.dominant_state_label }} probability change over the last 30 days">
-      {% if s.dominant_state_velocity_pp_30d > 0 %}+{% endif %}{{ s.dominant_state_velocity_pp_30d|round(1) }}pp · 30d
+      {{ s.evidence_count }} evidence
     </span>
     {% if s.last_updated_at %}
       <span class="predicate-card-stat muted">
-        updated {{ s.last_updated_at.strftime('%b %d, %H:%M') }}
+        · updated {{ s.last_updated_at.strftime('%b %d, %H:%M') }}
       </span>
     {% endif %}
     {% if not s.has_recent_evidence %}
@@ -68,28 +88,32 @@
         no recent evidence
       </span>
     {% endif %}
-    <button type="button" class="btn-ghost predicate-card-expand"
-            hx-get="/scenarios/predicates/{{ s.key }}/expand"
-            hx-target="#predicate-detail-{{ s.key }}"
-            hx-swap="innerHTML"
-            data-predicate-key="{{ s.key }}"
-            aria-expanded="false"
-            aria-controls="predicate-detail-{{ s.key }}">▸ Expand</button>
-    {% if user is defined and user and user.role in ("admin", "analyst") %}
-      <button type="button" class="btn-ghost predicate-card-edit"
-              hx-get="/scenarios/predicates/{{ s.key }}/edit"
-              hx-target="#predicate-card-{{ s.key }}"
-              hx-swap="outerHTML"
-              data-predicate-key="{{ s.key }}">✎ Edit</button>
-      {% if predicate_actions_enabled and s.source == 'llm_proposed' %}
-        <button type="button" class="btn-ghost predicate-card-promote"
+    <div class="predicate-card-foot-actions">
+      <button type="button" class="btn-ghost predicate-card-expand"
+              hx-get="/scenarios/predicates/{{ s.key }}/expand"
+              hx-target="#predicate-detail-{{ s.key }}"
+              hx-swap="innerHTML"
+              data-predicate-key="{{ s.key }}"
+              aria-expanded="false"
+              aria-controls="predicate-detail-{{ s.key }}">▸ Expand</button>
+      {% if user is defined and user and user.role in ("admin", "analyst") %}
+        <button type="button" class="btn-ghost predicate-card-edit predicate-card-edit-icon"
+                hx-get="/scenarios/predicates/{{ s.key }}/edit"
+                hx-target="#predicate-card-{{ s.key }}"
+                hx-swap="outerHTML"
                 data-predicate-key="{{ s.key }}"
-                title="Accept this LLM-proposed predicate">✓ Promote</button>
-        <button type="button" class="btn-ghost predicate-card-reject"
-                data-predicate-key="{{ s.key }}"
-                title="Reject — marks the predicate inactive">✗ Reject</button>
+                title="Edit predicate"
+                aria-label="Edit predicate">✎</button>
+        {% if predicate_actions_enabled and s.source == 'llm_proposed' %}
+          <button type="button" class="btn-ghost predicate-card-promote"
+                  data-predicate-key="{{ s.key }}"
+                  title="Accept this LLM-proposed predicate">✓ Promote</button>
+          <button type="button" class="btn-ghost predicate-card-reject"
+                  data-predicate-key="{{ s.key }}"
+                  title="Reject — marks the predicate inactive">✗ Reject</button>
+        {% endif %}
       {% endif %}
-    {% endif %}
+    </div>
   </footer>
 
   {# Inline expand target. Empty until the user clicks Expand. The
