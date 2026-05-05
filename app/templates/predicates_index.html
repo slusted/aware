@@ -123,7 +123,7 @@
     <div class="predicate-grid">
       {% for s in summaries %}
         {% with pending_proposal_count = pending_by_key.get(s.key, 0) %}
-          {% include "_scenarios_predicate_card.html" %}
+          {% include "_predicates_card.html" %}
         {% endwith %}
       {% endfor %}
     </div>
