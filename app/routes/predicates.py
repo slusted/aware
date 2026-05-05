@@ -133,6 +133,37 @@ def predicates_index(
     })
 
 
+@router.get(
+    "/predicates/{predicate_key}/expand",
+    response_class=HTMLResponse,
+)
+def predicate_expand_definition(
+    predicate_key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """HTMX partial: definition-focused expand panel for one predicate.
+    Sister of /scenarios/predicates/{key}/expand which returns the
+    Bayesian view; this one returns the agent's-read + qualitative
+    findings view used on /predicates."""
+    detail = dashboard_svc.predicate_detail(db, predicate_key)
+    if detail is None:
+        raise HTTPException(404, f"predicate {predicate_key!r} not found or inactive")
+    pred = (
+        db.query(Predicate).filter(Predicate.key == predicate_key).one_or_none()
+    )
+    review = review_svc.latest_review_for(db, predicate_key)
+    proposals = review_svc.pending_proposals_for(db, predicate_key)
+    return templates.TemplateResponse(request, "_predicates_detail.html", {
+        "detail": detail,
+        "p": pred,
+        "review": review,
+        "pending_proposals": proposals,
+        "proposals_by_id": {pr.id: pr for pr in proposals},
+    })
+
+
 @router.post("/api/predicates/{predicate_key}/promote")
 def promote_predicate(
     predicate_key: str,
