@@ -1,0 +1,41 @@
+{# Definition-focused inline expand panel for one predicate.
+   Loaded via HTMX into #predicate-detail-{key} on click of "Expand"
+   from a card on /predicates. Sister partial of
+   _scenarios_predicate_detail.html (Bayesian view used on
+   /scenarios?tab=predicates) — same data, different framing.
+
+   Args:
+     detail            - PredicateDetail (app/scenarios/dashboard.py)
+     review            - PredicateReviewView | None
+     pending_proposals - list[ProposalView] for this predicate
+     proposals_by_id   - {id: ProposalView} for chip → card lookup
+     p                 - Predicate ORM row (used by the dismiss button
+                          inside the review block)
+#}
+<div class="predicate-detail-panel" data-predicate-key="{{ detail.summary.key }}">
+  <div class="predicate-detail-statement muted">{{ detail.summary.statement }}</div>
+
+  <div class="predicate-detail-section">
+    <h4 class="predicate-detail-h">Agent's read &amp; proposals</h4>
+    {% if review or pending_proposals %}
+      {% include "_predicate_review_block.html" %}
+    {% else %}
+      <p class="muted">
+        No review yet. The monthly predicate review reads recent findings
+        and proposes refinements (rename a state, refine the statement,
+        split a state, retire the predicate, …). Pending proposals will
+        surface here for one-click Accept / Reject / Refine-in-chat.
+      </p>
+    {% endif %}
+  </div>
+
+  <div class="predicate-detail-evidence">
+    <h4 class="predicate-detail-h">Findings under this predicate</h4>
+    {% include "_predicate_findings_list.html" %}
+  </div>
+
+  <div class="predicate-detail-foot">
+    <button type="button" class="btn-ghost predicate-detail-collapse"
+            data-predicate-key="{{ detail.summary.key }}">Collapse</button>
+  </div>
+</div>

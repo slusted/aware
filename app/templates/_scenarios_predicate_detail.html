@@ -2,40 +2,49 @@
    Loaded via HTMX into #predicate-detail-{key} on click of "Expand".
 
    Args:
-     detail            - PredicateDetail (see app/scenarios/dashboard.py)
-     review            - PredicateReviewView | None (agent's qualitative
-                          read; rendered above proposals)
-     pending_proposals - list[ProposalView] for this predicate
-     proposals_by_id   - {id: ProposalView} for chip → card lookup
-     p                 - Predicate ORM row (used by the dismiss button
-                          form inside the review block)
-
-   Definition-focused: the in-card expand promotes the agent's read &
-   proposals to the top, then shows the qualitative findings list. The
-   probability bars / sparklines / Δ-logit math view live on the
-   Scenarios tab — predicate-level surfaces are about discovery, setup,
-   and ontology hygiene.
+     detail - PredicateDetail (see app/scenarios/dashboard.py)
+       .summary             - PredicateSummary
+       .sparklines          - dict[state_key, list[(ts, p)]]
+       .evidence_confirmed  - list[EvidenceContribView] (sorted by |contribution|)
+       .evidence_pending    - list[EvidenceContribView]
+       .evidence_rejected   - list[EvidenceContribView]
 #}
 <div class="predicate-detail-panel" data-predicate-key="{{ detail.summary.key }}">
   <div class="predicate-detail-statement muted">{{ detail.summary.statement }}</div>
 
-  <div class="predicate-detail-section">
-    <h4 class="predicate-detail-h">Agent's read &amp; proposals</h4>
-    {% if review or pending_proposals %}
-      {% include "_predicate_review_block.html" %}
-    {% else %}
-      <p class="muted">
-        No review yet. The monthly predicate review reads recent findings
-        and proposes refinements (rename a state, refine the statement,
-        split a state, retire the predicate, …). Pending proposals will
-        surface here for one-click Accept / Reject / Refine-in-chat.
-      </p>
-    {% endif %}
+  <div class="predicate-detail-sparklines">
+    {% for st in detail.summary.states %}
+      <div class="predicate-detail-sparkline-row">
+        <div class="predicate-detail-sparkline-head">
+          <span class="ordinal-swatch ordinal-{{ st.ordinal_position }}" aria-hidden="true"></span>
+          <span class="predicate-detail-state-label">{{ st.label }}</span>
+          <span class="predicate-detail-velocity mono
+              {% if st.velocity_pp_30d|abs < 1 %}is-flat
+              {% elif st.velocity_pp_30d > 0 %}is-up
+              {% else %}is-down{% endif %}">
+            {% if st.velocity_pp_30d > 0 %}+{% endif %}{{ st.velocity_pp_30d|round(1) }}pp · 30d
+          </span>
+        </div>
+        {% with series=detail.sparklines[st.state_key], color_var='var(--ordinal-' ~ st.ordinal_position ~ ')', height_px=40 %}
+          {% include "_scenarios_sparkline.html" %}
+        {% endwith %}
+      </div>
+    {% endfor %}
   </div>
 
   <div class="predicate-detail-evidence">
     <h4 class="predicate-detail-h">Findings under this predicate</h4>
+
+    {# Stage 6: agent's qualitative read above the findings list, with
+       chips that expand into accept/reject proposal cards. Renders
+       nothing visible until a monthly review has run for this predicate. #}
+    {% include "_predicate_review_block.html" %}
+
+    {# Stage 6: fitness-first findings list (Δ logit demoted to the
+       Math view disclosure below). Same data shape as before. #}
     {% include "_predicate_findings_list.html" %}
+
+    {% include "_predicate_math_view.html" %}
   </div>
 
   <div class="predicate-detail-foot">
