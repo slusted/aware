@@ -35,9 +35,10 @@ from .. import jobs
 from ..deps import get_current_user, get_db, require_role
 from ..models import Predicate, User
 from ..scenarios import dashboard as dashboard_svc
+from ..scenarios import review as review_svc
 
 
-VALID_PREDICATE_SORTS = ("shifting", "contested", "alpha", "category")
+VALID_PREDICATE_SORTS = ("needs_review", "category", "alpha")
 VALID_SOURCES = ("user", "llm_proposed", "llm_promoted")
 
 
@@ -69,14 +70,14 @@ def _coerce_source(value: str | None) -> str | None:
 @router.get("/predicates", response_class=HTMLResponse)
 def predicates_index(
     request: Request,
-    sort: str = "shifting",
+    sort: str = "needs_review",
     category: str | None = None,
     only_no_recent: int = 0,
     source: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    sort = _coerce_sort(sort, VALID_PREDICATE_SORTS, "shifting")
+    sort = _coerce_sort(sort, VALID_PREDICATE_SORTS, "needs_review")
     source_filter = _coerce_source(source)
 
     all_summaries = dashboard_svc.predicate_summary(db)
@@ -87,7 +88,24 @@ def predicates_index(
         summaries = [s for s in summaries if s.category == category]
     if only_no_recent:
         summaries = [s for s in summaries if not s.has_recent_evidence]
-    summaries = dashboard_svc.sort_summaries(summaries, sort)
+
+    # Pending-proposal counts per predicate — drives the "needs review"
+    # chip on cards and the "Needs review" sort. One query, grouped here
+    # rather than per-card.
+    pending_by_key: dict[str, int] = {}
+    for prop in review_svc.pending_proposals_for(db, None):
+        if prop.source_predicate_key:
+            pending_by_key[prop.source_predicate_key] = (
+                pending_by_key.get(prop.source_predicate_key, 0) + 1
+            )
+
+    if sort == "needs_review":
+        summaries = sorted(
+            summaries,
+            key=lambda s: (-pending_by_key.get(s.key, 0), s.category, s.key),
+        )
+    else:
+        summaries = dashboard_svc.sort_summaries(summaries, sort)
 
     categories = sorted({s.category for s in all_summaries})
 
@@ -108,6 +126,8 @@ def predicates_index(
         "source": source_filter or "all",
         "source_counts": source_counts,
         "summaries": summaries,
+        "pending_by_key": pending_by_key,
+        "pending_proposal_total": sum(pending_by_key.values()),
         "header": dashboard_svc.header_counts(db),
         "valid_predicate_sorts": VALID_PREDICATE_SORTS,
     })
