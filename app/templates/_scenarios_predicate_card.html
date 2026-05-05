@@ -1,13 +1,18 @@
 {# One predicate card in the grid.
    Args:
      s - PredicateSummary (see app/scenarios/dashboard.py)
+     pending_proposal_count (optional, default 0) - number of pending
+       review proposals targeting this predicate, surfaced as a chip in
+       the footer.
      predicate_actions_enabled (optional, default false) - if true and
        the user is analyst/admin, llm_proposed predicates render
        Promote / Reject action buttons in the footer. The /predicates
        page enables this; /scenarios doesn't (source-tagged predicates
        still show the pill there, but actions live on the library page).
-   The card carries an HTMX-loadable expand panel below; clicking the
-   header swaps in the detail partial via /scenarios/predicates/{key}/expand.
+   Definition-focused: the card shows the statement + state labels +
+   pending proposal count. Probability bars / sparklines / velocity
+   live on the Scenarios tab; predicates here are about discovery and
+   setup. Click Expand for the agent's read + qualitative findings.
 #}
 <article id="predicate-card-{{ s.key }}" class="predicate-card"
          data-predicate-key="{{ s.key }}"
@@ -27,45 +32,31 @@
     <span class="predicate-card-category muted">{{ s.category }}</span>
   </header>
 
-  <div class="predicate-card-bars">
-    {% for st in s.states %}
-      <div class="predicate-bar-row" data-ordinal="{{ st.ordinal_position }}">
-        <span class="predicate-bar-label">{{ st.label }}</span>
-        <span class="predicate-bar-track">
-          <span class="predicate-bar-fill ordinal-{{ st.ordinal_position }}"
-                style="width: {{ (st.current * 100)|round(1) }}%"></span>
-        </span>
-        <span class="predicate-bar-value mono">{{ (st.current * 100)|round(1) }}%</span>
-      </div>
-    {% endfor %}
-  </div>
+  <p class="predicate-card-statement">{{ s.statement }}</p>
 
-  <div class="predicate-card-sparkline-wrap">
-    {% with series=s.sparkline_dominant, color_var='var(--text-primary)', height_px=28 %}
-      {% include "_scenarios_sparkline.html" %}
-    {% endwith %}
-  </div>
+  <ul class="predicate-card-states">
+    {% for st in s.states %}
+      <li class="predicate-card-state-row" data-ordinal="{{ st.ordinal_position }}">
+        <span class="ordinal-swatch ordinal-{{ st.ordinal_position }}" aria-hidden="true"></span>
+        <span class="predicate-card-state-label">{{ st.label }}</span>
+      </li>
+    {% endfor %}
+  </ul>
 
   <footer class="predicate-card-foot">
     <span class="predicate-card-stat muted">
       {{ s.evidence_count }} confirmed evidence
     </span>
-    <span class="predicate-card-stat predicate-velocity-pill
-        {% if s.dominant_state_velocity_pp_30d|abs < 1 %}is-flat
-        {% elif s.dominant_state_velocity_pp_30d > 0 %}is-up
-        {% else %}is-down{% endif %}"
-        title="{{ s.dominant_state_label }} probability change over the last 30 days">
-      {% if s.dominant_state_velocity_pp_30d > 0 %}+{% endif %}{{ s.dominant_state_velocity_pp_30d|round(1) }}pp · 30d
-    </span>
-    {% if s.last_updated_at %}
-      <span class="predicate-card-stat muted">
-        updated {{ s.last_updated_at.strftime('%b %d, %H:%M') }}
-      </span>
-    {% endif %}
     {% if not s.has_recent_evidence %}
       <span class="predicate-card-stat predicate-coverage-warn"
             title="No confirmed evidence in the last 30 days.">
         no recent evidence
+      </span>
+    {% endif %}
+    {% if pending_proposal_count is defined and pending_proposal_count %}
+      <span class="predicate-card-stat predicate-card-proposal-chip"
+            title="Pending agent proposals about this predicate's definition.">
+        {{ pending_proposal_count }} pending proposal{% if pending_proposal_count != 1 %}s{% endif %}
       </span>
     {% endif %}
     <button type="button" class="btn-ghost predicate-card-expand"
