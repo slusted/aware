@@ -52,6 +52,11 @@ templates = Jinja2Templates(
 from .. import agent_brand as _agent_brand
 _agent_brand.register_template_globals(templates)
 
+# Surface the per-evidence cap in templates so the math view can show
+# users the exact bound their posteriors were computed against.
+from ..scenarios.posterior import MAX_ABS_LOGIT_DELTA as _SCENARIOS_MAX_LOGIT
+templates.env.globals["scenarios_max_logit_delta"] = _SCENARIOS_MAX_LOGIT
+
 
 def _coerce_sort(value: str | None, allowed: tuple[str, ...], default: str) -> str:
     if not value or value not in allowed:

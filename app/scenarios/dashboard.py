@@ -79,7 +79,13 @@ class PredicateSummary(NamedTuple):
 class EvidenceContribView(NamedTuple):
     """One evidence row as the detail / evidence-tab template wants it.
     `contribution` is the live log-odds delta this evidence adds today
-    (decayed). Sorts the detail's evidence table descending by |c|."""
+    (decayed AND multiplied by Stage-7 scorer fields, capped per-evidence
+    at ±log(2)). Sorts the detail's evidence table descending by |c|.
+
+    The scorer fields are surfaced too so the math view can show the
+    full chain: bucketed LR × credibility × decay × mechanism × base
+    rate × counter × incentive × redundancy → final Δ logit. None on a
+    field means the scorer hasn't run on this row yet."""
     id: int
     finding_id: int | None
     finding_title: str | None
@@ -95,6 +101,15 @@ class EvidenceContribView(NamedTuple):
     confirmed_at: datetime | None
     notes: str | None
     contribution: float
+    # Stage-7 scorer fields (None if scorer hasn't touched this row).
+    mechanism_present: str | None
+    mechanism_type: str | None
+    base_rate_bucket: str | None
+    counter_evidence_strength: str | None
+    counter_evidence_example: str | None
+    incentive_bias: str | None
+    redundancy_score: float | None
+    scorer_model: str | None
 
 
 class PredicateDetail(NamedTuple):
@@ -315,6 +330,11 @@ def _evidence_to_contrib_view(
         likelihood_table=likelihood_table,
         half_life_days=half_life_days,
         now=now,
+        mechanism_present=ev.mechanism_present,
+        base_rate_bucket=ev.base_rate_bucket,
+        counter_evidence_strength=ev.counter_evidence_strength,
+        incentive_bias=ev.incentive_bias,
+        redundancy_score=ev.redundancy_score,
     )
     return EvidenceContribView(
         id=ev.id,
@@ -332,6 +352,14 @@ def _evidence_to_contrib_view(
         confirmed_at=ev.confirmed_at,
         notes=ev.notes,
         contribution=contrib,
+        mechanism_present=ev.mechanism_present,
+        mechanism_type=ev.mechanism_type,
+        base_rate_bucket=ev.base_rate_bucket,
+        counter_evidence_strength=ev.counter_evidence_strength,
+        counter_evidence_example=ev.counter_evidence_example,
+        incentive_bias=ev.incentive_bias,
+        redundancy_score=ev.redundancy_score,
+        scorer_model=ev.scorer_model,
     )
 
 
