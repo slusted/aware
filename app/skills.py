@@ -69,6 +69,10 @@ KNOWN_SKILLS: dict[str, tuple[str, str]] = {
         "voc_theme_synthesise.md",
         "Per-competitor app-store-review theme synthesis (docs/voc/01-app-reviews.md). Single Haiku call: recent reviews + current themes → updated themes + per-theme diff. Findings emit only on emergence or material shift. Placeholders: {{competitor_name}}, {{current_themes_json}}, {{reviews_json}}.",
     ),
+    "predicate_scorer": (
+        "predicate_scorer.md",
+        "Stage-7 evidence-quality scorer. Independently grades each Haiku-triaged proposal on four dimensions (mechanism, base rate, counter-evidence, incentive bias) so the posterior math can dampen weak/stacked findings. Sonnet 4.6 by default; one call per proposal during the sweep.",
+    ),
 }
 
 

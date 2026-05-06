@@ -2,16 +2,22 @@
 
 Runs after the Haiku triage classifier ([classifier.py]) has emitted a
 ProposedEvidence for a finding. For each proposal, scores four
-independent dimensions of evidence quality from skill/predicate_scorer.md:
+independent dimensions of evidence quality from the
+`predicate_scorer` skill (registered in app/skills.py KNOWN_SKILLS):
 
   - mechanism (present yes/no, type)
   - base_rate (high/medium/low)
   - counter_evidence (none/weak/strong + example)
   - incentive_bias (+/−/0)
 
-The skill markdown is loaded once and pinned as the system prompt with
-ephemeral cache_control, so a back-to-back sweep over N proposals sends
-the skill once and hits the cache for the remaining N-1 calls.
+The skill body is loaded through `app.skills.load_active(...)` so it
+appears in the admin /settings/skills tab and edits made through the UI
+take effect on the very next call (no redeploy). The body is pinned as
+the system prompt with ephemeral cache_control, so a back-to-back sweep
+over N proposals sends the skill once and hits the prompt cache for
+the remaining N-1 calls — Anthropic prompt caching keys on content,
+not reference, so reading from the DB on every call still scores cache
+hits as long as the skill body itself is stable.
 
 Failure-soft: missing ANTHROPIC_API_KEY → returns None. JSON parse error,
 invalid value, network error → returns None. The sweep stamps the
@@ -29,19 +35,18 @@ import json
 import os
 import re
 import traceback
-from functools import lru_cache
-from pathlib import Path
 from typing import NamedTuple
 
 import anthropic
 
 from ..db import SessionLocal
 from ..models import UsageEvent
-from .. import pricing
+from .. import pricing, skills
 from ..usage import current_run_id
 
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
+SKILL_NAME = "predicate_scorer"
 _MAX_FINDING_BODY_CHARS = 1500
 
 _VALID_MECHANISM_PRESENT = ("yes", "no")
@@ -49,8 +54,6 @@ _VALID_MECHANISM_TYPE = ("pricing", "ux", "distribution", "trust", "other")
 _VALID_BASE_RATE = ("high", "medium", "low")
 _VALID_COUNTER = ("none", "weak", "strong")
 _VALID_INCENTIVE = ("+", "-", "0")
-
-_SKILL_PATH = Path(__file__).resolve().parents[2] / "skill" / "predicate_scorer.md"
 
 
 class ScoredFields(NamedTuple):
@@ -67,18 +70,18 @@ class ScoredFields(NamedTuple):
 
 # ── Skill / system prompt loading ───────────────────────────────────────
 
-@lru_cache(maxsize=1)
-def _system_prompt() -> str:
-    """Cache the skill markdown body so we read disk exactly once per
-    process. lru_cache ensures the result is identical across calls,
-    which keeps prompt-cache hits intact."""
-    return _SKILL_PATH.read_text(encoding="utf-8")
-
-
 def get_system_prompt() -> str:
-    """Public accessor — used by tests and by sweep.py if it wants to
-    pre-load the prompt before iterating."""
-    return _system_prompt()
+    """Public accessor — used by tests, by sweep.py, and by the backfill
+    script to pre-load the prompt once and pass it into every per-
+    proposal call.
+
+    Reads through app.skills.load_active so the admin /settings/skills
+    surface can edit this prompt without a redeploy. Falls back to the
+    file on disk if the DB row hasn't been seeded yet (cold start, fresh
+    install). Returns an empty string only if neither source has the
+    skill — the scorer treats empty as "skip", same as a missing API
+    key, so legacy rows just don't get scored."""
+    return skills.load_active(SKILL_NAME)
 
 
 # ── Per-proposal user prompt ────────────────────────────────────────────
@@ -292,7 +295,12 @@ def score_proposal(
     if model is None:
         model = get_model()
     if system_prompt is None:
-        system_prompt = _system_prompt()
+        system_prompt = get_system_prompt()
+    if not system_prompt:
+        # No skill body in DB or on disk — happens on a fresh install
+        # before the seed runs. Scorer can't grade without instructions
+        # so we skip cleanly; legacy multipliers stay at 1.0.
+        return None
 
     try:
         resp = client.messages.create(
