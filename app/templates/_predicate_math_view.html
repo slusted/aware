@@ -3,11 +3,18 @@
    refactor. Same data shape — just demoted to "show me the receipt"
    territory.
 
+   Stage 7 adds a nested "scorer trail" disclosure under each row that
+   exposes the four multi-pass scoring scalars (mechanism / base rate /
+   counter-evidence / incentive bias) plus the deterministic redundancy
+   score. Collapsed by default so the primary table stays scannable.
+   Rows where the scorer hasn't run (legacy / pre-Stage-7) hide the
+   trail entirely so the view degrades cleanly.
+
    Args:
      detail - PredicateDetail (app/scenarios/dashboard.py)
 #}
 <details class="predicate-math-view">
-  <summary class="muted">▸ Math view (Δ logit · decay · contribution)</summary>
+  <summary class="muted">▸ Math view (Δ logit · decay · scorer trail · contribution)</summary>
 
   {% if detail.evidence_confirmed %}
     <table class="evidence-table">
@@ -51,6 +58,54 @@
               {% if ev.notes %}
                 <div class="evidence-notes muted">{{ ev.notes }}</div>
               {% endif %}
+              {# Scorer trail — only rendered when the Stage-7 scorer
+                 has touched this row. Each pass is shown with its raw
+                 LLM/embedding output and the resulting multiplicative
+                 scalar so a user can audit "why didn't this move the
+                 needle as much as I expected?". #}
+              {% if ev.scorer_model %}
+                <details class="evidence-scorer-trail">
+                  <summary class="muted">▸ Scorer trail</summary>
+                  <ul class="evidence-scorer-trail-list">
+                    <li>
+                      <span class="muted">Mechanism:</span>
+                      <strong>{{ ev.mechanism_present or '—' }}</strong>
+                      {% if ev.mechanism_type %}
+                        <span class="muted">({{ ev.mechanism_type }})</span>
+                      {% endif %}
+                      <span class="muted mono">×{% if ev.mechanism_present == 'no' %}0.6{% else %}1.0{% endif %}</span>
+                    </li>
+                    <li>
+                      <span class="muted">Base rate:</span>
+                      <strong>{{ ev.base_rate_bucket or '—' }}</strong>
+                      <span class="muted mono">×{% if ev.base_rate_bucket == 'high' %}1.2{% elif ev.base_rate_bucket == 'low' %}0.7{% else %}1.0{% endif %}</span>
+                    </li>
+                    <li>
+                      <span class="muted">Counter-evidence:</span>
+                      <strong>{{ ev.counter_evidence_strength or '—' }}</strong>
+                      <span class="muted mono">×{% if ev.counter_evidence_strength == 'strong' %}0.5{% elif ev.counter_evidence_strength == 'weak' %}0.85{% else %}1.0{% endif %}</span>
+                      {% if ev.counter_evidence_example %}
+                        <div class="muted">↳ {{ ev.counter_evidence_example }}</div>
+                      {% endif %}
+                    </li>
+                    <li>
+                      <span class="muted">Incentive bias:</span>
+                      <strong>{{ ev.incentive_bias or '—' }}</strong>
+                      <span class="muted mono">×{% if ev.incentive_bias in ['+', '-'] %}0.85{% else %}1.0{% endif %}</span>
+                    </li>
+                    {% if ev.redundancy_score is not none %}
+                      <li>
+                        <span class="muted">Redundancy:</span>
+                        <strong class="mono">{{ ev.redundancy_score|round(2) }}</strong>
+                        <span class="muted mono">×{{ (1.0 - 0.5 * ev.redundancy_score)|round(2) }}</span>
+                      </li>
+                    {% endif %}
+                    <li class="muted">
+                      <em>Scored by {{ ev.scorer_model }}</em>
+                    </li>
+                  </ul>
+                </details>
+              {% endif %}
             </td>
           </tr>
         {% endfor %}
@@ -58,5 +113,18 @@
     </table>
   {% else %}
     <p class="muted">No confirmed evidence on this predicate yet.</p>
+  {% endif %}
+
+  {# Cap visibility: every evidence's |Δ logit| is clamped to this
+     bound after multipliers compose. Default is permissive
+     (log(10) ≈ 2.30, ~10× odds). Override via SCENARIOS_MAX_LOGIT_DELTA. #}
+  {% if scenarios_max_logit_delta is defined %}
+    <p class="evidence-table-foot muted">
+      Per-evidence cap: ±{{ '%.2f'|format(scenarios_max_logit_delta) }}
+      logit (≈±{{ '%.0f'|format(2.71828**scenarios_max_logit_delta) }}× odds).
+      Each row's Δ logit is clamped to this bound after credibility ·
+      decay · scorer multipliers compose, so no single finding can
+      dominate.
+    </p>
   {% endif %}
 </details>

@@ -132,7 +132,10 @@ def test_pure_math():
     check("binary: posterior sums to 1",
           almost(pb["a"] + pb["b"], 1.0, tol=1e-9))
 
-    # Standard log-odds: posterior_odds(a) = prior_odds(a) * LR
+    # Standard log-odds: posterior_odds(a) = prior_odds(a) * LR. With
+    # the Stage-7 cap at log(10) ≈ 2.30 (default), strong support
+    # (log(3) ≈ 1.10) stays comfortably under the cap, so the formula
+    # holds exactly.
     expected_odds = (0.55 / 0.45) * 3.0
     expected_pa = expected_odds / (1 + expected_odds)
     check("binary: matches log-odds formula (prior_odds * LR)",
@@ -149,7 +152,8 @@ def test_pure_math():
     expected_net_lr = 3.0 * 0.4
     expected_odds = (0.55 / 0.45) * expected_net_lr
     expected_pa = expected_odds / (1 + expected_odds)
-    check("binary: support+contradict net to LR=1.2", almost(po["a"], expected_pa, tol=1e-9))
+    check("binary: support+contradict net to LR=1.2",
+          almost(po["a"], expected_pa, tol=1e-9))
 
     # Decay halves log-odds movement at one half-life.
     ev_old = [EvidenceInput("a", "support", "strong", 1.0, now - timedelta(days=HL))]
@@ -240,7 +244,7 @@ def test_seed_and_integrity():
     payload = _load_seed_payload()
     db = SessionLocal()
     try:
-        counts = seed_module.seed(db, payload)
+        counts = seed_module.seed_payload(db, payload)
         db.commit()
     finally:
         db.close()
@@ -270,7 +274,7 @@ def test_seed_and_integrity():
         before_pred = db.query(Predicate).count()
         before_state = db.query(PredicateState).count()
         before_link = db.query(ScenarioPredicateLink).count()
-        seed_module.seed(db, payload)
+        seed_module.seed_payload(db, payload)
         db.commit()
         after_pred = db.query(Predicate).count()
         after_state = db.query(PredicateState).count()
@@ -387,6 +391,7 @@ def test_recompute_with_evidence():
           almost(sum(after.values()), 1.0, tol=1e-9))
 
     # Standard Bayes check: P(workflow | e) ∝ prior_workflow * 3.0; others unchanged.
+    # log(3) ≈ 1.10 stays under the Stage-7 cap of log(10) ≈ 2.30.
     pw = before["workflow"] * 3.0
     pm = before["marketplace"]
     pe = before["external_interface"]
@@ -963,6 +968,309 @@ def test_dashboard_service():
           all(r.classified_by != "user_rejected" for r in rows))
 
 
+def test_scorer_multipliers_and_cap():
+    """Stage 7 — Sonnet scorer multipliers, per-evidence cap, and the
+    legacy-compat invariant: NULL scorer fields produce the same
+    posterior the pre-Stage-7 math would have."""
+    section("Stage 7: scorer multipliers, cap, legacy compat")
+    LR = _likelihood_table_for_tests()
+    HL = 60
+    now = datetime(2026, 5, 4, 12, 0, 0)
+    prior = {"a": 0.5, "b": 0.5}
+
+    # Legacy compat: an EvidenceInput with all-None scorer fields should
+    # produce exactly the pre-Stage-7 posterior.
+    ev_legacy = [EvidenceInput("a", "support", "moderate", 1.0, now)]
+    p_legacy = compute_posterior(prior, ev_legacy, LR, HL, now=now)
+    expected_odds = 1.0 * 1.8  # prior odds × LR
+    expected_pa = expected_odds / (1 + expected_odds)
+    check("legacy: NULL scorer fields == pre-Stage-7 posterior",
+          almost(p_legacy["a"], expected_pa, tol=1e-9),
+          f"got {p_legacy['a']:.6f}, expected {expected_pa:.6f}")
+
+    # Mechanism = "no" should dampen weight by ×0.6 — log-odds delta
+    # should be log(1.8) * 0.6.
+    ev_no_mech = [EvidenceInput(
+        "a", "support", "moderate", 1.0, now,
+        mechanism_present="no",
+    )]
+    p_no_mech = compute_posterior(prior, ev_no_mech, LR, HL, now=now)
+    expected_lor = math.log(1.8) * 0.6
+    actual_lor = math.log(p_no_mech["a"] / p_no_mech["b"]) - math.log(1.0)
+    check("mechanism=no dampens log-odds by ×0.6",
+          almost(actual_lor, expected_lor, tol=1e-9),
+          f"got {actual_lor:.6f}, expected {expected_lor:.6f}")
+
+    # Base rate = "low" → ×0.7
+    ev_low_base = [EvidenceInput(
+        "a", "support", "moderate", 1.0, now,
+        base_rate_bucket="low",
+    )]
+    p_low = compute_posterior(prior, ev_low_base, LR, HL, now=now)
+    expected_lor = math.log(1.8) * 0.7
+    actual_lor = math.log(p_low["a"] / p_low["b"])
+    check("base_rate=low dampens by ×0.7",
+          almost(actual_lor, expected_lor, tol=1e-9))
+
+    # Counter-evidence = "strong" → ×0.5
+    ev_strong_counter = [EvidenceInput(
+        "a", "support", "moderate", 1.0, now,
+        counter_evidence_strength="strong",
+    )]
+    p_counter = compute_posterior(prior, ev_strong_counter, LR, HL, now=now)
+    expected_lor = math.log(1.8) * 0.5
+    actual_lor = math.log(p_counter["a"] / p_counter["b"])
+    check("counter=strong dampens by ×0.5",
+          almost(actual_lor, expected_lor, tol=1e-9))
+
+    # Incentive bias "+" → ×0.85
+    ev_pos_bias = [EvidenceInput(
+        "a", "support", "moderate", 1.0, now,
+        incentive_bias="+",
+    )]
+    p_bias = compute_posterior(prior, ev_pos_bias, LR, HL, now=now)
+    expected_lor = math.log(1.8) * 0.85
+    actual_lor = math.log(p_bias["a"] / p_bias["b"])
+    check("incentive_bias=+ dampens by ×0.85",
+          almost(actual_lor, expected_lor, tol=1e-9))
+
+    # Redundancy 0.0 → ×1.0 (no penalty), 1.0 → ×0.5, 0.5 → ×0.75.
+    ev_full_redundant = [EvidenceInput(
+        "a", "support", "moderate", 1.0, now,
+        redundancy_score=1.0,
+    )]
+    p_dup = compute_posterior(prior, ev_full_redundant, LR, HL, now=now)
+    expected_lor = math.log(1.8) * 0.5
+    actual_lor = math.log(p_dup["a"] / p_dup["b"])
+    check("redundancy=1.0 halves log-odds (×0.5)",
+          almost(actual_lor, expected_lor, tol=1e-9))
+
+    ev_half_redundant = [EvidenceInput(
+        "a", "support", "moderate", 1.0, now,
+        redundancy_score=0.5,
+    )]
+    p_half = compute_posterior(prior, ev_half_redundant, LR, HL, now=now)
+    expected_lor = math.log(1.8) * 0.75
+    actual_lor = math.log(p_half["a"] / p_half["b"])
+    check("redundancy=0.5 dampens by ×0.75 (linear)",
+          almost(actual_lor, expected_lor, tol=1e-9))
+
+    # Composition: mechanism=no AND base_rate=low AND counter=strong
+    # multiplies through: 0.6 × 0.7 × 0.5 = 0.21.
+    ev_compose = [EvidenceInput(
+        "a", "support", "strong", 1.0, now,
+        mechanism_present="no",
+        base_rate_bucket="low",
+        counter_evidence_strength="strong",
+    )]
+    p_comp = compute_posterior(prior, ev_compose, LR, HL, now=now)
+    expected_lor = math.log(3.0) * 0.6 * 0.7 * 0.5
+    actual_lor = math.log(p_comp["a"] / p_comp["b"])
+    check("composed multipliers chain (0.6 × 0.7 × 0.5)",
+          almost(actual_lor, expected_lor, tol=1e-9),
+          f"got {actual_lor:.6f}, expected {expected_lor:.6f}")
+
+    # Direct unit tests on the cap function. The cap is intentionally
+    # permissive at the default value (log(10) ≈ 2.30, ~10× odds) so it
+    # rarely fires under normal evidence — but its job is to keep one
+    # heavily-stacked evidence from dominating, which we test directly
+    # rather than constructing a contrived stacking scenario.
+    from app.scenarios.posterior import cap_logit_delta, MAX_ABS_LOGIT_DELTA
+
+    check("cap: positive over-cap clamps to MAX_ABS_LOGIT_DELTA",
+          almost(cap_logit_delta(MAX_ABS_LOGIT_DELTA + 1.0),
+                 MAX_ABS_LOGIT_DELTA, tol=1e-12))
+    check("cap: negative over-cap clamps to -MAX_ABS_LOGIT_DELTA",
+          almost(cap_logit_delta(-MAX_ABS_LOGIT_DELTA - 1.0),
+                 -MAX_ABS_LOGIT_DELTA, tol=1e-12))
+    check("cap: under-cap value passes through unchanged",
+          almost(cap_logit_delta(0.5), 0.5, tol=1e-12))
+    check("cap: zero passes through unchanged",
+          almost(cap_logit_delta(0.0), 0.0, tol=1e-12))
+    check("cap: exact-boundary positive stays at MAX",
+          almost(cap_logit_delta(MAX_ABS_LOGIT_DELTA),
+                 MAX_ABS_LOGIT_DELTA, tol=1e-12))
+    check("cap: default cap is permissive (≥ log(3))",
+          MAX_ABS_LOGIT_DELTA >= math.log(3.0),
+          f"cap={MAX_ABS_LOGIT_DELTA:.4f}, log(3)={math.log(3.0):.4f}")
+
+
+def test_scorer_parser():
+    """Stage 7 — Sonnet scorer output parsing & validation."""
+    section("Stage 7: scorer.parse_response validation")
+    from app.scenarios.scorer import parse_response, ScoredFields
+
+    valid = """{
+      "mechanism": {"present": "yes", "type": "pricing"},
+      "base_rate": {"bucket": "high"},
+      "counter_evidence": {"strength": "weak", "example": "could be marketing"},
+      "incentive_bias": {"value": "+"}
+    }"""
+    s = parse_response(valid)
+    check("parse: valid all-fields response",
+          isinstance(s, ScoredFields)
+          and s.mechanism_present == "yes"
+          and s.mechanism_type == "pricing"
+          and s.base_rate_bucket == "high"
+          and s.counter_evidence_strength == "weak"
+          and s.counter_evidence_example == "could be marketing"
+          and s.incentive_bias == "+")
+
+    # mechanism=no zeroes out type even if the LLM filled it.
+    no_mech = """{
+      "mechanism": {"present": "no", "type": "pricing"},
+      "base_rate": {"bucket": "low"},
+      "counter_evidence": {"strength": "none", "example": null},
+      "incentive_bias": {"value": "0"}
+    }"""
+    s = parse_response(no_mech)
+    check("parse: mechanism=no clears mechanism_type",
+          s is not None and s.mechanism_present == "no" and s.mechanism_type is None)
+
+    # counter=none zeroes out the example.
+    s = parse_response(no_mech)
+    check("parse: counter=none clears example",
+          s is not None and s.counter_evidence_example is None)
+
+    # Unknown values fall back to None per-field; the ScoredFields itself
+    # still returns (so partial responses still contribute).
+    partial = """{
+      "mechanism": {"present": "MAYBE", "type": "wibble"},
+      "base_rate": {"bucket": "high"},
+      "counter_evidence": {"strength": "none"},
+      "incentive_bias": {"value": "@"}
+    }"""
+    s = parse_response(partial)
+    check("parse: invalid mechanism falls back to None",
+          s is not None and s.mechanism_present is None)
+    check("parse: invalid incentive falls back to None",
+          s is not None and s.incentive_bias is None)
+    check("parse: valid base_rate still captured alongside",
+          s is not None and s.base_rate_bucket == "high")
+
+    # Garbage returns None (not a ScoredFields).
+    check("parse: garbage returns None",
+          parse_response("not json") is None)
+
+    # Code-fenced JSON parses fine.
+    fenced = "```json\n" + valid + "\n```"
+    check("parse: tolerates code fences",
+          parse_response(fenced) is not None)
+
+
+def test_recompute_with_scored_evidence():
+    """Round-trip: insert a row with scorer columns set, run recompute,
+    verify the per-evidence cap and multipliers fire end-to-end through
+    service.py and dashboard.py."""
+    section("Stage 7: end-to-end recompute with scorer fields")
+    from datetime import datetime as _dt
+    from app.scenarios.service import recompute_predicate
+    from app.scenarios import dashboard as dash
+
+    db = SessionLocal()
+    try:
+        p1 = db.query(Predicate).filter(Predicate.key == "p1").one()
+        # Wipe leftover p1 evidence + reset cache.
+        db.query(PredicateEvidence).filter(PredicateEvidence.predicate_id == p1.id).delete()
+        for s in db.query(PredicateState).filter(PredicateState.predicate_id == p1.id).all():
+            s.current_probability = s.prior_probability
+        db.commit()
+
+        # One scored evidence with mechanism=no should land smaller than
+        # one without — quick spot-check the wiring.
+        now = _dt.utcnow()
+        ev_dampened = PredicateEvidence(
+            predicate_id=p1.id,
+            target_state_key="agent",
+            direction="support",
+            strength_bucket="moderate",
+            credibility=1.0,
+            classified_by="llm",
+            observed_at=now,
+            confirmed_at=now,
+            notes="dampened",
+            mechanism_present="no",
+            base_rate_bucket="medium",
+            counter_evidence_strength="none",
+            incentive_bias="0",
+            redundancy_score=0.0,
+            scorer_model="claude-sonnet-4-6",
+            scored_at=now,
+        )
+        db.add(ev_dampened)
+        db.flush()
+        recompute_predicate(db, p1.id)
+        db.commit()
+        agent_dampened = next(
+            s.current_probability for s in
+            db.query(PredicateState).filter(PredicateState.predicate_id == p1.id).all()
+            if s.state_key == "agent"
+        )
+    finally:
+        db.close()
+
+    # Reset and try again with mechanism_present="yes" (no dampening) —
+    # should move further than the dampened version.
+    db = SessionLocal()
+    try:
+        p1 = db.query(Predicate).filter(Predicate.key == "p1").one()
+        db.query(PredicateEvidence).filter(PredicateEvidence.predicate_id == p1.id).delete()
+        for s in db.query(PredicateState).filter(PredicateState.predicate_id == p1.id).all():
+            s.current_probability = s.prior_probability
+        db.commit()
+
+        now = _dt.utcnow()
+        ev_full = PredicateEvidence(
+            predicate_id=p1.id,
+            target_state_key="agent",
+            direction="support",
+            strength_bucket="moderate",
+            credibility=1.0,
+            classified_by="llm",
+            observed_at=now,
+            confirmed_at=now,
+            notes="full",
+            mechanism_present="yes",
+            mechanism_type="distribution",
+            base_rate_bucket="medium",
+            counter_evidence_strength="none",
+            incentive_bias="0",
+            redundancy_score=0.0,
+            scorer_model="claude-sonnet-4-6",
+            scored_at=now,
+        )
+        db.add(ev_full)
+        db.flush()
+        recompute_predicate(db, p1.id)
+        db.commit()
+        agent_full = next(
+            s.current_probability for s in
+            db.query(PredicateState).filter(PredicateState.predicate_id == p1.id).all()
+            if s.state_key == "agent"
+        )
+    finally:
+        db.close()
+
+    check("e2e: mechanism=yes moves further than mechanism=no",
+          agent_full > agent_dampened + 1e-6,
+          f"yes={agent_full:.4f}, no={agent_dampened:.4f}")
+
+    # And the dashboard EvidenceContribView surfaces the scorer fields.
+    db = SessionLocal()
+    try:
+        detail = dash.predicate_detail(db, "p1")
+    finally:
+        db.close()
+    check("e2e: dashboard surfaces mechanism_present on the row",
+          detail is not None
+          and len(detail.evidence_confirmed) >= 1
+          and detail.evidence_confirmed[0].mechanism_present in ("yes", "no"))
+    check("e2e: dashboard surfaces scorer_model on the row",
+          detail is not None
+          and len(detail.evidence_confirmed) >= 1
+          and detail.evidence_confirmed[0].scorer_model == "claude-sonnet-4-6")
+
+
 def main() -> int:
     print(f"Verify DB: {_tmp}")
     test_pure_math()
@@ -975,6 +1283,9 @@ def main() -> int:
     test_confirm_reject_flow()
     test_dashboard_math()
     test_dashboard_service()
+    test_scorer_multipliers_and_cap()
+    test_scorer_parser()
+    test_recompute_with_scored_evidence()
 
     print(f"\n{_passes} passed, {len(_failures)} failed.")
     if _failures:

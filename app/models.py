@@ -1012,6 +1012,20 @@ class PredicateEvidence(Base):
     fitness_reviewed_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True,
     )
+    # ── Stage 7: multi-pass evidence scoring (skill/predicate_scorer.md) ──
+    # All nullable so legacy rows (Stage-1 manual, Stage-2 Haiku-only) keep
+    # working with neutral multipliers (=1.0). The Sonnet scorer fills
+    # mechanism / base_rate / counter_evidence / incentive_bias and stamps
+    # scorer_model. The deterministic pass fills redundancy_score.
+    mechanism_present: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    mechanism_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    base_rate_bucket: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    counter_evidence_strength: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    counter_evidence_example: Mapped[str | None] = mapped_column(Text, nullable=True)
+    incentive_bias: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    redundancy_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    scorer_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    scored_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (

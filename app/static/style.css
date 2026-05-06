@@ -3806,6 +3806,35 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 .evidence-table-muted { opacity: 0.65; }
 .evidence-row-user_rejected td { text-decoration: line-through; }
 
+/* Stage 7: scorer trail nested under each evidence row in the math view.
+   Two clicks deep on purpose — the primary table stays scannable, and
+   anyone who wants the receipts can drill into mechanism / base rate /
+   counter-evidence / incentive bias / redundancy. */
+.evidence-scorer-trail {
+  margin-top: 6px;
+  font-size: 11px;
+}
+.evidence-scorer-trail > summary {
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 2px 0;
+}
+.evidence-scorer-trail-list {
+  list-style: none;
+  margin: 4px 0 4px 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.evidence-scorer-trail-list li {
+  line-height: 1.4;
+}
+.evidence-scorer-trail-list .mono {
+  font-size: 10px;
+  margin-left: 4px;
+}
+
 .evidence-hidden-toggle { margin-top: 10px; }
 .evidence-hidden-toggle summary { cursor: pointer; font-size: 12px; }
 
