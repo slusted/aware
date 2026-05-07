@@ -7,7 +7,9 @@ import os
 import sys
 import threading
 import traceback
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import Callable, Literal
 
 from .db import SessionLocal
 from .models import Run, RunEvent, Finding, Report, UserSignalEvent, DeepResearchReport, MarketSynthesisReport, Competitor, CompetitorCandidate
@@ -519,6 +521,155 @@ def drain_run_queue() -> None:
         args=(run_id, kind, args, triggered_by),
         daemon=True,
         name=f"run-{run_id}-{kind}",
+    ).start()
+
+
+# ── Tracked runs ─────────────────────────────────────────────────
+# Companion to the queue. A "tracked" run gets a Run row + RunEvent
+# stream + cooperative cancellation, but it does NOT serialize through
+# the single-slot drainer. Use it for parallel-safe LLM work (deep
+# research, bulk import, doc processing, chat tools). See the proposal
+# in conversation history; spec doc to follow once Phase 2 lands.
+
+class ConcurrencyCapExceeded(Exception):
+    """Raised by start_tracked_run when a kind's concurrency cap is hit.
+    Trigger endpoints catch this and translate to HTTPException(409)."""
+    def __init__(self, kind: str, current: int, cap: int):
+        self.kind = kind
+        self.current = current
+        self.cap = cap
+        super().__init__(
+            f"{current} {kind} run(s) already in flight (cap={cap})"
+        )
+
+
+@dataclass(frozen=True)
+class RunKindSpec:
+    """Declarative metadata for one Run.kind. The registry below
+    (RUN_KINDS) is the canonical list of background-run kinds the app
+    knows about. Templates can use `detail_url` to render a "View" link
+    for /runs rows without an if/elif over kind strings."""
+    name: str
+    mode: Literal["queued", "tracked"]
+    # Worker-side entrypoint. Signature: (*, run_id: int, **job_args) -> None.
+    # Targets call _start_run(kind, run_id=run_id) → work → _finish_run(...)
+    # so they share the same lifecycle as queue-dispatched jobs.
+    target: Callable[..., None]
+    # Tracked only. None = unlimited. Hits raise ConcurrencyCapExceeded.
+    concurrency: int | None = None
+    # Optional. Returns a URL for /runs to link the row to its detail page
+    # (e.g. a deep-research report or a bulk-import progress page).
+    detail_url: Callable[["Run"], str] | None = None
+
+
+# Canonical registry. Phase 1 leaves this empty so the helpers exist
+# without changing any behavior; Phase 2+ migrates one kind at a time.
+RUN_KINDS: dict[str, RunKindSpec] = {}
+
+
+def current_load(db, kind: str) -> int:
+    """Count of in-flight (running or cancelling) runs of a given kind.
+    Generalizes the per-kind helpers (current_research_load,
+    current_discovery_load) — those become thin wrappers over time."""
+    return (
+        db.query(Run)
+        .filter(Run.kind == kind, Run.status.in_(["running", "cancelling"]))
+        .count()
+    )
+
+
+def start_tracked_run(
+    db,
+    kind: str,
+    *,
+    triggered_by: str = "manual",
+    job_args: dict | None = None,
+) -> Run:
+    """Create a Run row in status='running' and start a worker thread that
+    calls RUN_KINDS[kind].target(run_id=run.id, **job_args). Returns the
+    new Run row.
+
+    Use for parallel-safe background LLM work. For single-slot serialized
+    work, use enqueue_run instead.
+
+    Raises ConcurrencyCapExceeded if the kind has a concurrency cap and
+    it's currently saturated. The caller (a route) is responsible for
+    translating that into HTTPException(409)."""
+    spec = RUN_KINDS.get(kind)
+    if spec is None or spec.mode != "tracked":
+        raise ValueError(
+            f"start_tracked_run: unknown or non-tracked kind {kind!r}"
+        )
+
+    if spec.concurrency is not None:
+        cur = current_load(db, kind)
+        if cur >= spec.concurrency:
+            raise ConcurrencyCapExceeded(kind, cur, spec.concurrency)
+
+    run = Run(
+        kind=kind,
+        status="running",
+        triggered_by=triggered_by,
+        job_args=dict(job_args or {}),
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    db.add(
+        RunEvent(
+            run_id=run.id,
+            level="info",
+            message=f"started ({kind})"
+            + (f" args={dict(job_args)}" if job_args else ""),
+        )
+    )
+    db.commit()
+
+    _spawn_tracked_worker(run.id, kind)
+    return run
+
+
+def _spawn_tracked_worker(run_id: int, kind: str) -> None:
+    """Daemon thread that calls the registered target. The target itself
+    owns _start_run/_finish_run; this wrapper only catches crashes that
+    happen *before* the target sets up its own try/finally (import errors,
+    missing job_args, etc.) so the row doesn't sit 'running' forever."""
+    def _wrapped():
+        spec = RUN_KINDS[kind]
+        # Re-read job_args inside the worker — never share a SQLAlchemy
+        # row across thread boundaries. Same pattern as _dispatch_queued_run.
+        db = SessionLocal()
+        try:
+            row = db.get(Run, run_id)
+            args = dict(row.job_args or {}) if row else {}
+        finally:
+            db.close()
+        try:
+            spec.target(run_id=run_id, **args)
+        except Exception as e:
+            tb = traceback.format_exc()
+            d = SessionLocal()
+            try:
+                row = d.get(Run, run_id)
+                if row and row.status in ("running", "cancelling"):
+                    row.status = "error"
+                    row.error = f"{type(e).__name__}: {e}"
+                    row.finished_at = datetime.utcnow()
+                    d.add(
+                        RunEvent(
+                            run_id=run_id,
+                            level="error",
+                            message=f"tracked worker crashed: {e}\n{tb}",
+                        )
+                    )
+                    d.commit()
+            finally:
+                d.close()
+
+    threading.Thread(
+        target=_wrapped,
+        daemon=True,
+        name=f"tracked-run-{run_id}-{kind}",
     ).start()
 
 

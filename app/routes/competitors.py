@@ -111,20 +111,32 @@ def list_competitors(
 @router.post("/bulk-new")
 def bulk_new_competitors(
     names: str = Form(...),
+    db: Session = Depends(get_db),
     _=Depends(require_role("admin", "analyst")),
 ):
-    """Kick a background batch that runs the autofill agent on each
-    pasted name and creates Competitor rows. Form-posted from the bulk-
-    add page; redirects back with the new job id so the page can poll
-    for status."""
-    from ..competitor_bulk import parse_names, start_bulk_add
-    parsed = parse_names(names)
+    """Kick a tracked run that drives the autofill agent over each pasted
+    name. Form-posted from the bulk-add page; redirects back with the new
+    run id so the page can render per-row progress."""
+    # Importing competitor_bulk also registers the run kind in RUN_KINDS.
+    from .. import competitor_bulk
+    from ..jobs import ConcurrencyCapExceeded, start_tracked_run
+
+    parsed = competitor_bulk.parse_names(names)
     if not parsed:
         return RedirectResponse("/admin/competitors/bulk-new", status_code=303)
     company, industry = _load_company_context()
-    job_id = start_bulk_add(parsed, company, industry)
-    return RedirectResponse(f"/admin/competitors/bulk-new?job={job_id}",
-                            status_code=303)
+    try:
+        run = start_tracked_run(
+            db,
+            "bulk_competitor_add",
+            triggered_by="manual",
+            job_args={"names": parsed, "company": company, "industry": industry},
+        )
+    except ConcurrencyCapExceeded as e:
+        raise HTTPException(409, detail=str(e))
+    return RedirectResponse(
+        f"/admin/competitors/bulk-new?run_id={run.id}", status_code=303,
+    )
 
 
 @router.get("/{competitor_id}", response_model=CompetitorOut)

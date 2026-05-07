@@ -38,7 +38,7 @@
   <div class="panel" style="padding:20px; max-width:720px">
     <h2 style="margin:0 0 10px">Recent batches</h2>
     <div class="muted" style="font-size:12px; margin-bottom:10px">
-      Wiped on server restart. Click a batch to see its progress.
+      Click a batch to see its progress.
     </div>
     <table>
       <thead>
@@ -60,7 +60,7 @@
             {{ j['added'] }} added · {{ j['reactivated'] }} reactivated
             · {{ j['skipped'] }} skipped · {{ j['errored'] }} errored
           </td>
-          <td><a href="/admin/competitors/bulk-new?job={{ j['id'] }}">open →</a></td>
+          <td><a href="/admin/competitors/bulk-new?run_id={{ j['id'] }}">open →</a></td>
         </tr>
         {% endfor %}
       </tbody>
