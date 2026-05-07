@@ -48,13 +48,35 @@ def _reap_orphan_runs() -> int:
 
 
 def _reset_db_if_requested():
-    """Escape hatch for a wedged DB. Set RESET_DB_ONCE=1 in the Railway
-    dashboard, redeploy, then unset it. Deletes app.db plus its WAL/SHM
-    sidecars so alembic can rebuild the schema from scratch. Guarded by
-    an env var so it never fires accidentally."""
-    if os.environ.get("RESET_DB_ONCE") != "1":
+    """Escape hatch for a wedged DB. Set RESET_DB_ONCE=<token> (any non-
+    empty value) in the Railway dashboard and redeploy.
+
+    The wipe is single-shot per token: after firing it stamps the value
+    to <DATA_DIR>/.reset_db_once.last and refuses to fire again until the
+    env var is changed to a different value. So leaving the var set is
+    safe — only a *new* value re-arms the wipe. Forgetting to unset it,
+    which previously bricked production on every redeploy, is now a
+    no-op.
+
+    To re-arm intentionally, change the value (e.g. bump 1 → 2, or use a
+    date like 2026-05-07). Empty / "0" / "false" / "no" never fire.
+    """
+    val = (os.environ.get("RESET_DB_ONCE") or "").strip()
+    if not val or val.lower() in ("0", "false", "no"):
         return
     data_dir = os.environ.get("DATA_DIR", "data")
+    stamp = Path(data_dir) / ".reset_db_once.last"
+    try:
+        last = stamp.read_text(encoding="utf-8").strip() if stamp.exists() else ""
+    except OSError:
+        last = ""
+    if val == last:
+        print(
+            f"  [startup] RESET_DB_ONCE={val!r} already applied — skipping. "
+            "Change the value to re-arm.",
+            flush=True,
+        )
+        return
     db_path = Path(data_dir) / "app.db"
     removed = []
     for suffix in ("", "-wal", "-shm", "-journal"):
@@ -62,8 +84,19 @@ def _reset_db_if_requested():
         if p.exists():
             p.unlink()
             removed.append(p.name)
-    print(f"  [startup] RESET_DB_ONCE=1 → removed {removed or 'nothing (already clean)'}", flush=True)
-    print("  [startup] REMEMBER to unset RESET_DB_ONCE in Railway after this deploy succeeds", flush=True)
+    try:
+        stamp.parent.mkdir(parents=True, exist_ok=True)
+        stamp.write_text(val, encoding="utf-8")
+    except OSError as e:
+        print(
+            f"  [startup] WARNING: could not write reset stamp at {stamp} ({e}). "
+            "Next deploy with the same RESET_DB_ONCE value WILL re-wipe — "
+            "unset the env var manually.",
+            flush=True,
+        )
+    print(f"  [startup] RESET_DB_ONCE={val!r} → removed {removed or 'nothing (already clean)'}", flush=True)
+    print("  [startup] Stamp recorded — same value won't fire again. "
+          "Bump the value to re-arm.", flush=True)
 
 
 def _migrate_schema():
@@ -138,7 +171,8 @@ def _migrate_schema():
                 f"Alembic upgrade from {current_rev} to {head_rev} failed: {e}. "
                 "The DB has real data so auto-wipe is refused. Inspect the "
                 "migration manually via `railway run alembic upgrade head`, or "
-                "set RESET_DB_ONCE=1 if the data is disposable."
+                "set RESET_DB_ONCE to a fresh value (e.g. today's date) "
+                "if the data is disposable."
             ) from e
         print(f"  [startup] upgrade complete, now at {head_rev}", flush=True)
         return
