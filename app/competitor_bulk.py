@@ -17,6 +17,7 @@ stay in the DB.
 
 from typing import Any
 
+from . import competitor_backfill
 from .competitor_autofill import autofill
 from .config_sync import sync_db_to_config
 from .jobs import (
@@ -205,6 +206,14 @@ def _run_bulk_competitor_add_target(
             _emit(db, run_id, idx, name, "added", competitor_id=comp.id)
             if comp.homepage_domain:
                 domains_to_logo.append(comp.homepage_domain)
+            # Kick the 90-day historical backfill for this fresh row. We do
+            # it here (not after sync_db_to_config below) because the
+            # backfill target re-reads config.json — but the helper falls
+            # back to building a comp_dict directly off the row if the
+            # sync hasn't landed yet, so order is forgiving either way.
+            competitor_backfill.kick_off(
+                db, comp.id, triggered_by="bulk_competitor_add",
+            )
 
         try:
             sync_db_to_config(db)
