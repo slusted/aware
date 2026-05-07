@@ -1,0 +1,69 @@
+{% if job %}
+{% set total = job['items']|length %}
+{% set finished = job['items']|selectattr('status', 'in', ['added','reactivated','skipped','error'])|list|length %}
+{% set added = job['items']|selectattr('status', 'equalto', 'added')|list|length %}
+{% set reactivated = job['items']|selectattr('status', 'equalto', 'reactivated')|list|length %}
+{% set skipped = job['items']|selectattr('status', 'equalto', 'skipped')|list|length %}
+{% set errored = job['items']|selectattr('status', 'equalto', 'error')|list|length %}
+<div class="panel" style="padding:20px; max-width:720px"
+     {% if not job['done'] %}
+     hx-get="/partials/bulk_add_status?job={{ job['id'] }}"
+     hx-trigger="every 3s"
+     hx-target="#bulk-status"
+     hx-swap="innerHTML"
+     {% endif %}>
+  <div class="panel-header" style="display:flex; justify-content:space-between; align-items:baseline">
+    <h2 style="margin:0">
+      Batch {{ 'finished' if job['done'] else 'running' }} · {{ finished }}/{{ total }}
+    </h2>
+    <div class="muted" style="font-size:13px">
+      {{ added }} added · {{ reactivated }} reactivated · {{ skipped }} skipped · {{ errored }} errored
+    </div>
+  </div>
+  <table style="margin-top:12px">
+    <thead>
+      <tr><th>Name</th><th>Status</th><th>Detail</th></tr>
+    </thead>
+    <tbody>
+      {% for it in job['items'] %}
+      <tr>
+        <td>
+          {% if it['competitor_id'] %}
+            <a href="/competitors/{{ it['competitor_id'] }}">{{ it['name'] }}</a>
+          {% else %}
+            {{ it['name'] }}
+          {% endif %}
+        </td>
+        <td>
+          {% if it['status'] == 'added' %}
+            <span style="color:var(--ok, #2a7)">added</span>
+          {% elif it['status'] == 'reactivated' %}
+            <span style="color:var(--ok, #2a7)">reactivated</span>
+          {% elif it['status'] == 'skipped' %}
+            <span class="muted">skipped</span>
+          {% elif it['status'] == 'error' %}
+            <span style="color:var(--err, #c33)">error</span>
+          {% elif it['status'] == 'working' %}
+            <span style="color:var(--accent, #36d)">working…</span>
+          {% else %}
+            <span class="muted">queued</span>
+          {% endif %}
+        </td>
+        <td class="muted" style="font-size:13px">
+          {{ it['error'] or '' }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if job['done'] %}
+    <div style="margin-top:14px">
+      <a href="/admin/competitors">→ Open watchlist</a>
+    </div>
+  {% endif %}
+</div>
+{% else %}
+<div class="panel" style="padding:20px; max-width:720px">
+  <p class="muted" style="margin:0">Job not found — it may have been cleared on a server restart.</p>
+</div>
+{% endif %}
