@@ -702,27 +702,53 @@ def admin_competitor_new(request: Request, candidate_id: int | None = None,
     })
 
 
+def _bulk_run_view(db, run_id: int) -> dict | None:
+    """Build the {id, done, items} dict the bulk-new template expects from
+    the underlying Run + RunEvent rows. Returns None if the run id is
+    unknown or refers to a different kind."""
+    from .competitor_bulk import items_for_run
+    from .models import Run
+
+    run = db.get(Run, run_id)
+    if run is None or run.kind != "bulk_competitor_add":
+        return None
+    return {
+        "id": run.id,
+        "done": run.status not in ("running", "cancelling"),
+        "items": items_for_run(db, run.id),
+    }
+
+
 @router.get("/admin/competitors/bulk-new", response_class=HTMLResponse)
-def admin_competitor_bulk_new(request: Request, job: str | None = None,
-                              user=Depends(get_current_user)):
+def admin_competitor_bulk_new(
+    request: Request,
+    run_id: int | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
     """Bulk-add page. Paste a list of names and the autofill agent fills
-    each row in turn. The optional `job` query param re-binds the page
-    to an in-flight (or finished) batch so the user can leave and come
-    back to it."""
-    from .competitor_bulk import get_job, list_recent_jobs
-    job_data = get_job(job) if job else None
-    recent = [] if job_data else list_recent_jobs()
+    each row in turn. The optional `run_id` query param re-binds the page
+    to an in-flight (or finished) tracked run so the user can leave and
+    come back to it; without it, `recent_jobs` lists the last few batches
+    so the operator can pick one back up."""
+    from .competitor_bulk import list_recent_jobs
+
+    job_data = _bulk_run_view(db, run_id) if run_id else None
+    recent = [] if job_data else list_recent_jobs(db)
     return templates.TemplateResponse(request, "admin_competitors_bulk.html", {
         "user": user, "job": job_data, "recent_jobs": recent,
     })
 
 
 @router.get("/partials/bulk_add_status", response_class=HTMLResponse)
-def partial_bulk_add_status(request: Request, job: str,
-                            _=Depends(get_current_user)):
-    from .competitor_bulk import get_job
+def partial_bulk_add_status(
+    request: Request,
+    run_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
     return templates.TemplateResponse(request, "_bulk_add_status.html", {
-        "job": get_job(job),
+        "job": _bulk_run_view(db, run_id),
     })
 
 

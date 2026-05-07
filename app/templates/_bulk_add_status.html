@@ -7,7 +7,7 @@
 {% set errored = job['items']|selectattr('status', 'equalto', 'error')|list|length %}
 <div class="panel" style="padding:20px; max-width:720px"
      {% if not job['done'] %}
-     hx-get="/partials/bulk_add_status?job={{ job['id'] }}"
+     hx-get="/partials/bulk_add_status?run_id={{ job['id'] }}"
      hx-trigger="every 3s"
      hx-target="#bulk-status"
      hx-swap="innerHTML"
