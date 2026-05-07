@@ -83,6 +83,35 @@ def get_job(job_id: str) -> dict | None:
         }
 
 
+def list_recent_jobs(limit: int = 10) -> list[dict]:
+    """Most-recent-first snapshot of the in-memory job table. Used by the
+    bulk-add page to surface in-flight or just-finished batches when the
+    operator lands without a `?job=` query param. Wiped on server restart
+    — that's accepted, same as get_job."""
+    with _LOCK:
+        jobs = list(_JOBS.values())
+    jobs.sort(key=lambda j: j["started_at"], reverse=True)
+    out: list[dict] = []
+    for j in jobs[:limit]:
+        items = j["items"]
+        finished = sum(
+            1 for it in items
+            if it["status"] in ("added", "reactivated", "skipped", "error")
+        )
+        out.append({
+            "id": j["id"],
+            "started_at": j["started_at"],
+            "done": j["done"],
+            "total": len(items),
+            "finished": finished,
+            "added": sum(1 for it in items if it["status"] == "added"),
+            "reactivated": sum(1 for it in items if it["status"] == "reactivated"),
+            "skipped": sum(1 for it in items if it["status"] == "skipped"),
+            "errored": sum(1 for it in items if it["status"] == "error"),
+        })
+    return out
+
+
 def _set_item(job_id: str, idx: int, **fields) -> None:
     with _LOCK:
         job = _JOBS.get(job_id)

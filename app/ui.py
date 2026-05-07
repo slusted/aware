@@ -709,10 +709,11 @@ def admin_competitor_bulk_new(request: Request, job: str | None = None,
     each row in turn. The optional `job` query param re-binds the page
     to an in-flight (or finished) batch so the user can leave and come
     back to it."""
-    from .competitor_bulk import get_job
+    from .competitor_bulk import get_job, list_recent_jobs
     job_data = get_job(job) if job else None
+    recent = [] if job_data else list_recent_jobs()
     return templates.TemplateResponse(request, "admin_competitors_bulk.html", {
-        "user": user, "job": job_data,
+        "user": user, "job": job_data, "recent_jobs": recent,
     })
 
 
