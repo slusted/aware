@@ -702,6 +702,29 @@ def admin_competitor_new(request: Request, candidate_id: int | None = None,
     })
 
 
+@router.get("/admin/competitors/bulk-new", response_class=HTMLResponse)
+def admin_competitor_bulk_new(request: Request, job: str | None = None,
+                              user=Depends(get_current_user)):
+    """Bulk-add page. Paste a list of names and the autofill agent fills
+    each row in turn. The optional `job` query param re-binds the page
+    to an in-flight (or finished) batch so the user can leave and come
+    back to it."""
+    from .competitor_bulk import get_job
+    job_data = get_job(job) if job else None
+    return templates.TemplateResponse(request, "admin_competitors_bulk.html", {
+        "user": user, "job": job_data,
+    })
+
+
+@router.get("/partials/bulk_add_status", response_class=HTMLResponse)
+def partial_bulk_add_status(request: Request, job: str,
+                            _=Depends(get_current_user)):
+    from .competitor_bulk import get_job
+    return templates.TemplateResponse(request, "_bulk_add_status.html", {
+        "job": get_job(job),
+    })
+
+
 @router.get("/admin/competitors/{competitor_id}/edit", response_class=HTMLResponse)
 def admin_competitor_edit(competitor_id: int, request: Request,
                           app_source: str | None = None,

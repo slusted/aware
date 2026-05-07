@@ -108,6 +108,25 @@ def list_competitors(
     return q.order_by(Competitor.name).all()
 
 
+@router.post("/bulk-new")
+def bulk_new_competitors(
+    names: str = Form(...),
+    _=Depends(require_role("admin", "analyst")),
+):
+    """Kick a background batch that runs the autofill agent on each
+    pasted name and creates Competitor rows. Form-posted from the bulk-
+    add page; redirects back with the new job id so the page can poll
+    for status."""
+    from ..competitor_bulk import parse_names, start_bulk_add
+    parsed = parse_names(names)
+    if not parsed:
+        return RedirectResponse("/admin/competitors/bulk-new", status_code=303)
+    company, industry = _load_company_context()
+    job_id = start_bulk_add(parsed, company, industry)
+    return RedirectResponse(f"/admin/competitors/bulk-new?job={job_id}",
+                            status_code=303)
+
+
 @router.get("/{competitor_id}", response_model=CompetitorOut)
 def get_competitor(competitor_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
     c = db.get(Competitor, competitor_id)
