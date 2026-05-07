@@ -750,6 +750,81 @@ def _summarise_update_competitor(inputs: dict) -> str:
     )
 
 
+def _h_optimise_competitor(
+    db: Session,
+    user: User,
+    *,
+    competitor: str | int,
+    **_: Any,
+) -> dict:
+    """Re-run the autofill agent in proposals mode against an existing
+    competitor. Returns a list of {action, field, value, old_value,
+    rationale, evidence_url} cards — same shape the 'Optimise with agent'
+    button on /admin/competitors/{id}/edit produces. Read-only: does not
+    apply anything. The chat agent presents the cards, the user picks
+    which to apply, and each accepted proposal is then written via
+    update_competitor."""
+    comp = _competitor_by_ref(db, competitor)
+    if not comp:
+        return {"error": f"competitor not found: {competitor!r}"}
+
+    existing = {
+        "category": comp.category,
+        "threat_angle": comp.threat_angle,
+        "keywords": list(comp.keywords or []),
+        "subreddits": list(comp.subreddits or []),
+        "careers_domains": list(comp.careers_domains or []),
+        "newsroom_domains": list(comp.newsroom_domains or []),
+        "homepage_domain": comp.homepage_domain,
+        "app_store_id": comp.app_store_id,
+        "play_package": comp.play_package,
+        "trends_keyword": comp.trends_keyword,
+        "min_relevance_score": comp.min_relevance_score,
+        "social_score_multiplier": comp.social_score_multiplier,
+    }
+
+    try:
+        from ..competitor_performance import build_performance_report
+        performance_report = build_performance_report(db, comp.id, days=60) or None
+    except Exception:
+        performance_report = None
+
+    cfg_path = os.environ.get("CONFIG_PATH", "config.json")
+    try:
+        with open(cfg_path, encoding="utf-8") as _f:
+            cfg = json.load(_f)
+    except Exception:
+        cfg = {}
+    company = cfg.get("company", "our company")
+    industry = cfg.get("industry", "our industry")
+
+    try:
+        from ..competitor_autofill import autofill as _autofill
+        result = _autofill(
+            comp.name, company, industry,
+            existing=existing, performance_report=performance_report,
+        )
+    except Exception as e:
+        return {"error": f"autofill failed: {type(e).__name__}: {e}"}
+
+    proposals = result.get("proposals") or []
+    return {
+        "competitor_id": comp.id,
+        "competitor_name": comp.name,
+        "proposals": proposals,
+        "proposal_count": len(proposals),
+        "hint": (
+            "Each proposal is a suggested edit with rationale + evidence_url. "
+            "Present them to the user, then call update_competitor for each "
+            "they accept. Pass replace-semantics list values when applying "
+            "add/drop proposals (read current value, mutate, write back)."
+            if proposals else
+            "No changes proposed — the autofill agent thinks the current row is fine."
+        ),
+        "url": f"/competitors/{comp.id}",
+    }
+
+
 def _h_run_market_synthesis(
     db: Session,
     user: User,
@@ -1012,6 +1087,37 @@ TOOLS: list[Tool] = [
         requires_role="analyst",
         requires_confirmation=True,
         confirmation_summary=_summarise_update_competitor,
+    ),
+    Tool(
+        name="optimise_competitor",
+        description=(
+            "Re-run the autofill research agent against an existing competitor "
+            "and return a list of proposed field changes (replace/add/drop) "
+            "with rationale + evidence_url for each. Same backend as the "
+            "'Optimise with agent' button on /admin/competitors/{id}/edit. "
+            "Read-only — does NOT apply anything. After this returns, present "
+            "the proposals to the user and call update_competitor for each "
+            "one they accept. Takes ~10–30 seconds and costs ~$0.10–0.30."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "competitor": {
+                    "type": ["string", "integer"],
+                    "description": "Competitor id (int) or name (string).",
+                },
+            },
+            "required": ["competitor"],
+            "additionalProperties": False,
+        },
+        handler=_h_optimise_competitor,
+        requires_role="analyst",
+        requires_confirmation=True,
+        confirmation_summary=lambda i: (
+            f"Re-research {i.get('competitor')!r} and propose field updates? "
+            "Read-only — you'll review each proposal before anything is written. "
+            "Takes ~10–30 seconds, costs ~$0.10–0.30."
+        ),
     ),
     Tool(
         name="run_market_digest",
