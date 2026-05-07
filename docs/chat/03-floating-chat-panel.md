@@ -89,8 +89,8 @@ The full thread (with tool cards, results, markdown rendering, confirmation stat
 
 ### Active session selection
 
-- First open of the drawer for a given browser session: load the most-recently-updated active session if one exists, otherwise show the picker. The chosen session id is stored in `localStorage` under `aware.chat.activeSessionId` so subsequent opens go straight back into the conversation.
-- Switching sessions inside the drawer (via the picker) updates that key.
+- Every open of the drawer lands on the picker (new-chat textarea + recent conversations list). One click on a recent conversation drops the user back into it; otherwise typing in the textarea starts a fresh thread. No `localStorage` persistence — the drawer is "summon a fresh surface," not "resume my last spot."
+- Within a single page-load, the drawer keeps whatever session it last mounted (so closing and re-opening on the same page returns to the in-flight conversation). Reload or navigate, and you're back at the picker.
 - Archiving / closing the active session in another tab is rare — if the partial 404s, the drawer drops back to the picker with a quiet "That conversation was archived" line.
 
 ### Asset loading
@@ -139,7 +139,7 @@ The full thread (with tool cards, results, markdown rendering, confirmation stat
   2. Click → drawer slides in. Empty state shows picker if no sessions; otherwise loads the latest.
   3. Type a question → SSE stream renders inside drawer. Tool cards appear. Confirmation buttons work.
   4. Close (X / Esc / backdrop). Drawer slides out; underlying page scroll preserved.
-  5. Reopen on a different page. Drawer returns to the same session.
+  5. Reopen on a different page. Drawer lands on the picker again — the prior session is one click away under "Recent conversations."
   6. Navigate to `/chat/{id}` directly. Same conversation, full-page view, drawer launcher hidden.
   7. Rename inside drawer → confirm rename appears in `/chat` sidebar after a refresh.
   8. Sign out → launcher gone.
