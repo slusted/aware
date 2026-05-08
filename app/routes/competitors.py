@@ -2,7 +2,7 @@ from datetime import datetime
 import json, os
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -253,6 +253,54 @@ def delete_competitor(
     c.active = False
     db.commit()
     sync_db_to_config(db)
+
+
+@router.post("/backfill-missing", response_class=HTMLResponse)
+def backfill_missing_competitors(
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin")),
+):
+    """Admin: kick the 90-day historical backfill for every active
+    competitor that doesn't already have a successful or in-flight one.
+
+    "Done" = a competitor_backfill Run with status in (ok, queued,
+    running) tagged with this competitor_id in job_args. Failed and
+    cancelled prior attempts are retried — they didn't leave usable
+    history. Concurrency cap on this run kind is None, so firing N at
+    once is safe; pressure lands on Tavily/Anthropic, not us.
+    """
+    from .. import competitor_backfill
+
+    actives = db.query(Competitor).filter(Competitor.active == True).all()
+
+    runs = (
+        db.query(Run)
+        .filter(Run.kind == "competitor_backfill")
+        .filter(Run.status.in_(("ok", "queued", "running")))
+        .all()
+    )
+    done_ids: set[int] = set()
+    for r in runs:
+        cid = (r.job_args or {}).get("competitor_id")
+        if isinstance(cid, int):
+            done_ids.add(cid)
+
+    queued = 0
+    for c in actives:
+        if c.id in done_ids:
+            continue
+        competitor_backfill.kick_off(
+            db, c.id, triggered_by="admin_backfill_missing",
+        )
+        queued += 1
+
+    skipped = len(actives) - queued
+    return HTMLResponse(
+        f"<p class='muted' style='margin-top:10px;font-size:13px'>"
+        f"Queued backfill for <strong>{queued}</strong> competitor(s); "
+        f"skipped {skipped} already done or in flight. "
+        f"<a href='/runs'>Watch progress on /runs</a>.</p>"
+    )
 
 
 @router.post("/{competitor_id}/restore", response_model=CompetitorOut)
