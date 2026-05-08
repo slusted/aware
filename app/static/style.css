@@ -1021,6 +1021,139 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
 .saved-filter-default.is-default { color: var(--warn); }
 .saved-filter-delete:hover { color: var(--err); }
 
+/* docs/stream/01-public-share-link.md — Share button + inline panel.
+   The button matches .saved-filter-default/.saved-filter-delete sizing so
+   the row stays visually balanced; the panel sits on its own line below
+   the row so it doesn't shove other filters around when open. */
+.saved-filter-share {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1;
+}
+.saved-filter-share:hover {
+  color: var(--text-primary);
+  background: var(--surface-2);
+}
+.saved-filter-share.is-shared { color: var(--accent); }
+.saved-filter-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 10px;
+  cursor: help;
+}
+.saved-filter-hint svg { opacity: 0.6; }
+.filter-share-slot { flex-basis: 100%; }
+.filter-share-slot:empty { display: none; }
+.filter-share-panel {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 520px;
+}
+.filter-share-url-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.filter-share-url {
+  flex: 1 1 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 4px 6px;
+  background: var(--surface-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  color: var(--text-primary);
+}
+.filter-share-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.filter-share-panel .small { font-size: 12px; }
+.filter-share-panel .btn-danger:hover { color: var(--err); }
+
+/* docs/stream/01-public-share-link.md — /p/{token} page.
+   Deliberately bare: no sidebar, no top nav, just centred content with a
+   header strip identifying the source and a soft footer disclaimer. The
+   stream cards inside reuse all .signal-card-* styling so the visual
+   match between owner-side and public-side is automatic. */
+.public-stream-page {
+  background: var(--surface-0);
+  color: var(--text-primary);
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.public-stream-header {
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+}
+.public-stream-header-inner {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.public-stream-title h1 {
+  font-size: 20px;
+  margin: 2px 0 0;
+  line-height: 1.2;
+}
+.public-stream-eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.public-stream-wordmark {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+.public-stream-wordmark:hover { color: var(--text-primary); }
+.public-stream-main {
+  max-width: 920px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 20px;
+  flex: 1 1 auto;
+}
+.public-stream-empty,
+.public-stream-more {
+  padding: 24px 0;
+  text-align: center;
+}
+.public-stream-footer {
+  border-top: 1px solid var(--border-subtle);
+  padding: 16px 20px;
+  text-align: center;
+  background: var(--surface-1);
+}
+.public-stream-footer p { margin: 2px 0; }
+
 /* Collapse the filter form behind a toggle — the stream is the answer,
    not the filter UI. Saved-filter picker stays visible so preset
    switching is one click away. */

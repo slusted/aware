@@ -616,6 +616,11 @@ class SavedFilter(Base):
     spec: Mapped[dict] = mapped_column(JSON, default=dict)  # {signal_types, competitor_ids, min_materiality, since_days, sources}
     visibility: Mapped[str] = mapped_column(String(16), default="private")  # private | team
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # docs/stream/01-public-share-link.md: opaque token granting unauthenticated
+    # read-only access to a rendered version of the filter at /p/{token}.
+    # NULL = not shared. Rotating = overwrite; revoking = null.
+    public_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    public_token_created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ChatSession(Base):

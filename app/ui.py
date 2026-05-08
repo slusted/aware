@@ -45,7 +45,7 @@ SIGNAL_TYPE_LABELS = dict(SIGNAL_TYPES)
 
 def register_signal_globals(t) -> None:
     """Attach signal_type_labels to a Jinja2Templates env. Each renderer of
-    _stream_card.html (this module, routes/scenarios.py, future renderers)
+    _stream_card.html (this module, routes/scenarios.py, routes/public.py)
     calls this on its own Jinja2Templates instance."""
     t.env.globals["signal_type_labels"] = SIGNAL_TYPE_LABELS
 
@@ -1671,6 +1671,75 @@ def _view_counts_for_user(db, user_id: int, finding_ids: list[int]) -> dict[int,
     return {fid: int(n) for fid, n in rows if fid is not None}
 
 
+def _public_stream_query(db, filters):
+    """Build + run the stream query for an unauthenticated public render
+    (docs/stream/01-public-share-link.md). Mirrors `_stream_query` but
+    drops every `user`-scoped concern: no SignalView join, no view-count
+    aggregation, no per-user taste centroid, no MMR re-ranking, no
+    pinned_only branch (rejected at mint time anyway).
+
+    Returns (findings, has_more). The `tagged="untagged"` predicate filter
+    is honoured because predicate evidence is per-finding, not per-user.
+    `include_dismissed` is silently ignored — "dismissed" only exists in
+    the context of a user.
+    """
+    from sqlalchemy import and_, case
+    q = db.query(Finding)
+    if filters["competitor"]:
+        q = q.filter(Finding.competitor == filters["competitor"])
+    if filters["signal_types"]:
+        q = q.filter(Finding.signal_type.in_(filters["signal_types"]))
+    if filters["min_materiality"] is not None:
+        q = q.filter(Finding.materiality >= filters["min_materiality"])
+
+    now = datetime.utcnow()
+    has_more = False
+    if filters["since_days"]:
+        cutoff = now - timedelta(days=filters["since_days"])
+        q = q.filter(Finding.created_at >= cutoff)
+    else:
+        window = filters.get("window", 0)
+        window_upper = now - timedelta(days=window * STREAM_WINDOW_DAYS)
+        window_lower = now - timedelta(days=(window + 1) * STREAM_WINDOW_DAYS)
+        q = q.filter(Finding.created_at >= window_lower,
+                     Finding.created_at < window_upper)
+        has_more = (
+            db.query(Finding.id)
+            .filter(Finding.created_at < window_lower)
+            .limit(1)
+            .first()
+            is not None
+        )
+
+    if filters.get("tagged") == "untagged":
+        from .models import PredicateEvidence
+        from sqlalchemy import or_ as _or2
+        active_evidence_subq = (
+            db.query(PredicateEvidence.finding_id)
+            .filter(PredicateEvidence.finding_id.isnot(None))
+            .filter(_or2(
+                PredicateEvidence.confirmed_at.isnot(None),
+                PredicateEvidence.classified_by == "llm",
+            ))
+            .distinct()
+        )
+        q = q.filter(~Finding.id.in_(active_evidence_subq))
+
+    effective_date = func.coalesce(Finding.published_at, Finding.created_at)
+    if filters.get("downweight_stale"):
+        one_year_ago = now - timedelta(days=365)
+        stale_flag = case(
+            (and_(Finding.published_at.isnot(None), Finding.published_at < one_year_ago), 1),
+            else_=0,
+        )
+        q = q.order_by(stale_flag.asc(), effective_date.desc())
+    else:
+        q = q.order_by(effective_date.desc())
+
+    findings = q.limit(STREAM_SAFETY_CAP).all()
+    return findings, has_more
+
+
 def _stream_query(db, user, filters):
     """Build + run the stream query.
 
@@ -2078,6 +2147,7 @@ async def partial_stream_save_filter(
     return templates.TemplateResponse(request, "_stream_saved_filters.html", {
         "saved_filters": saved,
         "default_filter_id": user.default_filter_id,
+        "user": user,
     })
 
 
@@ -2106,6 +2176,7 @@ async def partial_stream_toggle_default(
     return templates.TemplateResponse(request, "_stream_saved_filters.html", {
         "saved_filters": saved,
         "default_filter_id": user.default_filter_id,
+        "user": user,
     })
 
 
@@ -2144,4 +2215,124 @@ async def partial_stream_delete_filter(
     return templates.TemplateResponse(request, "_stream_saved_filters.html", {
         "saved_filters": saved,
         "default_filter_id": user.default_filter_id,
+        "user": user,
     })
+
+
+# ---- Public share-link UI partials (docs/stream/01-public-share-link.md) ----
+#
+# JSON endpoints live in app/routes/filters.py. These thin partial wrappers
+# return the rendered share-panel HTML so the saved-filter row's HTMX swap
+# can work without a JSON ↔ DOM bridge in JavaScript.
+
+
+def _can_share_filter(sf: SavedFilter, user) -> bool:
+    """Mirrors _check_share_owner in routes/filters.py: own private filter
+    or admin on a team filter. Used to decide whether to render the
+    mint/rotate/revoke buttons in the share panel."""
+    if sf.owner_id is None:
+        return user.role == "admin"
+    return sf.owner_id == user.id
+
+
+def _share_panel_context(request: Request, sf: SavedFilter, user) -> dict:
+    """Common context dict for _stream_filter_share.html so each partial
+    route doesn't repeat the URL-build / pinned-only / can_share calculus."""
+    base = str(request.base_url).rstrip("/")
+    return {
+        "sf": sf,
+        "share_url": f"{base}/p/{sf.public_token}" if sf.public_token else None,
+        "can_share": _can_share_filter(sf, user),
+        "pinned_only": bool((sf.spec or {}).get("pinned_only")),
+    }
+
+
+@router.get("/partials/stream_filter_share/{filter_id}", response_class=HTMLResponse)
+def partial_filter_share_open(
+    filter_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Open the share panel for one filter — current state only, no mutation."""
+    sf = db.get(SavedFilter, filter_id)
+    if not sf:
+        raise HTTPException(404, "filter not found")
+    # Permission to even view the share state matches the mint gate so a
+    # non-admin can't probe team-filter tokens by walking ids.
+    if sf.owner_id is None and user.role != "admin":
+        raise HTTPException(403, "only admins can view team-filter share state")
+    if sf.owner_id and sf.owner_id != user.id:
+        raise HTTPException(403, "not your filter")
+    return templates.TemplateResponse(
+        request,
+        "_stream_filter_share.html",
+        _share_panel_context(request, sf, user),
+    )
+
+
+@router.post("/partials/stream_filter_share/{filter_id}", response_class=HTMLResponse)
+def partial_filter_share_mint(
+    filter_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Mint or rotate the share token. Same permission shape as the JSON
+    endpoint; returns the re-rendered panel so the URL appears in place."""
+    from .routes.filters import _check_share_owner, _check_mintable
+    from sqlalchemy.exc import IntegrityError
+    import secrets as _secrets
+    sf = db.get(SavedFilter, filter_id)
+    if not sf:
+        raise HTTPException(404, "filter not found")
+    _check_share_owner(sf, user)
+    _check_mintable(sf)
+    for _ in range(2):
+        sf.public_token = _secrets.token_urlsafe(32)
+        sf.public_token_created_at = datetime.utcnow()
+        try:
+            db.commit()
+            break
+        except IntegrityError:
+            db.rollback()
+            continue
+    else:
+        raise HTTPException(500, "failed to mint a unique share token")
+    return templates.TemplateResponse(
+        request,
+        "_stream_filter_share.html",
+        _share_panel_context(request, sf, user),
+    )
+
+
+@router.delete("/partials/stream_filter_share/{filter_id}", response_class=HTMLResponse)
+def partial_filter_share_revoke(
+    filter_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Revoke the share token. Returns the re-rendered panel (now in the
+    "not shared" state) so the user sees the URL field disappear."""
+    from .routes.filters import _check_share_owner
+    sf = db.get(SavedFilter, filter_id)
+    if not sf:
+        raise HTTPException(404, "filter not found")
+    _check_share_owner(sf, user)
+    sf.public_token = None
+    sf.public_token_created_at = None
+    db.commit()
+    return templates.TemplateResponse(
+        request,
+        "_stream_filter_share.html",
+        _share_panel_context(request, sf, user),
+    )
+
+
+@router.post("/partials/stream_filter_share/{filter_id}/close", response_class=HTMLResponse)
+def partial_filter_share_close(filter_id: int):
+    """Close the panel. Returns an empty fragment so the slot collapses
+    back to its zero-height state. Filter id in path is unused — kept for
+    URL symmetry with the other panel endpoints."""
+    return HTMLResponse("")

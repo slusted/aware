@@ -1,8 +1,14 @@
-{# Saved-filter list — click name to apply, ★ to toggle as default. #}
+{# Saved-filter list — click name to apply, ★ to toggle as default,
+   Share to mint a public read-only link (docs/stream/01-public-share-link.md). #}
 <div class="stream-saved-filters">
   <span class="filter-label">Saved filters</span>
+  <span class="saved-filter-hint muted"
+        title="Click 🔗 next to any saved filter to mint a read-only public link anyone can open without an account.">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true" width="12" height="12"><circle cx="8" cy="8" r="6"/><path d="M8 11v.01M8 5v3"/></svg>
+    sharing
+  </span>
   {% if not saved_filters %}
-    <span class="muted">none yet</span>
+    <span class="muted">none yet — save a filter, then share it as a public link</span>
   {% else %}
     {% for sf in saved_filters %}
       {% set qs = [] %}
@@ -11,6 +17,12 @@
       {% if sf.spec.get("min_materiality") is not none %}{% set _ = qs.append("min_materiality=" ~ sf.spec["min_materiality"]) %}{% endif %}
       {% if sf.spec.get("since_days") %}{% set _ = qs.append("since_days=" ~ sf.spec["since_days"]) %}{% endif %}
       {% set is_default = (default_filter_id == sf.id) %}
+      {# Share affordance is hidden for filter rows the current viewer
+         couldn't mint anyway — pinned-only specs (per-user) and team
+         filters when the viewer isn't an admin. Mirrors the gates in
+         _check_share_owner / _check_mintable so the button never lies. #}
+      {% set is_pinned_only = sf.spec.get("pinned_only") %}
+      {% set can_share = (sf.owner_id is none and user.role == 'admin') or (sf.owner_id and sf.owner_id == user.id) %}
       <span class="saved-filter">
         <a href="/stream?{{ qs|join('&') }}" class="saved-filter-name">
           {{ sf.name }}{% if sf.visibility == "team" %} · team{% endif %}
@@ -24,6 +36,17 @@
                 aria-pressed="{{ 'true' if is_default else 'false' }}">
           {% if is_default %}★{% else %}☆{% endif %}
         </button>
+        {% if can_share and not is_pinned_only %}
+        <button type="button"
+                class="saved-filter-share{% if sf.public_token %} is-shared{% endif %}"
+                hx-get="/partials/stream_filter_share/{{ sf.id }}"
+                hx-target="#filter-share-{{ sf.id }}-slot"
+                hx-swap="innerHTML"
+                title="{% if sf.public_token %}This filter has an active public share link{% else %}Create a public share link{% endif %}"
+                aria-label="Share this filter">
+          {% if sf.public_token %}🔗{% else %}Share{% endif %}
+        </button>
+        {% endif %}
         <button type="button"
                 class="saved-filter-delete"
                 hx-post="/partials/stream_delete_filter/{{ sf.id }}"
@@ -34,6 +57,7 @@
                 aria-label="Delete filter">
           ✕
         </button>
+        <span class="filter-share-slot" id="filter-share-{{ sf.id }}-slot"></span>
       </span>
     {% endfor %}
   {% endif %}

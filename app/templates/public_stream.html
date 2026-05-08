@@ -1,0 +1,86 @@
+<!doctype html>
+{# Public read-only stream view for /p/{token}.
+
+   Deliberately does NOT extend base.html — the public surface should not
+   carry the sidebar, top nav, chat launcher, or anything that implies
+   the viewer has an account. Just the cards, lightly framed.
+
+   See docs/stream/01-public-share-link.md.
+#}
+<html lang="en" data-theme="{{ request.cookies.get('theme', 'dark') }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Aware — shared signals view</title>
+  <link rel="preconnect" href="https://rsms.me/">
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+  <link rel="stylesheet" href="/static/style.css?v=m-and-a-1">
+  <script>
+    // Same clamp behavior as base.html so signal titles and snippets
+    // stay 3-line bounded with a more/less toggle. Public page never
+    // gets HTMX swaps so we only need the initial pass.
+    (function () {
+      var SELECTOR = '.signal-card-body .signal-title, .signal-card-body .signal-snippet';
+      function process(el) {
+        if (el.dataset.clampChecked) return;
+        el.dataset.clampChecked = '1';
+        el.classList.add('is-clamped');
+        if (el.scrollHeight <= el.clientHeight + 1) {
+          el.classList.remove('is-clamped');
+          return;
+        }
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'signal-clamp-toggle';
+        btn.textContent = 'more';
+        btn.setAttribute('aria-expanded', 'false');
+        btn.addEventListener('click', function () {
+          var nowClamped = el.classList.toggle('is-clamped');
+          btn.textContent = nowClamped ? 'more' : 'less';
+          btn.setAttribute('aria-expanded', nowClamped ? 'false' : 'true');
+        });
+        el.insertAdjacentElement('afterend', btn);
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () {
+          document.querySelectorAll(SELECTOR).forEach(process);
+        });
+      } else {
+        document.querySelectorAll(SELECTOR).forEach(process);
+      }
+    })();
+  </script>
+</head>
+<body class="public-stream-page">
+  <header class="public-stream-header">
+    <div class="public-stream-header-inner">
+      <div class="public-stream-title">
+        <span class="public-stream-eyebrow">Shared from Aware</span>
+        <h1>{{ filter_name }}</h1>
+      </div>
+      <a class="public-stream-wordmark" href="https://aware.app" rel="noopener" target="_blank">aware</a>
+    </div>
+  </header>
+
+  <main class="public-stream-main">
+    {% if not findings %}
+      <p class="public-stream-empty muted">No signals match this view right now.</p>
+    {% else %}
+      <div class="stream-list">
+        {% for f in findings %}
+          {% include "_stream_card.html" with context %}
+        {% endfor %}
+      </div>
+      {% if has_more %}
+        <p class="public-stream-more muted">Older signals exist beyond this window. The owner can adjust the filter to widen the date range.</p>
+      {% endif %}
+    {% endif %}
+  </main>
+
+  <footer class="public-stream-footer">
+    <p class="muted">Snapshot reflects live data — this view updates as new signals come in.</p>
+    <p class="muted"><small>Last loaded {{ now.strftime('%b %d, %Y · %H:%M UTC') }}</small></p>
+  </footer>
+</body>
+</html>
