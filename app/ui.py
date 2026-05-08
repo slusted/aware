@@ -1983,13 +1983,32 @@ def stream_page(
     # Auto-apply the user's default filter only when the URL is bare —
     # any query param (even an empty submission from the form) means the
     # user is steering and should override the default.
+    #
+    # ?filter_id=N is the explicit "I'm viewing this saved filter"
+    # signal, set by the link in _stream_saved_filters.html. Lets us show
+    # the "Update <name>" button without scanning saved filters for a
+    # spec match.
     active_filter_id: int | None = None
+    active_filter_name: str | None = None
     if not request.query_params and user.default_filter_id:
         default_sf = db.get(SavedFilter, user.default_filter_id)
         filters = _parse_stream_filters(default_sf.spec) if default_sf else _parse_stream_filters({})
-        active_filter_id = user.default_filter_id if default_sf else None
+        if default_sf:
+            active_filter_id = default_sf.id
+            active_filter_name = default_sf.name
     else:
         filters = _parse_stream_filters(request.query_params)
+        try:
+            fid = int(request.query_params.get("filter_id") or 0) or None
+        except ValueError:
+            fid = None
+        if fid:
+            sf_active = db.get(SavedFilter, fid)
+            # Only acknowledge the filter_id if the user actually has
+            # access to it — own private filter or any team filter.
+            if sf_active and (sf_active.owner_id is None or sf_active.owner_id == user.id):
+                active_filter_id = sf_active.id
+                active_filter_name = sf_active.name
     findings, views, view_counts, has_more = _stream_query(db, user, filters)
     competitors = [c.name for c in db.query(Competitor).filter(Competitor.active == True).order_by(Competitor.name).all()]
     # Saved filters (own + team-shared) for the dropdown.
@@ -2020,6 +2039,8 @@ def stream_page(
         "signal_types": SIGNAL_TYPES,
         "saved_filters": saved,
         "default_filter_id": user.default_filter_id,
+        "active_filter_id": active_filter_id,
+        "active_filter_name": active_filter_name,
         "logos": _build_logo_map(db, findings),
         "explain": filters.get("explain", False),
     })
@@ -2136,6 +2157,50 @@ async def partial_stream_save_filter(
         visibility=visibility,
     )
     db.add(row)
+    db.commit()
+    from sqlalchemy import or_ as _or
+    saved = (
+        db.query(SavedFilter)
+        .filter(_or(SavedFilter.owner_id == user.id, SavedFilter.owner_id.is_(None)))
+        .order_by(SavedFilter.created_at.desc())
+        .all()
+    )
+    return templates.TemplateResponse(request, "_stream_saved_filters.html", {
+        "saved_filters": saved,
+        "default_filter_id": user.default_filter_id,
+        "user": user,
+    })
+
+
+@router.post("/partials/stream_update_filter/{filter_id}", response_class=HTMLResponse)
+async def partial_stream_update_filter(
+    filter_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Overwrite the spec of an existing saved filter with the form's
+    current filter state. Permission gates mirror delete_filter; visibility
+    and name are intentionally not mutated here (Update = "save current
+    settings into the filter I'm already viewing"). Returns the refreshed
+    saved-filter list partial so the dropdown stays consistent."""
+    sf = db.get(SavedFilter, filter_id)
+    if not sf:
+        raise HTTPException(404, "filter not found")
+    if sf.owner_id is None and user.role != "admin":
+        raise HTTPException(403, "only admins can edit team filters")
+    if sf.owner_id and sf.owner_id != user.id:
+        raise HTTPException(403, "not your filter")
+    form = await request.form()
+    filters = _parse_stream_filters(form)
+    spec = {
+        "competitor": filters["competitor"],
+        "signal_types": filters["signal_types"],
+        "min_materiality": filters["min_materiality"],
+        "since_days": filters["since_days"],
+        "downweight_stale": filters["downweight_stale"],
+    }
+    sf.spec = {k: v for k, v in spec.items() if v not in (None, [], "")}
     db.commit()
     from sqlalchemy import or_ as _or
     saved = (

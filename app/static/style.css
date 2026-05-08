@@ -1241,6 +1241,16 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
 .stream-save-visibility { min-width: 90px; }
 .stream-save-form button { white-space: nowrap; flex-shrink: 0; }
 
+/* "Update <name>" form sits beside Save-as-new when a saved filter is
+   active. Same visual rhythm as .stream-save-form so the two read as a
+   pair. No name/visibility inputs — Update overwrites the spec only. */
+.stream-update-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.stream-update-form button { white-space: nowrap; flex-shrink: 0; }
+
 .stream-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
