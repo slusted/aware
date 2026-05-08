@@ -36,8 +36,10 @@ def _check_share_owner(sf: SavedFilter, user: User) -> None:
 def _check_mintable(sf: SavedFilter) -> None:
     """Mint-only check: refuse pinned-only specs because pins live on the
     viewer's user_signal_events and the public render has no viewer.
-    Revoke deliberately skips this so a filter that was edited to be
-    pinned-only after sharing can still be revoked."""
+    update_filter enforces the same rule when a token is already minted,
+    so the only way to reach a shared+pinned-only state is via direct DB
+    edit. Revoke skips the check so any historical drift is still
+    revocable."""
     if (sf.spec or {}).get("pinned_only"):
         raise HTTPException(400, "pinned-only filters can't be shared (pins are per-user)")
 
@@ -102,8 +104,21 @@ def update_filter(
     name = (body.name or "").strip()
     if not name:
         raise HTTPException(400, "name required")
+    # If the filter currently has a live share token, reject edits that
+    # would push it into a state we refuse to mint in the first place.
+    # Without this guard the spec could drift after sharing (e.g. owner
+    # ticks pinned-only) and the public render would silently ignore the
+    # flag, showing a wider feed than the owner sees. Revoke first, then
+    # edit, then re-mint.
+    new_spec = body.spec or {}
+    if row.public_token and new_spec.get("pinned_only"):
+        raise HTTPException(
+            400,
+            "revoke the share link before making this filter pinned-only "
+            "(pins are per-user and can't be rendered publicly)",
+        )
     row.name = name
-    row.spec = body.spec or {}
+    row.spec = new_spec
     db.commit()
     db.refresh(row)
     return row
