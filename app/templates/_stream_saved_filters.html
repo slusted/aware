@@ -11,7 +11,10 @@
     <span class="muted">none yet — save a filter, then share it as a public link</span>
   {% else %}
     {% for sf in saved_filters %}
-      {% set qs = [] %}
+      {# filter_id first so it survives even when the spec has no other
+         keys; stream_page reads it back to set active_filter_id and
+         enable the "Update <name>" button. #}
+      {% set qs = ["filter_id=" ~ sf.id] %}
       {% if sf.spec.get("competitor") %}{% set _ = qs.append("competitor=" ~ sf.spec["competitor"]) %}{% endif %}
       {% for t in sf.spec.get("signal_types", []) %}{% set _ = qs.append("signal_types=" ~ t) %}{% endfor %}
       {% if sf.spec.get("min_materiality") is not none %}{% set _ = qs.append("min_materiality=" ~ sf.spec["min_materiality"]) %}{% endif %}

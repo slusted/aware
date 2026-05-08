@@ -78,6 +78,37 @@ def create_filter(
     return row
 
 
+@router.put("/{filter_id}", response_model=SavedFilterOut)
+def update_filter(
+    filter_id: int,
+    body: SavedFilterIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Overwrite an existing saved filter's spec (and optionally name).
+
+    Permissions mirror delete: own private filters = owner; team filters =
+    admin only. Visibility is intentionally NOT mutable here — flipping
+    private↔team would change ownership semantics and is better as its own
+    explicit action.
+    """
+    row = db.get(SavedFilter, filter_id)
+    if not row:
+        raise HTTPException(404, "filter not found")
+    if row.owner_id is None and user.role != "admin":
+        raise HTTPException(403, "only admins can edit team filters")
+    if row.owner_id and row.owner_id != user.id:
+        raise HTTPException(403, "not your filter")
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "name required")
+    row.name = name
+    row.spec = body.spec or {}
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 @router.delete("/{filter_id}")
 def delete_filter(
     filter_id: int,
