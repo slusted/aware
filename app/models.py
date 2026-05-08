@@ -152,7 +152,8 @@ class Finding(Base):
     # Signal-stream columns. Populated by the extraction layer; nullable so
     # legacy rows keep loading and can be backfilled lazily.
     # signal_type taxonomy: news | price_change | new_hire | product_launch |
-    # messaging_shift | funding | integration | voc_mention | momentum_point | other
+    # messaging_shift | funding | m_and_a | integration | voc_mention |
+    # momentum_point | other
     signal_type: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)                                    # typed fields per signal_type
     materiality: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)          # 0.0–1.0, how worth surfacing

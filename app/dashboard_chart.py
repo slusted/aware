@@ -36,6 +36,7 @@ TOP_N_COMPETITORS = 10
 # without a chip color get reasonable neutrals.
 SIGNAL_TYPE_COLORS: dict[str, str] = {
     "funding":         "#4cb782",
+    "m_and_a":         "#a855f7",
     "new_hire":        "#60a5fa",
     "product_launch":  "#c084fc",
     "integration":     "#2dd4bf",
@@ -52,7 +53,7 @@ SIGNAL_TYPE_COLORS: dict[str, str] = {
 # so the chart reads in the same order as the stream filters. `unknown`
 # is appended for rows with NULL signal_type.
 SIGNAL_TYPE_ORDER: tuple[str, ...] = (
-    "funding", "new_hire", "product_launch", "integration", "price_change",
+    "funding", "m_and_a", "new_hire", "product_launch", "integration", "price_change",
     "messaging_shift", "voc_mention", "news", "momentum_point", "other",
     "unknown",
 )

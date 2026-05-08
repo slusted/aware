@@ -48,6 +48,8 @@ templates = Jinja2Templates(
 )
 from .. import agent_brand as _agent_brand
 _agent_brand.register_template_globals(templates)
+from ..ui import register_signal_globals as _register_signal_globals
+_register_signal_globals(templates)
 
 # Surface the per-evidence cap in templates so the math view can show
 # users the exact bound their posteriors were computed against.

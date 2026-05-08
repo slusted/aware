@@ -26,7 +26,11 @@
   <div class="signal-card-content">
   <header class="signal-card-head">
     <span class="new-dot" aria-label="Unread" title="New — not yet viewed"></span>
-    <span class="badge type-{{ f.signal_type or 'other' }}">{{ f.signal_type or 'unclassified' }}</span>
+    {# Label dict is registered on each Jinja2Templates env that renders this
+       partial (ui.py, routes/scenarios.py). The default({}) guard means a
+       future renderer that forgets to register won't 500 — it just falls
+       back to the raw signal_type. #}
+    <span class="badge type-{{ f.signal_type or 'other' }}">{{ (signal_type_labels|default({})).get(f.signal_type, f.signal_type) or 'unclassified' }}</span>
     {% if f.materiality is not none %}
     <span class="materiality" title="materiality {{ '%.1f' % f.materiality }}">
       <span class="mat-bar" style="width: {{ (f.materiality * 100)|int }}%"></span>

@@ -34,7 +34,7 @@ _MAX_SUMMARY_CHARS = 320
 
 _VALID_TYPES = {
     "news", "price_change", "new_hire", "product_launch",
-    "messaging_shift", "funding", "integration", "voc_mention",
+    "messaging_shift", "funding", "m_and_a", "integration", "voc_mention",
     "momentum_point", "other",
 }
 
@@ -45,10 +45,11 @@ _SYSTEM_PROMPT = """You are a competitive-intelligence classifier. For each find
 Pick exactly one from this taxonomy. Order of preference matters — apply specific categories before the generic ones.
 
 - funding: the competitor raised capital, closed a round, or had an explicit valuation event. NOT a job posting that mentions a prior round in its "About" blurb.
+- m_and_a: the competitor acquired another company, was acquired, or announced a merger. Includes asset purchases and acqui-hires. Ownership change is the defining trait — distinct from a partnership.
 - new_hire: the competitor hired a named senior person (VP/Director/C-level/Head of). A job posting (open role on a careers page) also maps here — it signals hiring intent.
 - product_launch: a new product, feature, or major release went live or was announced.
 - price_change: pricing, plans, or subscription costs changed.
-- integration: a new partnership, integration, or acquisition (they acquired or were acquired).
+- integration: a new partnership or product integration with another company. NO ownership change — for "Acme acquired Foo" use m_and_a instead.
 - messaging_shift: the competitor's positioning, homepage copy, or public narrative materially changed.
 - voc_mention: voice-of-customer — a user/customer post on Reddit, LinkedIn, etc. discussing the competitor.
 - momentum_point: traffic, app-ranking, or engagement datapoint (usually stamped upstream).
@@ -63,8 +64,8 @@ The finding's `source` and `topic` fields are strong hints. In particular:
 ## materiality (float 0.0–1.0, required)
 
 How worth-surfacing is this for a competitive-intel stream reader?
-- 0.9+: funding round, acquisition, major exec hire, flagship launch
-- 0.6–0.8: notable launch, pricing change, integration, named senior hire
+- 0.9+: funding round, M&A (acquisition / merger), major exec hire, flagship launch
+- 0.6–0.8: notable launch, pricing change, partnership / integration, named senior hire
 - 0.4–0.5: job posting, general press, minor launch, VoC mention
 - 0.0–0.3: routine news, low-signal content
 

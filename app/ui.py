@@ -24,6 +24,7 @@ from .routes.signal_events import emit_shown_events
 # drives the order of filter chips in the UI.
 SIGNAL_TYPES = [
     ("funding",        "Funding"),
+    ("m_and_a",        "M&A"),
     ("new_hire",       "Hires"),
     ("product_launch", "Launches"),
     ("integration",    "Integrations"),
@@ -36,7 +37,21 @@ SIGNAL_TYPES = [
     ("other",          "Other"),
 ]
 
+# Lookup used by templates to render the badge label. The stream card was
+# previously displaying the raw signal_type (uppercased by CSS), which is
+# how an M&A finding ended up tagged "INTEGRATION" on the card.
+SIGNAL_TYPE_LABELS = dict(SIGNAL_TYPES)
+
+
+def register_signal_globals(t) -> None:
+    """Attach signal_type_labels to a Jinja2Templates env. Each renderer of
+    _stream_card.html (this module, routes/scenarios.py, future renderers)
+    calls this on its own Jinja2Templates instance."""
+    t.env.globals["signal_type_labels"] = SIGNAL_TYPE_LABELS
+
+
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+register_signal_globals(templates)
 
 # Expose the configurable agent brand to every template — sidebar Agent
 # launcher, floating chat launcher, and chat-drawer header all read from
