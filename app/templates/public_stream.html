@@ -15,7 +15,7 @@
   <title>Aware — shared signals view</title>
   <link rel="preconnect" href="https://rsms.me/">
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
-  <link rel="stylesheet" href="/static/style.css?v=m-and-a-1">
+  <link rel="stylesheet" href="/static/style.css?v=public-qa-1">
   <script>
     // Same clamp behavior as base.html so signal titles and snippets
     // stay 3-line bounded with a more/less toggle. Public page never
@@ -75,6 +75,208 @@
       {% if has_more %}
         <p class="public-stream-more muted">Older signals exist beyond this window. The owner can adjust the filter to widen the date range.</p>
       {% endif %}
+    {% endif %}
+
+    {% if qa_enabled %}
+      {# Public Q&A panel. Owner has flipped public_qa_enabled on the
+         SavedFilter; we expose a one-shot question box scoped to the
+         findings rendered above. The /p/{token}/ask endpoint streams
+         SSE; we read it via fetch() (EventSource is GET-only). #}
+      <section class="public-qa-panel" data-share-token="{{ share_token }}">
+        <header class="public-qa-header">
+          <h2>Ask about this competitive environment</h2>
+          <p class="muted">
+            Answers come from a model reading only the signals shown above.
+            Daily usage is capped per share to keep costs bounded.
+          </p>
+        </header>
+
+        <div class="public-qa-thread" id="public-qa-thread" aria-live="polite">
+          <p class="public-qa-empty muted">No questions yet. Try one below.</p>
+        </div>
+
+        <form class="public-qa-form" id="public-qa-form">
+          <textarea
+            id="public-qa-input"
+            class="public-qa-input"
+            name="question"
+            rows="2"
+            placeholder="e.g. Which competitor has the most product momentum this month?"
+            aria-label="Your question"
+            maxlength="500"
+          ></textarea>
+          <div class="public-qa-form-row">
+            <small class="muted public-qa-budget" id="public-qa-budget">Loading budget…</small>
+            <button type="submit" class="public-qa-submit" id="public-qa-submit">Ask</button>
+          </div>
+        </form>
+      </section>
+
+      <script>
+        // Public Q&A — single-question form posting to /p/{token}/ask and
+        // streaming the SSE response into a fresh thread item. Vanilla JS
+        // because the public page deliberately doesn't load HTMX.
+        (function () {
+          var panel = document.querySelector('.public-qa-panel');
+          if (!panel) return;
+          var token = panel.dataset.shareToken;
+          var thread = document.getElementById('public-qa-thread');
+          var form = document.getElementById('public-qa-form');
+          var input = document.getElementById('public-qa-input');
+          var submit = document.getElementById('public-qa-submit');
+          var budgetEl = document.getElementById('public-qa-budget');
+
+          function refreshBudget() {
+            fetch('/p/' + encodeURIComponent(token) + '/ask/budget', {
+              headers: { 'Accept': 'application/json' },
+            }).then(function (r) {
+              if (!r.ok) throw new Error('budget unavailable');
+              return r.json();
+            }).then(function (j) {
+              budgetEl.textContent =
+                j.remaining_requests + ' question' +
+                (j.remaining_requests === 1 ? '' : 's') +
+                ' left today · ' +
+                j.remaining_tokens.toLocaleString() + ' tokens';
+            }).catch(function () {
+              budgetEl.textContent = 'Budget unavailable.';
+            });
+          }
+          refreshBudget();
+
+          function clearEmpty() {
+            var empty = thread.querySelector('.public-qa-empty');
+            if (empty) empty.remove();
+          }
+
+          function appendQuestion(text) {
+            clearEmpty();
+            var wrap = document.createElement('div');
+            wrap.className = 'public-qa-turn';
+            var q = document.createElement('p');
+            q.className = 'public-qa-q';
+            q.textContent = text;
+            var a = document.createElement('p');
+            a.className = 'public-qa-a';
+            a.textContent = '';
+            wrap.appendChild(q);
+            wrap.appendChild(a);
+            thread.appendChild(wrap);
+            return a;
+          }
+
+          // Parse SSE chunks: "event: NAME\ndata: JSON\n\n". The Anthropic
+          // stream emits text_delta events whose data.text we append; usage
+          // and turn_end events drive the budget refresh; error sets a
+          // failure message.
+          function consumeStream(response, answerEl) {
+            var reader = response.body.getReader();
+            var decoder = new TextDecoder('utf-8');
+            var buf = '';
+            var hadError = false;
+
+            function handleEvent(eventName, dataStr) {
+              if (!eventName) return;
+              var data = {};
+              try { data = JSON.parse(dataStr); } catch (e) {}
+              if (eventName === 'text_delta' && data.text) {
+                answerEl.textContent += data.text;
+              } else if (eventName === 'error') {
+                hadError = true;
+                answerEl.classList.add('public-qa-a-error');
+                answerEl.textContent = data.message || 'Something went wrong.';
+              }
+            }
+
+            function pump() {
+              return reader.read().then(function (chunk) {
+                if (chunk.done) {
+                  if (buf.trim()) {
+                    // flush any tail
+                  }
+                  return;
+                }
+                buf += decoder.decode(chunk.value, { stream: true });
+                var idx;
+                while ((idx = buf.indexOf('\n\n')) >= 0) {
+                  var raw = buf.slice(0, idx);
+                  buf = buf.slice(idx + 2);
+                  var ev = '', data = '';
+                  raw.split('\n').forEach(function (line) {
+                    if (line.indexOf('event:') === 0) ev = line.slice(6).trim();
+                    else if (line.indexOf('data:') === 0) {
+                      data += (data ? '\n' : '') + line.slice(5).trim();
+                    }
+                  });
+                  handleEvent(ev, data);
+                }
+                return pump();
+              });
+            }
+
+            return pump().then(function () { return hadError; });
+          }
+
+          form.addEventListener('submit', function (ev) {
+            ev.preventDefault();
+            var text = input.value.trim();
+            if (!text) return;
+            input.disabled = true;
+            submit.disabled = true;
+            var prevButton = submit.textContent;
+            submit.textContent = 'Asking…';
+            var answerEl = appendQuestion(text);
+            answerEl.textContent = '…';
+            var firstTokenSeen = false;
+            // Replace the placeholder on the first text_delta.
+            var origAppend = answerEl.textContent;
+
+            fetch('/p/' + encodeURIComponent(token) + '/ask', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream',
+              },
+              body: JSON.stringify({ question: text }),
+            }).then(function (response) {
+              if (!response.ok && response.status !== 200) {
+                // Non-200 means the gate rejected before we even started
+                // streaming. Body may be JSON (FastAPI's HTTPException) or
+                // plain text — try JSON first.
+                return response.text().then(function (t) {
+                  var msg = t;
+                  try { msg = JSON.parse(t).detail || msg; } catch (e) {}
+                  answerEl.classList.add('public-qa-a-error');
+                  answerEl.textContent = msg || 'Request failed.';
+                  return true;
+                });
+              }
+              // Reset placeholder before streaming begins.
+              answerEl.textContent = '';
+              return consumeStream(response, answerEl);
+            }).catch(function (err) {
+              answerEl.classList.add('public-qa-a-error');
+              answerEl.textContent = String(err);
+            }).finally(function () {
+              input.value = '';
+              input.disabled = false;
+              submit.disabled = false;
+              submit.textContent = prevButton;
+              input.focus();
+              refreshBudget();
+            });
+          });
+
+          // Cmd/Ctrl+Enter submits; plain Enter inserts newline so longer
+          // questions don't fire by accident.
+          input.addEventListener('keydown', function (ev) {
+            if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
+              ev.preventDefault();
+              form.requestSubmit();
+            }
+          });
+        })();
+      </script>
     {% endif %}
   </main>
 

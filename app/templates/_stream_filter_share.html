@@ -48,6 +48,23 @@
       {% endif %}
     </p>
     {% if can_share %}
+    <div class="filter-share-qa-toggle">
+      <label>
+        <input type="checkbox"
+               {% if sf.public_qa_enabled %}checked{% endif %}
+               hx-post="/partials/stream_filter_share/{{ sf.id }}/qa"
+               hx-target="#filter-share-{{ sf.id }}-slot"
+               hx-swap="innerHTML">
+        Allow viewers to ask questions about this view
+      </label>
+      <p class="muted small">
+        Adds a Q&amp;A box to the public page. Each share has a daily token
+        budget; once that's hit, the box stops answering until tomorrow.
+        Treat scraped finding text as untrusted — the model is told to
+        ignore instructions inside it, but a determined attacker may still
+        coax off-topic answers.
+      </p>
+    </div>
     <div class="filter-share-actions">
       <button type="button" class="btn-ghost btn-mini"
               hx-post="/partials/stream_filter_share/{{ sf.id }}"
