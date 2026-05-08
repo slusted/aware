@@ -32,25 +32,27 @@
 </p>
 
 {% if user and user.role == 'admin' %}
-<details style="margin-top:48px; opacity:0.75">
-  <summary class="muted" style="cursor:pointer; font-size:12px; user-select:none">Admin tools</summary>
-  <div style="margin-top:12px; padding:14px 16px; border:1px solid var(--border-subtle); border-radius:6px; max-width:620px">
-    <div style="font-weight:600; font-size:13px; margin-bottom:4px">Backfill missing 90-day history</div>
-    <p class="muted" style="font-size:12px; margin:0 0 10px">
+<h3 class="muted" style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; font-weight:600; margin:32px 0 10px">Admin</h3>
+<div class="card-grid">
+  <div class="card">
+    <div class="title">Backfill missing 90-day history</div>
+    <div class="body">
       Runs the 90-day historical scan for every active competitor that
-      doesn't already have a successful or in-flight backfill. Skips ones
-      already done. Uses Tavily + Anthropic credits.
-    </p>
-    <button class="btn btn-ghost"
-            hx-post="/api/competitors/backfill-missing"
-            hx-confirm="Kick off a 90-day backfill for every competitor missing history? This may use API credits."
-            hx-target="#backfill-missing-result"
-            hx-swap="innerHTML"
-            hx-disabled-elt="this">
-      Run backfill for missing
-    </button>
+      doesn't already have a successful or in-flight backfill. Skips
+      ones already done. Uses Tavily + Anthropic credits.
+    </div>
+    <div style="margin-top:12px">
+      <button class="btn btn-ghost"
+              hx-post="/api/competitors/backfill-missing"
+              hx-confirm="Kick off a 90-day backfill for every competitor missing history? This may use API credits."
+              hx-target="#backfill-missing-result"
+              hx-swap="innerHTML"
+              hx-disabled-elt="this">
+        Run backfill for missing
+      </button>
+    </div>
     <div id="backfill-missing-result"></div>
   </div>
-</details>
+</div>
 {% endif %}
 {% endblock %}
