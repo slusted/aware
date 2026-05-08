@@ -15,7 +15,7 @@
   <title>Aware — shared signals view</title>
   <link rel="preconnect" href="https://rsms.me/">
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
-  <link rel="stylesheet" href="/static/style.css?v=public-qa-drawer-1">
+  <link rel="stylesheet" href="/static/style.css?v=public-qa-agent-1">
   <script>
     // Same clamp behavior as base.html so signal titles and snippets
     // stay 3-line bounded with a more/less toggle. Public page never
@@ -85,70 +85,70 @@
   </footer>
 
   {% if qa_enabled %}
-    {# Floating launcher + slide-in drawer, mirroring the authenticated
-       chat UX in base.html. Deliberately uses a separate class namespace
-       (.public-qa-*) and a generic icon — the public surface should not
-       expose the owner's agent_brand or imply the viewer has an account. #}
+    {# Floating launcher + slide-in drawer. Reuses the .chat-launcher and
+       .chat-drawer styling from the authenticated app so the public Q&A
+       feels like the same agent — same avatar, same name, same motion.
+       Distinct DOM ids (public-qa-*) keep the public JS from colliding
+       with chat-drawer.js, which is never loaded on /p/{token} anyway. #}
     <button type="button"
             id="public-qa-launcher"
-            class="public-qa-launcher"
-            aria-label="Ask about this competitive environment"
+            class="chat-launcher"
+            aria-label="Ask Agent {{ agent_brand.name }} about this view"
             aria-controls="public-qa-drawer"
             aria-expanded="false">
-      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
-        <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
-              d="M4 5h16v11H8l-4 4z"/>
-        <circle cx="9" cy="10.5" r="1" fill="currentColor"/>
-        <circle cx="12" cy="10.5" r="1" fill="currentColor"/>
-        <circle cx="15" cy="10.5" r="1" fill="currentColor"/>
-      </svg>
-      <span class="public-qa-launcher-label">Ask</span>
+      <img src="{{ agent_brand.avatar_url }}" alt="" width="56" height="56">
     </button>
 
-    <div class="public-qa-backdrop" data-public-qa-backdrop hidden></div>
+    <div class="chat-drawer-backdrop" data-public-qa-backdrop hidden></div>
 
     <aside id="public-qa-drawer"
-           class="public-qa-drawer"
+           class="chat-drawer"
            role="dialog"
            aria-modal="true"
            aria-labelledby="public-qa-drawer-title"
            aria-hidden="true"
            data-share-token="{{ share_token }}">
-      <header class="public-qa-drawer-header">
-        <div class="public-qa-drawer-title-row">
-          <h2 id="public-qa-drawer-title">Ask about this view</h2>
-          <button type="button"
-                  class="public-qa-drawer-close"
-                  data-public-qa-close
-                  aria-label="Close">×</button>
+      <div class="chat-drawer-body">
+        <div class="chat-drawer-header">
+          <div class="chat-drawer-header-row">
+            <img src="{{ agent_brand.avatar_url }}" alt="" class="chat-drawer-avatar">
+            <h2 id="public-qa-drawer-title" class="chat-title">Ask Agent {{ agent_brand.name }}</h2>
+            <div class="chat-drawer-header-actions">
+              <button type="button"
+                      class="btn-mini chat-drawer-close"
+                      data-public-qa-close
+                      title="Close (Esc)"
+                      aria-label="Close">×</button>
+            </div>
+          </div>
+          <p class="muted chat-drawer-meta">
+            Answers are based only on the signals shown on this page.
+            Daily usage is capped per share.
+          </p>
         </div>
-        <p class="muted public-qa-drawer-meta">
-          Answers come from a model reading only the signals on this page.
-          Daily usage is capped per share to keep costs bounded.
-        </p>
-      </header>
 
-      <div class="public-qa-drawer-body">
-        <div class="public-qa-thread" id="public-qa-thread" aria-live="polite">
-          <p class="public-qa-empty muted">No questions yet. Try one below.</p>
+        <div class="public-qa-thread-wrap">
+          <div class="public-qa-thread" id="public-qa-thread" aria-live="polite">
+            <p class="public-qa-empty muted">No questions yet. Try one below.</p>
+          </div>
         </div>
+
+        <form class="public-qa-form" id="public-qa-form">
+          <textarea
+            id="public-qa-input"
+            class="public-qa-input"
+            name="question"
+            rows="2"
+            placeholder="e.g. Which competitor has the most product momentum this month?"
+            aria-label="Your question"
+            maxlength="500"
+          ></textarea>
+          <div class="public-qa-form-row">
+            <small class="muted public-qa-budget" id="public-qa-budget">Loading budget…</small>
+            <button type="submit" class="public-qa-submit" id="public-qa-submit">Ask</button>
+          </div>
+        </form>
       </div>
-
-      <form class="public-qa-form" id="public-qa-form">
-        <textarea
-          id="public-qa-input"
-          class="public-qa-input"
-          name="question"
-          rows="2"
-          placeholder="e.g. Which competitor has the most product momentum this month?"
-          aria-label="Your question"
-          maxlength="500"
-        ></textarea>
-        <div class="public-qa-form-row">
-          <small class="muted public-qa-budget" id="public-qa-budget">Loading budget…</small>
-          <button type="submit" class="public-qa-submit" id="public-qa-submit">Ask</button>
-        </div>
-      </form>
     </aside>
 
     <script>
@@ -187,9 +187,9 @@
         }
 
         function openDrawer() {
-          if (drawer.classList.contains('public-qa-drawer-open')) return;
+          if (drawer.classList.contains('chat-drawer-open')) return;
           lastFocus = document.activeElement;
-          drawer.classList.add('public-qa-drawer-open');
+          drawer.classList.add('chat-drawer-open');
           drawer.setAttribute('aria-hidden', 'false');
           backdrop.hidden = false;
           launcher.setAttribute('aria-expanded', 'true');
@@ -202,8 +202,8 @@
         }
 
         function closeDrawer() {
-          if (!drawer.classList.contains('public-qa-drawer-open')) return;
-          drawer.classList.remove('public-qa-drawer-open');
+          if (!drawer.classList.contains('chat-drawer-open')) return;
+          drawer.classList.remove('chat-drawer-open');
           drawer.setAttribute('aria-hidden', 'true');
           backdrop.hidden = true;
           launcher.setAttribute('aria-expanded', 'false');
@@ -346,7 +346,7 @@
           }
         });
         document.addEventListener('keydown', function (ev) {
-          if (ev.key === 'Escape' && drawer.classList.contains('public-qa-drawer-open')) {
+          if (ev.key === 'Escape' && drawer.classList.contains('chat-drawer-open')) {
             closeDrawer();
           }
         });
