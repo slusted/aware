@@ -584,6 +584,8 @@ def _h_add_competitor(
     db.add(comp)
     db.commit()
     db.refresh(comp)
+    from .. import competitor_backfill
+    competitor_backfill.kick_off(db, comp.id, triggered_by="chat_add_competitor")
     return {
         "added": True,
         "competitor_id": comp.id,

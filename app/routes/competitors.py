@@ -192,6 +192,8 @@ def create_competitor(
             db.commit()
     if payload.homepage_domain:
         bg.add_task(logos_cache.fetch_and_store, payload.homepage_domain)
+    from .. import competitor_backfill
+    competitor_backfill.kick_off(db, c.id, triggered_by="competitor_add")
     return c
 
 
