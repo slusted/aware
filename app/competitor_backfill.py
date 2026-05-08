@@ -33,7 +33,12 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import threading
+import traceback
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
+from .db import SessionLocal
 from .jobs import (
     RUN_KINDS,
     RunCancelled,
@@ -45,10 +50,34 @@ from .jobs import (
     check_cancel,
     clear_cancel,
 )
-from .models import Competitor, RunEvent
+from .models import Competitor, Run, RunEvent
 
 
 BACKFILL_DAYS = int(os.environ.get("COMPETITOR_BACKFILL_DAYS", "90"))
+
+# Bound concurrency in-process. SQLite is single-writer (even under WAL),
+# so stacking many backfills stalls user request handlers behind the
+# writer queue — the website goes unresponsive while a 30-competitor
+# bulk import / "backfill missing" sweep runs flat-out. A small pool
+# keeps the website responsive while still parallelising the slow part
+# (Tavily + Anthropic round-trips). Tune via env if you want more.
+_MAX_CONCURRENT = max(1, int(os.environ.get("COMPETITOR_BACKFILL_CONCURRENCY", "2")))
+_executor: ThreadPoolExecutor | None = None
+_executor_lock = threading.Lock()
+
+
+def _get_executor() -> ThreadPoolExecutor:
+    """Lazy-initialise so import-time cost is zero on workers that never
+    hit a backfill (e.g. one-off scripts)."""
+    global _executor
+    if _executor is None:
+        with _executor_lock:
+            if _executor is None:
+                _executor = ThreadPoolExecutor(
+                    max_workers=_MAX_CONCURRENT,
+                    thread_name_prefix="competitor-backfill",
+                )
+    return _executor
 
 
 def _competitor_dict_from_config(name: str) -> dict | None:
@@ -203,10 +232,12 @@ class _StreamSilencer:
         pass
 
 
-# Self-register on import so the trigger callsites can hand the kind
-# string to start_tracked_run. concurrency=None: a 20-row bulk add fires
-# 20 backfills in parallel; rate-limit pressure is on Tavily/Anthropic,
-# not on us.
+# Self-register on import. Concurrency is enforced by the in-process
+# ThreadPoolExecutor below (kick_off submits there), not by
+# start_tracked_run — kick_off bypasses that helper so overflow gets
+# queued in the executor instead of raising ConcurrencyCapExceeded and
+# silently dropping backfills (which would regress bulk_competitor_add
+# and the admin "backfill missing" button).
 RUN_KINDS["competitor_backfill"] = RunKindSpec(
     name="competitor_backfill",
     mode="tracked",
@@ -220,21 +251,84 @@ RUN_KINDS["competitor_backfill"] = RunKindSpec(
 )
 
 
+def _executor_worker(run_id: int, competitor_id: int, days: int) -> None:
+    """Run inside one of the bounded executor threads. Calls the registered
+    target inline so concurrency is pinned at _MAX_CONCURRENT — submissions
+    beyond the cap sit in the executor's internal queue instead of spawning
+    extra threads or being dropped."""
+    try:
+        _run_competitor_backfill_target(
+            run_id=run_id, competitor_id=competitor_id, days=days,
+        )
+    except Exception as e:
+        # The target's own try/finally normally flips the row to 'error'.
+        # This is belt-and-braces for crashes that happen before _start_run
+        # (import errors, missing job_args, etc.) so the row doesn't sit
+        # 'running' forever.
+        tb = traceback.format_exc()
+        d = SessionLocal()
+        try:
+            row = d.get(Run, run_id)
+            if row and row.status in ("running", "cancelling"):
+                row.status = "error"
+                row.error = f"{type(e).__name__}: {e}"
+                row.finished_at = datetime.utcnow()
+                d.add(RunEvent(
+                    run_id=run_id, level="error",
+                    message=f"backfill executor crashed: {e}\n{tb}",
+                ))
+                d.commit()
+        finally:
+            d.close()
+
+
 def kick_off(db, competitor_id: int, *, triggered_by: str = "manual") -> None:
-    """Helper for trigger callsites: spawn a backfill run and swallow any
-    error so the add-competitor path never fails because the backfill
-    couldn't start. The original Run row already exists for visibility."""
+    """Helper for trigger callsites: queue a backfill run on the bounded
+    in-process executor. Returns immediately. Catches any kickoff error
+    so the add-competitor path never fails because the backfill couldn't
+    start; failures land on the Run row, recoverable from /runs."""
     if BACKFILL_DAYS <= 0:
         return
     try:
-        from .jobs import start_tracked_run
-        start_tracked_run(
-            db,
-            "competitor_backfill",
+        # Create the Run row eagerly so it appears on /runs the moment the
+        # operator clicks. Status='running' matches the existing
+        # start_tracked_run shape — the row is "claimed", just waiting for
+        # an executor slot. The cap is short (2 by default) so the wait is
+        # bounded.
+        run = Run(
+            kind="competitor_backfill",
+            status="running",
             triggered_by=triggered_by,
             job_args={"competitor_id": competitor_id, "days": BACKFILL_DAYS},
         )
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        db.add(RunEvent(
+            run_id=run.id, level="info",
+            message=f"queued behind backfill cap={_MAX_CONCURRENT}; "
+                    f"will start once a slot frees up",
+        ))
+        db.commit()
+        run_id = run.id
     except Exception as e:
-        # Never block competitor creation on a backfill kickoff failure.
-        # The /runs page is the recovery path — operator can re-trigger.
-        print(f"[competitor_backfill] kickoff failed for id={competitor_id}: {e}")
+        print(f"[competitor_backfill] kickoff row-create failed for id={competitor_id}: {e}")
+        return
+
+    try:
+        _get_executor().submit(
+            _executor_worker, run_id, competitor_id, BACKFILL_DAYS,
+        )
+    except Exception as e:
+        # Submission itself shouldn't fail under normal load, but if it
+        # does, mark the row error so it doesn't sit 'running' forever.
+        print(f"[competitor_backfill] executor submit failed for run {run_id}: {e}")
+        try:
+            row = db.get(Run, run_id)
+            if row and row.status in ("running", "queued"):
+                row.status = "error"
+                row.error = f"executor submit failed: {e}"
+                row.finished_at = datetime.utcnow()
+                db.commit()
+        except Exception:
+            db.rollback()
