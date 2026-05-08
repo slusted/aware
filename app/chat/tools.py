@@ -904,7 +904,7 @@ TOOLS: list[Tool] = [
                 "signal_type": {
                     "type": "string",
                     "enum": [
-                        "funding", "new_hire", "product_launch", "messaging_shift",
+                        "funding", "m_and_a", "new_hire", "product_launch", "messaging_shift",
                         "price_change", "integration", "voc_mention", "momentum_point",
                         "news", "other",
                     ],

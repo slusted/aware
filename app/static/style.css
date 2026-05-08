@@ -98,6 +98,12 @@
   --type-integration-border:        rgba(45,212,191,0.35);
   --type-integration-border-strong: rgba(45,212,191,0.45);
 
+  --type-m-and-a:                   #a855f7;
+  --type-m-and-a-soft:              rgba(168,85,247,0.08);
+  --type-m-and-a-soft-strong:       rgba(168,85,247,0.12);
+  --type-m-and-a-border:            rgba(168,85,247,0.35);
+  --type-m-and-a-border-strong:     rgba(168,85,247,0.45);
+
   --type-price-change:              #e0a500;
   --type-price-change-soft:         rgba(224,165,0,0.08);
   --type-price-change-soft-strong:  rgba(224,165,0,0.12);
@@ -216,6 +222,11 @@
   --type-integration-soft-strong:   rgba(45,212,191,0.20);
   --type-integration-border:        rgba(45,212,191,0.45);
   --type-integration-border-strong: rgba(45,212,191,0.55);
+
+  --type-m-and-a-soft:              rgba(168,85,247,0.14);
+  --type-m-and-a-soft-strong:       rgba(168,85,247,0.18);
+  --type-m-and-a-border:            rgba(168,85,247,0.40);
+  --type-m-and-a-border-strong:     rgba(168,85,247,0.50);
 
   --type-price-change-soft:         rgba(224,165,0,0.14);
   --type-price-change-soft-strong:  rgba(224,165,0,0.18);
@@ -1630,6 +1641,7 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
 .badge.type-new_hire       { color: var(--type-new-hire);         border-color: var(--type-new-hire-border);         background: var(--type-new-hire-soft); }
 .badge.type-product_launch { color: var(--type-product-launch);   border-color: var(--type-product-launch-border);   background: var(--type-product-launch-soft); }
 .badge.type-integration    { color: var(--type-integration);      border-color: var(--type-integration-border);      background: var(--type-integration-soft); }
+.badge.type-m_and_a        { color: var(--type-m-and-a);          border-color: var(--type-m-and-a-border);          background: var(--type-m-and-a-soft); }
 .badge.type-price_change   { color: var(--type-price-change);     border-color: var(--type-price-change-border);     background: var(--type-price-change-soft); }
 .badge.type-messaging_shift{ color: var(--type-messaging-shift);  border-color: var(--type-messaging-shift-border);  background: var(--type-messaging-shift-soft); }
 .badge.type-voc_mention    { color: var(--text-secondary); border-color: var(--border-strong); background: var(--surface-2); }
@@ -1662,6 +1674,7 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
 .event-material-badge.type-new_hire       { color: var(--type-new-hire);        border-color: var(--type-new-hire-border);        background: var(--type-new-hire-soft-strong); }
 .event-material-badge.type-product_launch { color: var(--type-product-launch);  border-color: var(--type-product-launch-border);  background: var(--type-product-launch-soft-strong); }
 .event-material-badge.type-integration    { color: var(--type-integration);     border-color: var(--type-integration-border);     background: var(--type-integration-soft-strong); }
+.event-material-badge.type-m_and_a        { color: var(--type-m-and-a);         border-color: var(--type-m-and-a-border);         background: var(--type-m-and-a-soft-strong); }
 .event-material-badge.type-price_change   { color: var(--type-price-change);    border-color: var(--type-price-change-border);    background: var(--type-price-change-soft-strong); }
 .event-material-badge.type-messaging_shift{ color: var(--type-messaging-shift); border-color: var(--type-messaging-shift-border); background: var(--type-messaging-shift-soft-strong); }
 .event-material-link {
@@ -1675,6 +1688,7 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
 .chip input:checked + .chip-body.type-new_hire       { color: var(--type-new-hire);        border-color: var(--type-new-hire-border-strong);        background: var(--type-new-hire-soft-strong); }
 .chip input:checked + .chip-body.type-product_launch { color: var(--type-product-launch);  border-color: var(--type-product-launch-border-strong);  background: var(--type-product-launch-soft-strong); }
 .chip input:checked + .chip-body.type-integration    { color: var(--type-integration);     border-color: var(--type-integration-border-strong);     background: var(--type-integration-soft-strong); }
+.chip input:checked + .chip-body.type-m_and_a        { color: var(--type-m-and-a);         border-color: var(--type-m-and-a-border-strong);         background: var(--type-m-and-a-soft-strong); }
 .chip input:checked + .chip-body.type-price_change   { color: var(--type-price-change);    border-color: var(--type-price-change-border-strong);    background: var(--type-price-change-soft-strong); }
 .chip input:checked + .chip-body.type-messaging_shift{ color: var(--type-messaging-shift); border-color: var(--type-messaging-shift-border-strong); background: var(--type-messaging-shift-soft-strong); }
 .chip input:checked + .chip-body.type-momentum_point { color: var(--type-momentum-point);  border-color: var(--type-momentum-point-border-strong);  background: var(--type-momentum-point-soft-strong); }
