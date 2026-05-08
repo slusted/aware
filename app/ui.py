@@ -2395,6 +2395,35 @@ def partial_filter_share_revoke(
     )
 
 
+@router.post("/partials/stream_filter_share/{filter_id}/qa", response_class=HTMLResponse)
+def partial_filter_share_toggle_qa(
+    filter_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Flip the public_qa_enabled flag and re-render the share panel.
+
+    Permissions match mint/revoke (own private filter or admin on team).
+    No body needed — this is a toggle: read the current value, flip it,
+    save, re-render. We don't bother validating the share has a token
+    first; toggling QA on a not-yet-shared filter is harmless because
+    the public route gates on token presence anyway.
+    """
+    from .routes.filters import _check_share_owner
+    sf = db.get(SavedFilter, filter_id)
+    if not sf:
+        raise HTTPException(404, "filter not found")
+    _check_share_owner(sf, user)
+    sf.public_qa_enabled = not bool(getattr(sf, "public_qa_enabled", False))
+    db.commit()
+    return templates.TemplateResponse(
+        request,
+        "_stream_filter_share.html",
+        _share_panel_context(request, sf, user),
+    )
+
+
 @router.post("/partials/stream_filter_share/{filter_id}/close", response_class=HTMLResponse)
 def partial_filter_share_close(filter_id: int):
     """Close the panel. Returns an empty fragment so the slot collapses

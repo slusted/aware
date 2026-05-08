@@ -1085,6 +1085,19 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
   flex-wrap: wrap;
 }
 .filter-share-panel .small { font-size: 12px; }
+.filter-share-qa-toggle {
+  margin: 8px 0 12px;
+  padding: 8px 0;
+  border-top: 1px dashed var(--border-subtle);
+}
+.filter-share-qa-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.filter-share-qa-toggle p { margin: 4px 0 0 22px; }
 .filter-share-panel .btn-danger:hover { color: var(--err); }
 
 /* docs/stream/01-public-share-link.md — /p/{token} page.
@@ -1153,6 +1166,86 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
   background: var(--surface-1);
 }
 .public-stream-footer p { margin: 2px 0; }
+
+/* Public Q&A panel — only renders when the share owner has flipped
+   public_qa_enabled on the SavedFilter. Sits inside .public-stream-main
+   so it inherits the same width as the cards above it. Stub UI: the
+   form is disabled until the /p/{token}/ask endpoint lands. */
+.public-qa-panel {
+  margin-top: 32px;
+  padding: 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-1);
+}
+.public-qa-header { margin-bottom: 14px; }
+.public-qa-header h2 {
+  margin: 0 0 4px 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.public-qa-header p { margin: 0; font-size: 0.85rem; }
+.public-qa-thread {
+  min-height: 60px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--surface-2, var(--surface-1));
+  border: 1px dashed var(--border-subtle);
+}
+.public-qa-empty { margin: 0; font-size: 0.85rem; }
+.public-qa-turn { margin: 0 0 14px 0; }
+.public-qa-turn:last-child { margin-bottom: 0; }
+.public-qa-q {
+  margin: 0 0 6px 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.public-qa-q::before {
+  content: "Q ";
+  opacity: 0.6;
+  font-weight: 500;
+}
+.public-qa-a {
+  margin: 0;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+.public-qa-a::before {
+  content: "A ";
+  opacity: 0.6;
+  font-weight: 500;
+}
+.public-qa-a-error { color: var(--text-warn, #c53030); }
+.public-qa-form { display: flex; flex-direction: column; gap: 8px; }
+.public-qa-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}
+.public-qa-input:disabled { opacity: 0.6; cursor: not-allowed; }
+.public-qa-form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.public-qa-budget { font-size: 0.8rem; }
+.public-qa-submit {
+  padding: 6px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-2, var(--surface-1));
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.public-qa-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Collapse the filter form behind a toggle — the stream is the answer,
    not the filter UI. Saved-filter picker stays visible so preset

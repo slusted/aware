@@ -1,5 +1,5 @@
-from datetime import datetime
-from sqlalchemy import String, Integer, Float, DateTime, Text, JSON, ForeignKey, Boolean, UniqueConstraint, Index, LargeBinary, text
+from datetime import date, datetime
+from sqlalchemy import String, Integer, Float, DateTime, Date, Text, JSON, ForeignKey, Boolean, UniqueConstraint, Index, LargeBinary, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
@@ -621,6 +621,35 @@ class SavedFilter(Base):
     # NULL = not shared. Rotating = overwrite; revoking = null.
     public_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     public_token_created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Owner toggle for the public Q&A panel on /p/{token}. Default off so
+    # existing shares keep rendering as a pure read-only view; flipping
+    # this true exposes a question box scoped to the findings on the
+    # page, with a per-share daily token budget enforced server-side.
+    public_qa_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+
+
+class PublicShareQaUsage(Base):
+    """Per-share, per-day token + request counter for the public Q&A panel.
+
+    Keyed on saved_filter_id (not the token) so rotating a share's token
+    mid-day doesn't reset the day's spend — the budget is "per share per
+    day", and the share is the saved-filter row.
+    """
+    __tablename__ = "public_share_qa_usage"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    saved_filter_id: Mapped[int] = mapped_column(
+        ForeignKey("saved_filters.id", ondelete="CASCADE"), nullable=False
+    )
+    usage_date: Mapped[date] = mapped_column(Date, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint("saved_filter_id", "usage_date", name="uq_public_share_qa_usage_filter_date"),
+    )
 
 
 class ChatSession(Base):
