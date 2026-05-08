@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from .. import agent_brand as _agent_brand
 from .. import public_qa
 from ..deps import get_db
 from ..models import SavedFilter
@@ -33,7 +34,11 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 # `_stream_card.html` looks up signal_type labels via this global; without
 # the registration the badge would render the raw enum value.
 _register_signal_globals(templates)
-_register_signal_globals(templates)
+# `agent_brand` powers the floating Q&A launcher (avatar + name) so the
+# public surface uses the same identity as the authenticated chat. Each
+# Jinja2Templates instance has its own env, so this has to be registered
+# explicitly on the public env too.
+_agent_brand.register_template_globals(templates)
 
 
 @router.get("/p/{token}", response_class=HTMLResponse)
