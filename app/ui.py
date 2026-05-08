@@ -1675,8 +1675,12 @@ def _public_stream_query(db, filters):
     """Build + run the stream query for an unauthenticated public render
     (docs/stream/01-public-share-link.md). Mirrors `_stream_query` but
     drops every `user`-scoped concern: no SignalView join, no view-count
-    aggregation, no per-user taste centroid, no MMR re-ranking, no
-    pinned_only branch (rejected at mint time anyway).
+    aggregation, no per-user taste centroid, no pinned_only branch
+    (rejected at mint time anyway).
+
+    Clustering + MMR diversity IS applied — it's purely content-shape
+    based, not user-scoped, and without it sources clump on the public
+    feed while the owner sees a diversified one for the same filter.
 
     Returns (findings, has_more). The `tagged="untagged"` predicate filter
     is honoured because predicate evidence is per-finding, not per-user.
@@ -1737,6 +1741,20 @@ def _public_stream_query(db, filters):
         q = q.order_by(effective_date.desc())
 
     findings = q.limit(STREAM_SAFETY_CAP).all()
+
+    # Same diversity layer as the authenticated stream, minus the per-user
+    # signals. user_centroid=None disables the embedding-match term in
+    # default_score; seen_count_by_id={} means no seen-decay penalty (the
+    # public viewer has no history). The MMR + Jaccard/cosine clustering
+    # is purely content-based and is what keeps sources from clumping.
+    if findings:
+        cards = _present_clusters(
+            findings,
+            now=now,
+            seen_count_by_id={},
+            user_centroid=None,
+        )
+        findings = _lead_findings(cards)
     return findings, has_more
 
 
