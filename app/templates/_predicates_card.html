@@ -55,7 +55,7 @@
     {% endif %}
     {% if pending_proposal_count is defined and pending_proposal_count %}
       <span class="predicate-card-stat predicate-card-proposal-chip"
-            title="Pending agent proposals about this predicate's definition.">
+            title="Pending agent proposals about this prediction's definition.">
         {{ pending_proposal_count }} pending proposal{% if pending_proposal_count != 1 %}s{% endif %}
       </span>
     {% endif %}
@@ -75,10 +75,10 @@
       {% if predicate_actions_enabled and s.source == 'llm_proposed' %}
         <button type="button" class="btn-ghost predicate-card-promote"
                 data-predicate-key="{{ s.key }}"
-                title="Accept this LLM-proposed predicate">✓ Promote</button>
+                title="Accept this LLM-proposed prediction">✓ Promote</button>
         <button type="button" class="btn-ghost predicate-card-reject"
                 data-predicate-key="{{ s.key }}"
-                title="Reject — marks the predicate inactive">✗ Reject</button>
+                title="Reject — marks the prediction inactive">✗ Reject</button>
       {% endif %}
     {% endif %}
   </footer>

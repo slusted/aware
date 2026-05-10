@@ -32,7 +32,7 @@
   {% endfor %}
   {% if confirmed | length > 2 %}
     <span class="predicate-tag-chip is-more"
-          title="{{ confirmed | length - 2 }} more confirmed predicate evidence rows">
+          title="{{ confirmed | length - 2 }} more confirmed prediction evidence rows">
       +{{ confirmed | length - 2 }} more
     </span>
   {% endif %}
@@ -45,13 +45,13 @@
   {% endfor %}
   {% if proposed | length > 2 %}
     <span class="predicate-tag-chip is-more"
-          title="{{ proposed | length - 2 }} more proposed predicate evidence rows">
+          title="{{ proposed | length - 2 }} more proposed prediction evidence rows">
       +{{ proposed | length - 2 }} more
     </span>
   {% endif %}
 {% elif rejected %}
   <span class="predicate-tag-chip is-rejected"
-        title="LLM proposed predicate evidence; user rejected. Flip the card to revisit.">
+        title="LLM proposed prediction evidence; user rejected. Flip the card to revisit.">
     tag rejected
   </span>
 {% endif %}

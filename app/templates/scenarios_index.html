@@ -13,12 +13,12 @@
   </div>
 
   <nav class="tabs" role="tablist" aria-label="Scenarios sections">
-    {% for t in ("predicates", "scenarios", "evidence", "settings") %}
+    {% for t, label in [("predicates", "Predictions"), ("scenarios", "Scenarios"), ("evidence", "Evidence"), ("settings", "Settings")] %}
       <a class="tab {% if tab == t %}active{% endif %}"
          href="/scenarios?tab={{ t }}"
          role="tab"
          aria-selected="{% if tab == t %}true{% else %}false{% endif %}">
-        {{ t|capitalize }}
+        {{ label }}
       </a>
     {% endfor %}
   </nav>
@@ -41,12 +41,12 @@
         {% if header.last_recompute_at %}recomputed {{ header.last_recompute_at.strftime('%b %d, %H:%M') }}{% else %}never recomputed{% endif %}
       </p>
       <details class="predicates-subhead-help">
-        <summary>What is a predicate?</summary>
+        <summary>What is a prediction?</summary>
         <p class="predicates-subhead-help-body">
-          A <strong>predicate</strong> is a single claim about the market that
+          A <strong>prediction</strong> is a single claim about the market that
           can take one of a fixed set of states — e.g. <em>"do buyers prefer
           self-serve or sales-led?"</em>. Each piece of evidence we tag nudges
-          the predicate's posterior toward one state. Predicates are the atoms
+          the prediction's posterior toward one state. Predictions are the atoms
           scenarios are built from.
         </p>
       </details>
@@ -93,7 +93,7 @@
         {% endfor %}
       </div>
     {% else %}
-      <p class="muted">No active predicates match the current filters. Try clearing the category filter or the "no recent evidence" toggle.</p>
+      <p class="muted">No active predictions match the current filters. Try clearing the category filter or the "no recent evidence" toggle.</p>
     {% endif %}
   </section>
 {% elif tab == "evidence" %}
@@ -111,10 +111,10 @@
       <div class="tab-explainer-body">
         <p class="tab-explainer-text">
           <strong>Evidence</strong> is a single finding tagged against a
-          predicate — direction (support / contradict / neutral), strength,
+          prediction — direction (support / contradict / neutral), strength,
           and a credibility weight. Tagged on the Stream, proposed by the
           classifier sweep or added manually. Each row's contribution decays
-          over time and feeds the predicate posterior.
+          over time and feeds the prediction posterior.
         </p>
       </div>
       <div class="tab-explainer-stats brief-meta">
@@ -127,7 +127,7 @@
           <span class="brief-meta-value">{{ header.n_evidence_pending }}</span>
         </div>
         <div class="brief-meta-item">
-          <span class="brief-meta-label">Predicates covered</span>
+          <span class="brief-meta-label">Predictions covered</span>
           <span class="brief-meta-value">{{ header.n_predicates }}</span>
         </div>
         <div class="brief-meta-item">
@@ -156,9 +156,9 @@
       <div class="tab-explainer-body">
         <p class="tab-explainer-text">
           A <strong>scenario</strong> is a future state of the market defined
-          as a weighted bundle of predicates each pinned to a required state —
+          as a weighted bundle of predictions each pinned to a required state —
           e.g. <em>"market consolidates around two sales-led incumbents"</em>.
-          Its probability is the weighted product of its predicates' current
+          Its probability is the weighted product of its predictions' current
           posteriors (independence assumed). Use scenarios to track where the
           weight of evidence is pointing across competitors.
         </p>
@@ -169,7 +169,7 @@
           <span class="brief-meta-value">{{ header.n_scenarios }}</span>
         </div>
         <div class="brief-meta-item">
-          <span class="brief-meta-label">Predicates in play</span>
+          <span class="brief-meta-label">Predictions in play</span>
           <span class="brief-meta-value">{{ header.n_predicates }}</span>
         </div>
         <div class="brief-meta-item">
@@ -220,7 +220,7 @@
       </div>
       <div class="tab-explainer-stats brief-meta">
         <div class="brief-meta-item">
-          <span class="brief-meta-label">Predicates</span>
+          <span class="brief-meta-label">Predictions</span>
           <span class="brief-meta-value">{{ header.n_predicates }}</span>
         </div>
         <div class="brief-meta-item">
