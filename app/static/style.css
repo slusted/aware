@@ -4783,6 +4783,59 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 .fitness-chip.is-fits { background: rgba(76, 168, 102, 0.18); color: #4ca866; }
 .fitness-chip.is-awkward { background: rgba(201, 136, 58, 0.2); color: #c9883a; }
 .fitness-chip.is-misfit { background: rgba(181, 72, 72, 0.2); color: #b54848; }
+.fitness-chip.is-pending { background: rgba(201, 136, 58, 0.18); color: #c9883a; }
+
+.predicate-findings-pending {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(201, 136, 58, 0.35);
+  border-radius: 8px;
+  background: rgba(201, 136, 58, 0.05);
+}
+.predicate-findings-pending-h {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+.predicate-findings-pending-count {
+  display: inline-block;
+  min-width: 1.5em;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(201, 136, 58, 0.2);
+  color: #c9883a;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+}
+.predicate-findings-pending-hint {
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+.predicate-finding-row.is-pending {
+  border-left: 2px solid #c9883a;
+  padding-left: 10px;
+}
+.predicate-finding-actions {
+  margin: 6px 0 0 22px;
+  display: flex;
+  gap: 6px;
+}
+.predicate-finding-actions .btn-ghost {
+  font-size: 0.8rem;
+  padding: 2px 10px;
+}
+.predicate-finding-confirm:hover {
+  background: rgba(76, 168, 102, 0.15);
+  color: #4ca866;
+}
+.predicate-finding-reject:hover {
+  background: rgba(181, 72, 72, 0.15);
+  color: #b54848;
+}
 
 .predicate-finding-row.fitness-misfit {
   border-left: 2px solid #b54848;
