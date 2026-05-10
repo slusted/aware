@@ -423,6 +423,8 @@ def _dispatch_queued_run(run_id: int, kind: str, args: dict, triggered_by: str) 
             run_discovery_job(run_id=run_id)
         elif kind == "market_digest":
             run_market_digest_job(triggered_by, run_id=run_id)
+        elif kind == "market_releases":
+            run_market_releases_job(triggered_by, days=args.get("days"), run_id=run_id)
         elif kind == "ingest_app_reviews":
             run_ingest_app_reviews_job(triggered_by, run_id=run_id)
         elif kind == "synthesise_voc_themes":
@@ -1217,6 +1219,7 @@ def run_market_digest_job(triggered_by: str = "manual", run_id: int | None = Non
 
         report = Report(
             run_id=run_id,
+            kind="market_digest",
             title=f"Digest {run_started_at:%Y-%m-%d %H:%M}",
             body_md=digest,
         )
@@ -1227,6 +1230,50 @@ def run_market_digest_job(triggered_by: str = "manual", run_id: int | None = Non
         run = db.get(Run, run_id)
         run.report_id = report.id
         run.findings_count = len(all_findings)
+        db.commit()
+
+        _finish_run(db, run, "ok")
+    except RunCancelled:
+        run = db.get(Run, run_id) or run
+        _log(db, run, "cancelled by user", "warn")
+        _finish_run(db, run, "cancelled")
+    except Exception as e:
+        tb = traceback.format_exc()
+        run = db.get(Run, run_id) or run
+        _log(db, run, f"ERROR: {e}\n{tb}", "error")
+        _finish_run(db, run, "error", str(e))
+    finally:
+        clear_cancel(run_id)
+        current_run_id.reset(token)
+
+
+def run_market_releases_job(
+    triggered_by: str = "manual",
+    days: int | None = None,
+    run_id: int | None = None,
+) -> None:
+    """Regenerate the cross-market Product Releases brief over existing
+    findings — LLM only, no scraping. Recorded as a Run with
+    kind='market_releases' so /runs and the live panel surface progress.
+    `days` overrides the default window (see DEFAULT_WINDOW_DAYS)."""
+    from .market_releases import synthesize_releases, DEFAULT_WINDOW_DAYS
+
+    window = int(days) if days else DEFAULT_WINDOW_DAYS
+    run, db = _start_run("market_releases", triggered_by, run_id=run_id)
+    run_id = run.id
+    token = current_run_id.set(run_id)
+    try:
+        from service import load_config
+        config = load_config()
+        company = config.get("company", "Seek")
+
+        with _StreamToRunEvents(run_id) as tee, contextlib.redirect_stdout(tee):
+            print(f"[releases] window={window}d company={company}")
+            report = synthesize_releases(db, days=window, run_id=run_id, company=company)
+            print(f"[releases] wrote report #{report.id} ({len(report.body_md)} chars)")
+
+        run = db.get(Run, run_id)
+        run.report_id = report.id
         db.commit()
 
         _finish_run(db, run, "ok")
