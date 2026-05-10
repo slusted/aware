@@ -166,6 +166,7 @@ def predicate_expand_definition(
         "review": review,
         "pending_proposals": proposals,
         "proposals_by_id": {pr.id: pr for pr in proposals},
+        "user": user,
     })
 
 

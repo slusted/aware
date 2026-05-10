@@ -50,12 +50,72 @@
   <p class="muted">No confirmed evidence on this prediction yet.</p>
 {% endif %}
 
-{% set hidden_total = detail.evidence_pending|length + detail.evidence_rejected|length %}
-{% if hidden_total > 0 %}
+{% if detail.evidence_pending %}
+  {% set _refresh = "if(event.detail.successful) htmx.ajax('GET', '/predicates/" ~ detail.summary.key ~ "/expand', {target: '#predicate-detail-" ~ detail.summary.key ~ "', swap: 'innerHTML'})" %}
+  <section class="predicate-findings-pending" aria-label="Pending evidence awaiting review">
+    <h5 class="predicate-findings-pending-h">
+      Pending review
+      <span class="predicate-findings-pending-count">{{ detail.evidence_pending|length }}</span>
+      <span class="muted predicate-findings-pending-hint">
+        — LLM proposals; confirm to count toward this prediction.
+      </span>
+    </h5>
+    <ul class="predicate-findings-list predicate-findings-list-pending">
+      {% for ev in detail.evidence_pending %}
+        <li class="predicate-finding-row is-pending" data-evidence-id="{{ ev.id }}">
+          <div class="predicate-finding-row-head">
+            <span class="fitness-chip is-pending" title="LLM proposed; not yet confirmed">⌛ pending</span>
+            <span class="predicate-finding-date muted mono">
+              {{ ev.observed_at.strftime('%Y-%m-%d') }}
+            </span>
+            {% if ev.finding_url %}
+              <a class="predicate-finding-title"
+                 href="{{ ev.finding_url }}" target="_blank" rel="noopener">
+                {{ (ev.finding_title or '#' ~ ev.finding_id)[:120] }}
+              </a>
+            {% elif ev.finding_id %}
+              <span class="predicate-finding-title">finding #{{ ev.finding_id }}</span>
+            {% else %}
+              <span class="predicate-finding-title muted">manual</span>
+            {% endif %}
+            {% if ev.competitor %}
+              <span class="muted">· {{ ev.competitor }}</span>
+            {% endif %}
+          </div>
+          <p class="predicate-finding-read-as muted">
+            <strong>{{ ev.target_state_label }}</strong>
+            · {{ ev.direction }} / {{ ev.strength_bucket }}
+            {% if ev.notes %} — {{ ev.notes }}{% endif %}
+          </p>
+          {% if ev.finding_id and user is defined and user and user.role in ("admin", "analyst") %}
+            <div class="predicate-finding-actions">
+              <button type="button" class="btn-ghost predicate-finding-confirm"
+                      hx-post="/scenarios/partials/finding/{{ ev.finding_id }}/evidence/{{ ev.id }}/confirm"
+                      hx-swap="none"
+                      hx-on::after-request="{{ _refresh }}"
+                      title="Mark this LLM proposal correct — counts toward the prediction.">
+                ✓ Confirm
+              </button>
+              <button type="button" class="btn-ghost predicate-finding-reject"
+                      hx-post="/scenarios/partials/finding/{{ ev.finding_id }}/evidence/{{ ev.id }}/reject"
+                      hx-swap="none"
+                      hx-on::after-request="{{ _refresh }}"
+                      title="Mark this LLM proposal wrong — kept for audit, excluded from math.">
+                ✗ Reject
+              </button>
+            </div>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}
+
+{% if detail.evidence_rejected %}
   <details class="predicate-findings-hidden">
-    <summary class="muted">▸ Show pending + rejected ({{ hidden_total }})</summary>
+    <summary class="muted">▸ Show rejected ({{ detail.evidence_rejected|length }})</summary>
     <ul class="predicate-findings-list is-muted">
-      {% for ev in detail.evidence_pending + detail.evidence_rejected %}
+      {% for ev in detail.evidence_rejected %}
         <li class="predicate-finding-row">
           <span class="muted mono">{{ ev.observed_at.strftime('%Y-%m-%d') }}</span>
           {% if ev.finding_url %}
