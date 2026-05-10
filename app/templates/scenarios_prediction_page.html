@@ -7,10 +7,9 @@
 {% set _shift = s.dominant_state_velocity_pp_30d %}
 {% set _shift_abs = _shift if _shift >= 0 else -_shift %}
 
+{% include "_scenarios_page_head.html" %}
+
 <header class="prediction-page-head">
-  <nav class="prediction-page-crumbs">
-    <a href="/scenarios?tab=predicates">← Predictions</a>
-  </nav>
   <div class="prediction-page-title-row">
     <h1 class="prediction-page-title">{{ _topic }}</h1>
     <div class="prediction-page-shift
@@ -55,9 +54,9 @@
   <p class="prediction-page-statement">{{ s.statement }}</p>
 </header>
 
-{# 1. Where we are now ─────────────────────────────────────────────────── #}
+{# 1. State now + state over time, in one block ───────────────────────── #}
 <section class="prediction-page-section">
-  <h2 class="prediction-page-h">Current state</h2>
+  <h2 class="prediction-page-h">State</h2>
   <div class="predicate-card-bars prediction-page-bars">
     {% for st in s.states %}
       {% set _d = st.velocity_pp_30d %}
@@ -79,20 +78,14 @@
       </div>
     {% endfor %}
   </div>
+  <div class="prediction-page-chart-block">
+    {% with chart_series=chart_series %}
+      {% include "_scenarios_multi_line_chart.html" %}
+    {% endwith %}
+  </div>
 </section>
 
-{# 2. How we got here ──────────────────────────────────────────────────── #}
-<section class="prediction-page-section">
-  <h2 class="prediction-page-h">Probability over time</h2>
-  <p class="muted small prediction-page-chart-help">
-    Last 90 days. Shared y-axis (0–100%) — bigger absolute moves draw bigger lines.
-  </p>
-  {% with chart_series=chart_series %}
-    {% include "_scenarios_multi_line_chart.html" %}
-  {% endwith %}
-</section>
-
-{# 3. Agent's qualitative read ─────────────────────────────────────────── #}
+{# 2. Agent's qualitative read ─────────────────────────────────────────── #}
 <section class="prediction-page-section">
   <h2 class="prediction-page-h">Agent's read</h2>
   {% if review %}
@@ -109,20 +102,17 @@
     </div>
   {% else %}
     <p class="muted prediction-page-summary-empty">
-      No agent summary yet — the predicate-review job runs monthly and will populate one
+      No agent summary yet — the monthly predicate-review job will populate one
       once there's enough confirmed evidence to read.
     </p>
   {% endif %}
 </section>
 
-{# 4. The receipts ─────────────────────────────────────────────────────── #}
+{# 3. The receipts ─────────────────────────────────────────────────────── #}
 {% set _top = detail.evidence_confirmed[:5] %}
 {% if _top %}
   <section class="prediction-page-section">
-    <h2 class="prediction-page-h">Most compelling evidence</h2>
-    <p class="muted small prediction-page-chart-help">
-      Top {{ _top|length }} confirmed findings ranked by their current weight on the posterior.
-    </p>
+    <h2 class="prediction-page-h">Top evidence</h2>
     <ol class="prediction-top-evidence">
       {% for ev in _top %}
         <li class="prediction-top-evidence-row{% if ev.fitness %} fitness-{{ ev.fitness }}{% endif %}">

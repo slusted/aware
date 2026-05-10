@@ -6,9 +6,13 @@
        - .state_key, .label, .ordinal_position, .current, .points, .is_dominant
 
    Polyline points are pre-computed in viewBox coordinates (100 wide × 80
-   tall by default). Y-axis labels (0/50/100%) live in HTML next to the
-   SVG so they don't get stretched by preserveAspectRatio="none".
-   Renders an empty-state notice when no state has any history yet.
+   tall). Y-axis labels live in HTML next to the SVG so they don't get
+   stretched by preserveAspectRatio="none".
+
+   Note: SVG stroke colours come from CSS (.ordinal-N rules in style.css).
+   Don't set `stroke="var(--…)"` as a bare SVG attribute — SVG presentation
+   attributes don't read CSS custom properties, only inline `style` does.
+   The CSS rules let one declaration colour both gridlines and lines.
 #}
 {% if chart_series %}
   <div class="prediction-chart">
@@ -20,16 +24,13 @@
     <div class="prediction-chart-plot">
       <svg class="prediction-chart-svg" viewBox="0 0 100 80"
            preserveAspectRatio="none" aria-hidden="true">
-        {# Gridlines at 0 / 50 / 100% — drawn first so the lines sit on top. #}
-        <line x1="0" x2="100" y1="0"  y2="0"  stroke="var(--border-subtle)" stroke-width="0.5"/>
-        <line x1="0" x2="100" y1="40" y2="40" stroke="var(--border-subtle)" stroke-width="0.5" stroke-dasharray="2 2"/>
-        <line x1="0" x2="100" y1="80" y2="80" stroke="var(--border-subtle)" stroke-width="0.5"/>
+        <line class="prediction-chart-grid" x1="0" x2="100" y1="0"  y2="0"/>
+        <line class="prediction-chart-grid is-mid" x1="0" x2="100" y1="40" y2="40"/>
+        <line class="prediction-chart-grid" x1="0" x2="100" y1="80" y2="80"/>
         {% for line in chart_series %}
           <polyline class="prediction-chart-line ordinal-{{ line.ordinal_position }}{% if line.is_dominant %} is-dominant{% endif %}"
                     points="{{ line.points }}"
                     fill="none"
-                    stroke="var(--ordinal-{{ line.ordinal_position }})"
-                    stroke-width="{% if line.is_dominant %}1.8{% else %}1.2{% endif %}"
                     stroke-linecap="round"
                     stroke-linejoin="round"
                     vector-effect="non-scaling-stroke">
