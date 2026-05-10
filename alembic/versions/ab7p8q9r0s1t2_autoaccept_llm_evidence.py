@@ -1,7 +1,7 @@
 """auto-accept existing LLM-proposed predicate evidence
 
 Revision ID: ab7p8q9r0s1t2
-Revises: z2o6p7q8r9s0
+Revises: b4r9s0t1u2v3
 Create Date: 2026-05-10 00:00:00.000000
 
 Backfill for the auto-accept policy change. Previously the LLM
@@ -27,7 +27,7 @@ from alembic import op
 
 
 revision = 'ab7p8q9r0s1t2'
-down_revision = 'z2o6p7q8r9s0'
+down_revision = 'b4r9s0t1u2v3'
 branch_labels = None
 depends_on = None
 
