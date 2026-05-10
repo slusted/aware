@@ -5285,12 +5285,20 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 .prediction-chart-y-labels > :nth-child(1) { align-self: start; }
 .prediction-chart-y-labels > :nth-child(2) { align-self: center; }
 .prediction-chart-y-labels > :nth-child(3) { align-self: end; }
-.prediction-chart-plot { position: relative; min-width: 0; }
+.prediction-chart-plot {
+  position: relative;
+  min-width: 0;
+  /* Belt-and-suspenders: SVG `overflow` is unreliable across renderers
+     when preserveAspectRatio="none" + vector-effect="non-scaling-stroke"
+     are combined; clip the wrapper too so a stray polyline can never
+     bleed into the section below. */
+  overflow: hidden;
+}
 .prediction-chart-svg {
   width: 100%;
   height: 100%;
   display: block;
-  overflow: visible;
+  overflow: hidden;
 }
 /* SVG presentation attributes ignore CSS custom properties — set stroke
    colours via stylesheet rules instead so the gridlines + lines actually
