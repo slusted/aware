@@ -12,7 +12,9 @@ retry the same finding forever.
 
 Output of every successful call is a list of ProposedEvidence (capped
 at 2 — the PRD's per-finding limit). The sweep layer turns those into
-predicate_evidence rows with classified_by="llm" and confirmed_at=NULL.
+predicate_evidence rows with classified_by="llm" and confirmed_at=now —
+auto-accepted into the math. Users can soft-reject any row from the
+prediction's findings list (sets classified_by="user_rejected").
 
 Cost auditing: each call inserts a UsageEvent with
 extra={"caller": "scenarios_classifier"} so the daily-budget guard in

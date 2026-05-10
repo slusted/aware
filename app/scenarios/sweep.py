@@ -202,7 +202,7 @@ def _proposed_to_evidence_row(
         credibility=_resolve_credibility(finding.source, credibility_defaults),
         classified_by="llm",
         observed_at=observed_at,
-        confirmed_at=None,
+        confirmed_at=now,
         notes=proposal.reasoning or None,
     )
     if scored is not None:
