@@ -4829,6 +4829,22 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
    header with inline action, optional collapsible focus, and a dense
    row per candidate (name · category · cite-count · rationale · Add). */
 
+/* Body content gets horizontal breathing room. .panel itself has no
+   padding (it's optimised for full-width tables), and panel-header
+   carries its own padding, so we inset every other direct child here.
+   The trailing rule gives the panel some bottom space below the last
+   element instead of butting up against the rounded border. */
+.discover-panel > :not(.panel-header) {
+  margin-left: 16px;
+  margin-right: 16px;
+}
+.discover-panel > .panel-header + * {
+  margin-top: 14px;
+}
+.discover-panel > :last-child:not(.panel-header) {
+  margin-bottom: 16px;
+}
+
 .discover-panel .panel-header {
   align-items: center;
 }
@@ -4922,9 +4938,14 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 
 .discover-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1.1fr) auto auto minmax(0, 3fr) auto;
+  /* Fixed widths on the badge + cite columns so every row's elements
+     line up vertically as a table — auto-sizing made each column the
+     width of its widest cell, which left short content (e.g. ATS,
+     "1 cite") with inconsistent right edges and broke the visual grid. */
+  grid-template-columns: minmax(180px, 1.2fr) 96px 64px minmax(0, 3fr) auto;
   align-items: center;
   gap: 14px;
+  min-height: 56px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-0);
@@ -4935,17 +4956,17 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 
 .discover-row-name {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
+  overflow: hidden;
 }
 .discover-row-name strong {
   color: var(--text-primary);
   font-weight: 600;
   font-size: 14px;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 .discover-row-domain {
   font-size: 11.5px;
@@ -4954,6 +4975,7 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 .discover-row-domain:hover { color: var(--text-secondary); }
 
@@ -4967,6 +4989,9 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   border-radius: 3px;
   border: 1px solid transparent;
   white-space: nowrap;
+  /* Anchor to the column's left edge inside the grid so badges of
+     different widths share a consistent leading edge. */
+  justify-self: start;
 }
 .cat-badge--job_board  { background: rgba(94,106,210,0.12); color: #8b94e6; border-color: rgba(94,106,210,0.25); }
 .cat-badge--ats        { background: rgba(34,160,120,0.12); color: #4cc096; border-color: rgba(34,160,120,0.25); }
@@ -4985,6 +5010,11 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   color: var(--text-tertiary);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  /* Right-align so all cite counts ("1 cite", "5 cites") share their
+     trailing edge against the rationale column — reads as a number
+     column instead of jagged left-aligned strings. */
+  justify-self: end;
+  text-align: right;
 }
 .discover-row-cite[data-clickable] {
   cursor: pointer;
