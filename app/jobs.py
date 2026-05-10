@@ -2151,28 +2151,34 @@ def run_discover_competitors_job(hint: str | None = None,
         industry = config.get("industry", "job search and recruitment platforms")
 
         existing_rows = db.query(Competitor).filter(Competitor.active == True).all()  # noqa: E712
-        existing = [c.homepage_domain for c in existing_rows if c.homepage_domain]
-        dismissed = [
-            d[0] for d in (
-                db.query(CompetitorCandidate.homepage_domain)
-                .filter(CompetitorCandidate.status == "dismissed")
-                .filter(CompetitorCandidate.homepage_domain.isnot(None))
-                .all()
-            )
-        ]
+        existing_names = [c.name for c in existing_rows if c.name]
+        existing_domains = [c.homepage_domain for c in existing_rows if c.homepage_domain]
+        dismissed_rows = (
+            db.query(CompetitorCandidate.name, CompetitorCandidate.homepage_domain)
+            .filter(CompetitorCandidate.status == "dismissed")
+            .all()
+        )
+        dismissed_names = [r[0] for r in dismissed_rows if r[0]]
+        dismissed_domains = [r[1] for r in dismissed_rows if r[1]]
 
-        _log(db, run, f"discovering (excluding {len(existing)} tracked · "
-                      f"{len(dismissed)} dismissed)")
+        _log(db, run, f"discovering (excluding {len(existing_names)} tracked · "
+                      f"{len(dismissed_names)} dismissed)")
         if hint:
             _log(db, run, f"focus: {hint[:200]}")
 
         from .competitor_discover import discover_stream
 
-        exclude = {d for d in (existing + dismissed) if d}
+        exclude_domains = {d for d in (existing_domains + dismissed_domains) if d}
+        exclude_names_lc = {n.lower() for n in (existing_names + dismissed_names) if n}
         candidates: list[dict] = []
         with _StreamToRunEvents(run.id) as tee, contextlib.redirect_stdout(tee):
             for event in discover_stream(
-                company, industry, existing, dismissed, hint=hint,
+                db, company, industry,
+                existing_names=existing_names,
+                existing_domains=existing_domains,
+                dismissed_names=dismissed_names,
+                dismissed_domains=dismissed_domains,
+                hint=hint,
             ):
                 etype = event.get("type")
                 if etype == "progress":
@@ -2185,7 +2191,10 @@ def run_discover_competitors_job(hint: str | None = None,
         kept = 0
         for cand in candidates:
             domain = cand.get("homepage_domain")
-            if domain and domain in exclude:
+            name_lc = (cand.get("name") or "").lower()
+            if domain and domain in exclude_domains:
+                continue
+            if name_lc and name_lc in exclude_names_lc:
                 continue
             db.add(CompetitorCandidate(
                 run_id=run.id,

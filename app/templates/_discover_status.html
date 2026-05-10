@@ -2,7 +2,7 @@
    suggested-candidate list. Used by both the full page render and the
    HTMX status poller. The outer element has id='discover-panel' and
    hx-target=this so the poller can swap the whole panel in place. #}
-{% set key_ok = discover_anthropic_key_set and discover_tavily_key_set %}
+{% set key_ok = discover_anthropic_key_set %}
 <section id="discover-panel" class="panel discover-panel"
   {% if discover_active_run %}
     hx-get="/partials/discover_status" hx-trigger="every 10s"
@@ -23,12 +23,8 @@
   {% if not key_ok %}
     <div class="hint" style="padding:12px 14px; background:rgba(200,120,0,0.05);
          border:1px solid rgba(200,120,0,0.2); border-radius:4px">
-      Discovery needs
-      {% if not discover_anthropic_key_set %}<code>ANTHROPIC_API_KEY</code>{% endif %}
-      {% if not discover_anthropic_key_set and not discover_tavily_key_set %} and {% endif %}
-      {% if not discover_tavily_key_set %}<code>TAVILY_API_KEY</code>{% endif %}.
-      Add {% if not discover_anthropic_key_set and not discover_tavily_key_set %}them{% else %}it{% endif %}
-      on <a href="/settings/keys">/settings/keys</a> to enable the Run button.
+      Discovery needs <code>ANTHROPIC_API_KEY</code>.
+      Add it on <a href="/settings/keys">/settings/keys</a> to enable the Run button.
     </div>
   {% elif discover_active_run %}
     <div class="discover-running" style="padding:14px;
@@ -39,26 +35,31 @@
               style="width:14px; height:14px; border:2px solid rgba(100,120,255,0.3);
                      border-top-color:rgba(100,120,255,0.9); border-radius:50%;
                      display:inline-block; animation:spin 0.9s linear infinite"></span>
-        <strong>Running…</strong>
+        <strong>Mining findings…</strong>
         <span class="hint" style="font-size:13px">
           started {{ discover_active_run.started_at.strftime('%H:%M:%S') }}
         </span>
       </div>
       <div class="hint" style="margin-top:6px; font-size:13px">
-        The agent researches for ~30–90s before returning a list of
-        candidates. Watch
+        Reading the last 90 days of findings for company names mentioned
+        but not yet tracked. Usually ~10–30s. Watch
         <a href="/runs/{{ discover_active_run.id }}">run #{{ discover_active_run.id }}</a>
         for live events.
       </div>
     </div>
   {% else %}
+    <p class="hint" style="margin:0 0 10px; font-size:13px">
+      Scans the last 90 days of findings for companies mentioned in
+      the corpus that aren't already on the watchlist. Each suggestion
+      cites the findings that surfaced it.
+    </p>
     <form method="post" action="/api/competitors/discover/run"
           style="display:flex; flex-direction:column; gap:10px; padding:4px 0">
       <label class="label" style="margin:0">
         Optional focus
         <span class="hint" style="font-weight:normal">
-          Shape this run — e.g. "focus on Australian ATS players" or
-          "adjacent categories like HR analytics." Leave blank for a broad sweep.
+          Steer the pass — e.g. "ATS players" or "AI-native job search."
+          Leave blank to surface the strongest signals across the corpus.
         </span>
       </label>
       <input name="hint" type="text" maxlength="300"
@@ -84,8 +85,9 @@
     </div>
   {% elif not discover_active_run and key_ok and discover_last_run %}
     <p class="hint" style="margin-top:14px">
-      Last run surfaced nothing new — everyone good was already tracked
-      or previously dismissed. Try a focus hint to shift what the agent looks at.
+      Last run surfaced nothing new — every company name mentioned in the
+      last 90 days of findings is already tracked or previously dismissed.
+      Try a focus hint to shift what the model looks for.
     </p>
   {% endif %}
 

@@ -59,7 +59,7 @@ KNOWN_SKILLS: dict[str, tuple[str, str]] = {
     ),
     "discover_competitors": (
         "discover_competitors.md",
-        "Drives the 'Discover new competitors' tool-use loop on Manage Watchlist — surfaces up to 8 candidate competitors with verified homepages and cited evidence. Placeholders: {{our_company}}, {{our_industry}}, {{existing_list}}, {{dismissed_list}}, {{hint}}.",
+        "Drives the 'Discover new competitors' pass on Manage Watchlist — mines the last 90 days of findings for company names mentioned but not yet tracked, returning up to 12 candidates with category + one-line rationale + cited finding ids. Placeholders: {{our_company}}, {{our_industry}}, {{existing_list}}, {{dismissed_list}}, {{hint}}.",
     ),
     "chat_system": (
         "chat_system.md",

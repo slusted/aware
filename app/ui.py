@@ -668,14 +668,12 @@ def _discover_page_context(db) -> dict:
         .all()
     )
     anthropic_key_set = bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
-    tavily_key_set = bool(os.environ.get("TAVILY_API_KEY", "").strip())
     return {
         "discover_active_run": active_run,
         "discover_last_run": last_run,
         "discover_suggested": suggested,
         "discover_dismissed": dismissed,
         "discover_anthropic_key_set": anthropic_key_set,
-        "discover_tavily_key_set": tavily_key_set,
     }
 
 
