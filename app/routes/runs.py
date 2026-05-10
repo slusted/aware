@@ -109,6 +109,35 @@ def trigger_market_digest(
     }
 
 
+@router.post("/market-releases", status_code=202)
+def trigger_market_releases(
+    days: int | None = None,
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin", "analyst")),
+):
+    """Enqueue a Product Releases brief regen over existing findings.
+    `days` overrides the default window (the module-level
+    DEFAULT_WINDOW_DAYS in app.market_releases). LLM only — no scraping."""
+    _enforce_queue_cap(db)
+    # Light input bounds — open enough to cover the user's "no limit yet"
+    # stance, narrow enough that a typo doesn't trigger a year-long pull.
+    if days is not None and (days < 1 or days > 365):
+        raise HTTPException(400, detail="days must be between 1 and 365")
+    run = jobs.enqueue_run(
+        db,
+        "market_releases",
+        triggered_by="manual",
+        job_args={"days": days},
+    )
+    return {
+        "queued": True,
+        "kind": "market_releases",
+        "days": days,
+        "run_id": run.id,
+        "queue_position": jobs.queue_position(db, run.id),
+    }
+
+
 # Manual cooldown default: 6h. Within this window, an extra Run click is
 # refused unless `force=1` is passed (which the UI supplies after the user
 # confirms the "already fresh" prompt). The cron path ignores this — it's

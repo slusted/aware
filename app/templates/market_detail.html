@@ -1,8 +1,13 @@
 {% extends "base.html" %}
 {% block title %}{{ report.title }}{% endblock %}
 {% block page_actions %}
-  <button id="regen-digest-btn" type="button" class="btn btn-ghost"
-          title="LLM only — re-synthesize the findings summary over existing findings + reviews">Regenerate summary</button>
+  {# Regen lives on the tab itself for releases (it has a `days` knob the
+     detail page can't surface in one button). Show this regen action only
+     for the digest flavour. #}
+  {% if report.kind == "market_digest" %}
+    <button id="regen-digest-btn" type="button" class="btn btn-ghost"
+            title="LLM only — re-synthesize the findings summary over existing findings + reviews">Regenerate summary</button>
+  {% endif %}
   {% if report.run_id %}<a href="/runs/{{ report.run_id }}" class="btn btn-ghost">View run</a>{% endif %}
 {% endblock %}
 
@@ -44,7 +49,7 @@
         var start = Date.now();
         var iv = setInterval(async function () {
           try {
-            var rr = await fetch('/api/reports?limit=1');
+            var rr = await fetch('/api/reports?limit=1&kind=market_digest');
             if (rr.ok) {
               var rows = await rr.json();
               if (rows.length && rows[0].id > currentId) {

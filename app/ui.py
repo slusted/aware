@@ -1147,11 +1147,31 @@ def market_index(request: Request, db: Session = Depends(get_db), user=Depends(g
     # 7-day-old digests nobody re-reads isn't earning its pixels.
     latest_digest = (
         db.query(Report)
+        .filter(Report.kind == "market_digest")
         .order_by(Report.created_at.desc())
         .first()
     )
     digest_history = (
         db.query(Report)
+        .filter(Report.kind == "market_digest")
+        .order_by(Report.created_at.desc())
+        .offset(1)
+        .limit(20)
+        .all()
+    )
+
+    # Product releases tab: cross-market read of competitor product
+    # launches in the last N days. Kind discriminator keeps it separate
+    # from the digest in the same `reports` table.
+    latest_releases = (
+        db.query(Report)
+        .filter(Report.kind == "market_releases")
+        .order_by(Report.created_at.desc())
+        .first()
+    )
+    releases_history = (
+        db.query(Report)
+        .filter(Report.kind == "market_releases")
         .order_by(Report.created_at.desc())
         .offset(1)
         .limit(20)
@@ -1178,11 +1198,16 @@ def market_index(request: Request, db: Session = Depends(get_db), user=Depends(g
         and latest_synthesis.status in ("queued", "running")
     )
     from analyzer import MODEL as _DIGEST_MODEL
+    from .market_releases import MODEL as _RELEASES_MODEL, DEFAULT_WINDOW_DAYS
     return templates.TemplateResponse(request, "market_index.html", {
         "user": user,
         "digest": latest_digest,
         "digest_history": digest_history,
         "digest_model": _DIGEST_MODEL,
+        "releases": latest_releases,
+        "releases_history": releases_history,
+        "releases_model": _RELEASES_MODEL,
+        "releases_default_days": DEFAULT_WINDOW_DAYS,
         "synthesis": latest_synthesis,
         "synthesis_history": synthesis_history,
         "synthesis_poll": synthesis_poll,

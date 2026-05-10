@@ -197,6 +197,11 @@ class Report(Base):
     title: Mapped[str] = mapped_column(String(255))
     body_md: Mapped[str] = mapped_column(Text)
     file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Discriminator — separates the daily Claude digest from other
+    # long-form reports rendered on /market (currently market_digest +
+    # market_releases). All pre-discriminator rows backfill to
+    # "market_digest" via cc4mktrels001.
+    kind: Mapped[str] = mapped_column(String(32), default="market_digest", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
