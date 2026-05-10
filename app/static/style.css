@@ -5233,30 +5233,25 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 }
 
 .prediction-page-section {
-  margin: 0 0 28px;
+  margin: 0 0 18px;
 }
 .prediction-page-h {
-  margin: 0 0 10px;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--text-secondary);
-  text-transform: uppercase;
 }
-.prediction-page-bars { gap: 10px; }
-.prediction-page-chart-help {
-  margin: -6px 0 10px;
-  font-size: 12px;
-}
+.prediction-page-bars { gap: 8px; }
+.prediction-page-chart-block { margin-top: 12px; }
 
 /* Multi-line probability chart */
 .prediction-chart {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 8px;
+  grid-template-columns: 32px 1fr;
+  gap: 6px;
   align-items: stretch;
   width: 100%;
-  height: 180px;
+  height: 140px;
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   background: var(--surface-0);
@@ -5264,25 +5259,46 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   box-sizing: border-box;
 }
 .prediction-chart-y-labels {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  /* Three explicit rows so the top/middle/bottom labels actually land on
+     the chart's 100% / 50% / 0% gridlines. flex+space-between collapses
+     unpredictably when sibling siblings have different baselines. */
+  display: grid;
+  grid-template-rows: 1fr 1fr 1fr;
   font-size: 10px;
   text-align: right;
-  padding-right: 4px;
-  min-width: 28px;
+  color: var(--text-tertiary);
 }
-.prediction-chart-plot { position: relative; }
+.prediction-chart-y-labels > :nth-child(1) { align-self: start; }
+.prediction-chart-y-labels > :nth-child(2) { align-self: center; }
+.prediction-chart-y-labels > :nth-child(3) { align-self: end; }
+.prediction-chart-plot { position: relative; min-width: 0; }
 .prediction-chart-svg {
   width: 100%;
   height: 100%;
   display: block;
+  overflow: visible;
 }
+/* SVG presentation attributes ignore CSS custom properties — set stroke
+   colours via stylesheet rules instead so the gridlines + lines actually
+   render. */
+.prediction-chart-grid {
+  stroke: var(--border-subtle);
+  stroke-width: 0.5;
+}
+.prediction-chart-grid.is-mid { stroke-dasharray: 2 2; }
 .prediction-chart-line {
+  stroke-width: 1.4;
   transition: opacity 120ms ease;
 }
+.prediction-chart-line.is-dominant { stroke-width: 2; }
+.prediction-chart-line.ordinal-0 { stroke: var(--ordinal-0); }
+.prediction-chart-line.ordinal-1 { stroke: var(--ordinal-1); }
+.prediction-chart-line.ordinal-2 { stroke: var(--ordinal-2); }
+.prediction-chart-line.ordinal-3 { stroke: var(--ordinal-3); }
+.prediction-chart-line.ordinal-4 { stroke: var(--ordinal-4); }
+.prediction-chart-line.ordinal-5 { stroke: var(--ordinal-5); }
 .prediction-chart-svg:hover .prediction-chart-line:not(:hover) {
-  opacity: 0.45;
+  opacity: 0.4;
 }
 .prediction-chart-empty {
   display: flex;
@@ -5294,12 +5310,12 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 .prediction-chart-x-labels {
   display: flex;
   justify-content: space-between;
-  margin: 4px 0 0 36px;   /* line up with the plot, not the y-labels */
+  margin: 4px 0 0 38px;   /* line up with the plot, not the y-labels */
   font-size: 11px;
 }
 .prediction-chart-legend {
   list-style: none;
-  margin: 10px 0 0;
+  margin: 8px 0 0 38px;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
