@@ -1,0 +1,112 @@
+{# Inline share-link panel for one saved filter.
+
+   Renders into the per-filter slot in _stream_saved_filters.html. Three
+   states are folded into one template so the same hx-target swap works
+   for "open the panel for the first time", "rotate", "revoke", and
+   "close" — each just returns the right shape.
+
+   Inputs:
+     sf       — SavedFilter row (id, public_token, public_token_created_at)
+     share_url — absolute URL string when token is set, else None
+     can_share — bool: is the current viewer allowed to mint/rotate/revoke?
+                       (false hides all action buttons; the panel just
+                       reports the current state for read-only viewers.)
+     pinned_only — bool: filter spec has pinned_only set; mint is rejected
+                        server-side and we render an explanation instead.
+
+   Closing the panel = swap an empty <div> back into the slot. The list
+   row's Share toggle button does this with hx-vals on the second click.
+#}
+<div class="filter-share-panel" id="filter-share-{{ sf.id }}-panel">
+  {% if pinned_only %}
+    <p class="muted small">
+      Pinned-only views are personal — pins live with each user, so they can't be shared publicly.
+      Save a different filter to share.
+    </p>
+    <button type="button" class="btn-ghost btn-mini"
+            hx-post="/partials/stream_filter_share/{{ sf.id }}/close"
+            hx-target="#filter-share-{{ sf.id }}-slot"
+            hx-swap="innerHTML">
+      Close
+    </button>
+  {% elif sf.public_token %}
+    <label class="muted small" for="share-url-{{ sf.id }}">Share link</label>
+    <div class="filter-share-url-row">
+      <input type="text" id="share-url-{{ sf.id }}" class="filter-share-url"
+             value="{{ share_url }}" readonly
+             onclick="this.select()">
+      <button type="button" class="btn-ghost btn-mini"
+              data-share-copy-target="#share-url-{{ sf.id }}"
+              onclick="(function(b){var i=document.querySelector(b.dataset.shareCopyTarget);i.select();try{navigator.clipboard.writeText(i.value);b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1500);}catch(e){document.execCommand('copy');b.textContent='Copied';setTimeout(function(){b.textContent='Copy'},1500);}})(this)">
+        Copy
+      </button>
+    </div>
+    <p class="muted small">
+      Anyone with this link can view this filter. They can't change it.
+      {% if sf.public_token_created_at %}
+        Created {{ sf.public_token_created_at.strftime('%b %d, %Y') }}.
+      {% endif %}
+    </p>
+    {% if can_share %}
+    <div class="filter-share-qa-toggle">
+      <label>
+        <input type="checkbox"
+               {% if sf.public_qa_enabled %}checked{% endif %}
+               hx-post="/partials/stream_filter_share/{{ sf.id }}/qa"
+               hx-target="#filter-share-{{ sf.id }}-slot"
+               hx-swap="innerHTML">
+        Allow viewers to ask questions about this view
+      </label>
+      <p class="muted small">
+        Adds a Q&amp;A box to the public page. Each share has a daily token
+        budget; once that's hit, the box stops answering until tomorrow.
+        Treat scraped finding text as untrusted — the model is told to
+        ignore instructions inside it, but a determined attacker may still
+        coax off-topic answers.
+      </p>
+    </div>
+    <div class="filter-share-actions">
+      <button type="button" class="btn-ghost btn-mini"
+              hx-post="/partials/stream_filter_share/{{ sf.id }}"
+              hx-target="#filter-share-{{ sf.id }}-slot"
+              hx-swap="innerHTML"
+              hx-confirm="Rotate the link? The current URL will stop working immediately.">
+        Rotate
+      </button>
+      <button type="button" class="btn-ghost btn-mini btn-danger"
+              hx-delete="/partials/stream_filter_share/{{ sf.id }}"
+              hx-target="#filter-share-{{ sf.id }}-slot"
+              hx-swap="innerHTML"
+              hx-confirm="Stop sharing? Anyone with the current link will get a 404.">
+        Stop sharing
+      </button>
+      <button type="button" class="btn-ghost btn-mini"
+              hx-post="/partials/stream_filter_share/{{ sf.id }}/close"
+              hx-target="#filter-share-{{ sf.id }}-slot"
+              hx-swap="innerHTML">
+        Close
+      </button>
+    </div>
+    {% endif %}
+  {% else %}
+    <p class="muted small">
+      Not shared. Mint a public link that renders this filter read-only at <code>/p/&lt;token&gt;</code> — no login required.
+    </p>
+    {% if can_share %}
+    <div class="filter-share-actions">
+      <button type="button" class="btn-ghost btn-mini"
+              hx-post="/partials/stream_filter_share/{{ sf.id }}"
+              hx-target="#filter-share-{{ sf.id }}-slot"
+              hx-swap="innerHTML">
+        Mint share link
+      </button>
+      <button type="button" class="btn-ghost btn-mini"
+              hx-post="/partials/stream_filter_share/{{ sf.id }}/close"
+              hx-target="#filter-share-{{ sf.id }}-slot"
+              hx-swap="innerHTML">
+        Close
+      </button>
+    </div>
+    {% endif %}
+  {% endif %}
+</div>

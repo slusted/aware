@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Bulk add competitors{% endblock %}
+{% block page_actions %}
+  <a href="/admin/competitors" class="btn btn-ghost">Back to watchlist</a>
+{% endblock %}
+
+{% block content %}
+<p class="muted" style="margin:0 0 20px; max-width:640px">
+  Paste competitor names (one per line, or comma-separated). The autofill
+  agent runs on each name in turn — ~10–30s per row. You can leave this
+  page; the batch keeps running and rows appear on
+  <a href="/admin/competitors">the watchlist</a> as they finish.
+</p>
+
+<form method="post" action="/api/competitors/bulk-new" class="panel"
+      style="padding:20px; max-width:720px; margin-bottom:20px">
+  <div class="field">
+    <label class="label" for="bulk-names">Names</label>
+    <textarea id="bulk-names" name="names" rows="12" required
+              placeholder="Ashby&#10;Greenhouse&#10;Lever&#10;Workable"
+              style="width:100%; font-family:inherit; font-size:14px;
+                     padding:10px; box-sizing:border-box"></textarea>
+    <div class="muted" style="font-size:12px; margin-top:6px">
+      Duplicates and empty lines are ignored. Names already on the
+      watchlist are skipped; soft-deleted ones get reactivated.
+    </div>
+  </div>
+  <div style="margin-top:14px; display:flex; justify-content:flex-end">
+    <button type="submit">Start batch</button>
+  </div>
+</form>
+
+{% if job %}
+  <div id="bulk-status">
+    {% include "_bulk_add_status.html" %}
+  </div>
+{% elif recent_jobs %}
+  <div class="panel" style="padding:20px; max-width:720px">
+    <h2 style="margin:0 0 10px">Recent batches</h2>
+    <div class="muted" style="font-size:12px; margin-bottom:10px">
+      Click a batch to see its progress.
+    </div>
+    <table>
+      <thead>
+        <tr><th>Started</th><th>Progress</th><th>Result</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for j in recent_jobs %}
+        <tr>
+          <td class="muted" style="font-size:13px">{{ j['started_at'] }}</td>
+          <td>
+            {% if j['done'] %}
+              <span class="muted">finished</span>
+            {% else %}
+              <span style="color:var(--accent, #36d)">running…</span>
+            {% endif %}
+            {{ j['finished'] }}/{{ j['total'] }}
+          </td>
+          <td class="muted" style="font-size:13px">
+            {{ j['added'] }} added · {{ j['reactivated'] }} reactivated
+            · {{ j['skipped'] }} skipped · {{ j['errored'] }} errored
+          </td>
+          <td><a href="/admin/competitors/bulk-new?run_id={{ j['id'] }}">open →</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+{% endblock %}

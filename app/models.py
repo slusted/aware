@@ -1,5 +1,5 @@
-from datetime import datetime
-from sqlalchemy import String, Integer, Float, DateTime, Text, JSON, ForeignKey, Boolean, UniqueConstraint, Index, LargeBinary, text
+from datetime import date, datetime
+from sqlalchemy import String, Integer, Float, DateTime, Date, Text, JSON, ForeignKey, Boolean, UniqueConstraint, Index, LargeBinary, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
@@ -152,7 +152,8 @@ class Finding(Base):
     # Signal-stream columns. Populated by the extraction layer; nullable so
     # legacy rows keep loading and can be backfilled lazily.
     # signal_type taxonomy: news | price_change | new_hire | product_launch |
-    # messaging_shift | funding | integration | voc_mention | momentum_point | other
+    # messaging_shift | funding | m_and_a | integration | voc_mention |
+    # momentum_point | other
     signal_type: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     payload: Mapped[dict] = mapped_column(JSON, default=dict)                                    # typed fields per signal_type
     materiality: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)          # 0.0–1.0, how worth surfacing
@@ -615,6 +616,40 @@ class SavedFilter(Base):
     spec: Mapped[dict] = mapped_column(JSON, default=dict)  # {signal_types, competitor_ids, min_materiality, since_days, sources}
     visibility: Mapped[str] = mapped_column(String(16), default="private")  # private | team
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # docs/stream/01-public-share-link.md: opaque token granting unauthenticated
+    # read-only access to a rendered version of the filter at /p/{token}.
+    # NULL = not shared. Rotating = overwrite; revoking = null.
+    public_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    public_token_created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Owner toggle for the public Q&A panel on /p/{token}. Default off so
+    # existing shares keep rendering as a pure read-only view; flipping
+    # this true exposes a question box scoped to the findings on the
+    # page, with a per-share daily token budget enforced server-side.
+    public_qa_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+
+
+class PublicShareQaUsage(Base):
+    """Per-share, per-day token + request counter for the public Q&A panel.
+
+    Keyed on saved_filter_id (not the token) so rotating a share's token
+    mid-day doesn't reset the day's spend — the budget is "per share per
+    day", and the share is the saved-filter row.
+    """
+    __tablename__ = "public_share_qa_usage"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    saved_filter_id: Mapped[int] = mapped_column(
+        ForeignKey("saved_filters.id", ondelete="CASCADE"), nullable=False
+    )
+    usage_date: Mapped[date] = mapped_column(Date, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint("saved_filter_id", "usage_date", name="uq_public_share_qa_usage_filter_date"),
+    )
 
 
 class ChatSession(Base):
@@ -1012,6 +1047,20 @@ class PredicateEvidence(Base):
     fitness_reviewed_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True,
     )
+    # ── Stage 7: multi-pass evidence scoring (skill/predicate_scorer.md) ──
+    # All nullable so legacy rows (Stage-1 manual, Stage-2 Haiku-only) keep
+    # working with neutral multipliers (=1.0). The Sonnet scorer fills
+    # mechanism / base_rate / counter_evidence / incentive_bias and stamps
+    # scorer_model. The deterministic pass fills redundancy_score.
+    mechanism_present: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    mechanism_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    base_rate_bucket: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    counter_evidence_strength: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    counter_evidence_example: Mapped[str | None] = mapped_column(Text, nullable=True)
+    incentive_bias: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    redundancy_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    scorer_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    scored_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (

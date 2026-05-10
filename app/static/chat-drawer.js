@@ -5,13 +5,11 @@
  * Esc + Ctrl+/ shortcuts, fetch-and-swap of the drawer body, hand-off
  * to window.AwareChat.init() once a session partial is mounted.
  *
- * Persists the active session id in localStorage so reopening returns
- * to the same conversation.
+ * Always opens to the picker (new chat + recent conversations); the user
+ * picks a thread from there if they want to continue an old one.
  */
 (function () {
   'use strict';
-
-  var STORAGE_KEY = 'aware.chat.activeSessionId';
 
   var launcher = document.getElementById('chat-launcher');
   var drawer = document.getElementById('chat-drawer');
@@ -21,21 +19,6 @@
   var body = drawer.querySelector('[data-chat-drawer-body]');
   var lastFocus = null;
   var currentSessionRoot = null;
-
-  function readActiveId() {
-    try {
-      var v = window.localStorage.getItem(STORAGE_KEY);
-      var n = v ? parseInt(v, 10) : NaN;
-      return isNaN(n) ? null : n;
-    } catch (_) { return null; }
-  }
-
-  function writeActiveId(id) {
-    try {
-      if (id == null) window.localStorage.removeItem(STORAGE_KEY);
-      else window.localStorage.setItem(STORAGE_KEY, String(id));
-    } catch (_) {}
-  }
 
   function disposeCurrent() {
     if (currentSessionRoot && window.AwareChat) {
@@ -76,7 +59,6 @@
       .then(function (resp) {
         if (resp.status === 404 && sessionId != null) {
           // Session was archived or deleted — fall back to the picker.
-          writeActiveId(null);
           return loadDrawer(null, {});
         }
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -94,8 +76,6 @@
         if (sessionRoot && window.AwareChat) {
           window.AwareChat.init(sessionRoot);
           currentSessionRoot = sessionRoot;
-          var sid = parseInt(sessionRoot.dataset.sessionId, 10);
-          if (!isNaN(sid)) writeActiveId(sid);
           if (drawer.classList.contains('chat-drawer-open')) {
             window.AwareChat.focusInput(sessionRoot);
           }
@@ -177,8 +157,7 @@
     // First open of this page-load → load content. On subsequent opens
     // we keep the existing DOM (preserves any in-flight stream).
     if (!body.dataset.loaded) {
-      var preferred = opts.sessionId != null ? opts.sessionId : readActiveId();
-      loadDrawer(preferred, opts);
+      loadDrawer(opts.sessionId != null ? opts.sessionId : null, opts);
     } else if (currentSessionRoot && window.AwareChat) {
       window.AwareChat.focusInput(currentSessionRoot);
     } else {
@@ -219,8 +198,6 @@
     }
     if (e.target.closest('[data-chat-drawer-pick]')) {
       e.preventDefault();
-      // Switch to picker; don't clear active id (so reopen returns
-      // to the conversation if the user changes their mind).
       body.dataset.loaded = '1';
       loadDrawer(null, {});
       return;

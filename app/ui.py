@@ -24,6 +24,7 @@ from .routes.signal_events import emit_shown_events
 # drives the order of filter chips in the UI.
 SIGNAL_TYPES = [
     ("funding",        "Funding"),
+    ("m_and_a",        "M&A"),
     ("new_hire",       "Hires"),
     ("product_launch", "Launches"),
     ("integration",    "Integrations"),
@@ -36,7 +37,21 @@ SIGNAL_TYPES = [
     ("other",          "Other"),
 ]
 
+# Lookup used by templates to render the badge label. The stream card was
+# previously displaying the raw signal_type (uppercased by CSS), which is
+# how an M&A finding ended up tagged "INTEGRATION" on the card.
+SIGNAL_TYPE_LABELS = dict(SIGNAL_TYPES)
+
+
+def register_signal_globals(t) -> None:
+    """Attach signal_type_labels to a Jinja2Templates env. Each renderer of
+    _stream_card.html (this module, routes/scenarios.py, routes/public.py)
+    calls this on its own Jinja2Templates instance."""
+    t.env.globals["signal_type_labels"] = SIGNAL_TYPE_LABELS
+
+
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+register_signal_globals(templates)
 
 # Expose the configurable agent brand to every template — sidebar Agent
 # launcher, floating chat launcher, and chat-drawer header all read from
@@ -699,6 +714,56 @@ def admin_competitor_new(request: Request, candidate_id: int | None = None,
             candidate = None
     return templates.TemplateResponse(request, "admin_competitor_edit.html", {
         "user": user, "c": None, "candidate": candidate,
+    })
+
+
+def _bulk_run_view(db, run_id: int) -> dict | None:
+    """Build the {id, done, items} dict the bulk-new template expects from
+    the underlying Run + RunEvent rows. Returns None if the run id is
+    unknown or refers to a different kind."""
+    from .competitor_bulk import items_for_run
+    from .models import Run
+
+    run = db.get(Run, run_id)
+    if run is None or run.kind != "bulk_competitor_add":
+        return None
+    return {
+        "id": run.id,
+        "done": run.status not in ("running", "cancelling"),
+        "items": items_for_run(db, run.id),
+    }
+
+
+@router.get("/admin/competitors/bulk-new", response_class=HTMLResponse)
+def admin_competitor_bulk_new(
+    request: Request,
+    run_id: int | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Bulk-add page. Paste a list of names and the autofill agent fills
+    each row in turn. The optional `run_id` query param re-binds the page
+    to an in-flight (or finished) tracked run so the user can leave and
+    come back to it; without it, `recent_jobs` lists the last few batches
+    so the operator can pick one back up."""
+    from .competitor_bulk import list_recent_jobs
+
+    job_data = _bulk_run_view(db, run_id) if run_id else None
+    recent = [] if job_data else list_recent_jobs(db)
+    return templates.TemplateResponse(request, "admin_competitors_bulk.html", {
+        "user": user, "job": job_data, "recent_jobs": recent,
+    })
+
+
+@router.get("/partials/bulk_add_status", response_class=HTMLResponse)
+def partial_bulk_add_status(
+    request: Request,
+    run_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return templates.TemplateResponse(request, "_bulk_add_status.html", {
+        "job": _bulk_run_view(db, run_id),
     })
 
 
@@ -1606,6 +1671,93 @@ def _view_counts_for_user(db, user_id: int, finding_ids: list[int]) -> dict[int,
     return {fid: int(n) for fid, n in rows if fid is not None}
 
 
+def _public_stream_query(db, filters):
+    """Build + run the stream query for an unauthenticated public render
+    (docs/stream/01-public-share-link.md). Mirrors `_stream_query` but
+    drops every `user`-scoped concern: no SignalView join, no view-count
+    aggregation, no per-user taste centroid, no pinned_only branch
+    (rejected at mint time anyway).
+
+    Clustering + MMR diversity IS applied — it's purely content-shape
+    based, not user-scoped, and without it sources clump on the public
+    feed while the owner sees a diversified one for the same filter.
+
+    Returns (findings, has_more). The `tagged="untagged"` predicate filter
+    is honoured because predicate evidence is per-finding, not per-user.
+    `include_dismissed` is silently ignored — "dismissed" only exists in
+    the context of a user.
+    """
+    from sqlalchemy import and_, case
+    q = db.query(Finding)
+    if filters["competitor"]:
+        q = q.filter(Finding.competitor == filters["competitor"])
+    if filters["signal_types"]:
+        q = q.filter(Finding.signal_type.in_(filters["signal_types"]))
+    if filters["min_materiality"] is not None:
+        q = q.filter(Finding.materiality >= filters["min_materiality"])
+
+    now = datetime.utcnow()
+    has_more = False
+    if filters["since_days"]:
+        cutoff = now - timedelta(days=filters["since_days"])
+        q = q.filter(Finding.created_at >= cutoff)
+    else:
+        window = filters.get("window", 0)
+        window_upper = now - timedelta(days=window * STREAM_WINDOW_DAYS)
+        window_lower = now - timedelta(days=(window + 1) * STREAM_WINDOW_DAYS)
+        q = q.filter(Finding.created_at >= window_lower,
+                     Finding.created_at < window_upper)
+        has_more = (
+            db.query(Finding.id)
+            .filter(Finding.created_at < window_lower)
+            .limit(1)
+            .first()
+            is not None
+        )
+
+    if filters.get("tagged") == "untagged":
+        from .models import PredicateEvidence
+        from sqlalchemy import or_ as _or2
+        active_evidence_subq = (
+            db.query(PredicateEvidence.finding_id)
+            .filter(PredicateEvidence.finding_id.isnot(None))
+            .filter(_or2(
+                PredicateEvidence.confirmed_at.isnot(None),
+                PredicateEvidence.classified_by == "llm",
+            ))
+            .distinct()
+        )
+        q = q.filter(~Finding.id.in_(active_evidence_subq))
+
+    effective_date = func.coalesce(Finding.published_at, Finding.created_at)
+    if filters.get("downweight_stale"):
+        one_year_ago = now - timedelta(days=365)
+        stale_flag = case(
+            (and_(Finding.published_at.isnot(None), Finding.published_at < one_year_ago), 1),
+            else_=0,
+        )
+        q = q.order_by(stale_flag.asc(), effective_date.desc())
+    else:
+        q = q.order_by(effective_date.desc())
+
+    findings = q.limit(STREAM_SAFETY_CAP).all()
+
+    # Same diversity layer as the authenticated stream, minus the per-user
+    # signals. user_centroid=None disables the embedding-match term in
+    # default_score; seen_count_by_id={} means no seen-decay penalty (the
+    # public viewer has no history). The MMR + Jaccard/cosine clustering
+    # is purely content-based and is what keeps sources from clumping.
+    if findings:
+        cards = _present_clusters(
+            findings,
+            now=now,
+            seen_count_by_id={},
+            user_centroid=None,
+        )
+        findings = _lead_findings(cards)
+    return findings, has_more
+
+
 def _stream_query(db, user, filters):
     """Build + run the stream query.
 
@@ -1849,13 +2001,32 @@ def stream_page(
     # Auto-apply the user's default filter only when the URL is bare —
     # any query param (even an empty submission from the form) means the
     # user is steering and should override the default.
+    #
+    # ?filter_id=N is the explicit "I'm viewing this saved filter"
+    # signal, set by the link in _stream_saved_filters.html. Lets us show
+    # the "Update <name>" button without scanning saved filters for a
+    # spec match.
     active_filter_id: int | None = None
+    active_filter_name: str | None = None
     if not request.query_params and user.default_filter_id:
         default_sf = db.get(SavedFilter, user.default_filter_id)
         filters = _parse_stream_filters(default_sf.spec) if default_sf else _parse_stream_filters({})
-        active_filter_id = user.default_filter_id if default_sf else None
+        if default_sf:
+            active_filter_id = default_sf.id
+            active_filter_name = default_sf.name
     else:
         filters = _parse_stream_filters(request.query_params)
+        try:
+            fid = int(request.query_params.get("filter_id") or 0) or None
+        except ValueError:
+            fid = None
+        if fid:
+            sf_active = db.get(SavedFilter, fid)
+            # Only acknowledge the filter_id if the user actually has
+            # access to it — own private filter or any team filter.
+            if sf_active and (sf_active.owner_id is None or sf_active.owner_id == user.id):
+                active_filter_id = sf_active.id
+                active_filter_name = sf_active.name
     findings, views, view_counts, has_more = _stream_query(db, user, filters)
     competitors = [c.name for c in db.query(Competitor).filter(Competitor.active == True).order_by(Competitor.name).all()]
     # Saved filters (own + team-shared) for the dropdown.
@@ -1886,6 +2057,8 @@ def stream_page(
         "signal_types": SIGNAL_TYPES,
         "saved_filters": saved,
         "default_filter_id": user.default_filter_id,
+        "active_filter_id": active_filter_id,
+        "active_filter_name": active_filter_name,
         "logos": _build_logo_map(db, findings),
         "explain": filters.get("explain", False),
     })
@@ -2013,6 +2186,51 @@ async def partial_stream_save_filter(
     return templates.TemplateResponse(request, "_stream_saved_filters.html", {
         "saved_filters": saved,
         "default_filter_id": user.default_filter_id,
+        "user": user,
+    })
+
+
+@router.post("/partials/stream_update_filter/{filter_id}", response_class=HTMLResponse)
+async def partial_stream_update_filter(
+    filter_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Overwrite the spec of an existing saved filter with the form's
+    current filter state. Permission gates mirror delete_filter; visibility
+    and name are intentionally not mutated here (Update = "save current
+    settings into the filter I'm already viewing"). Returns the refreshed
+    saved-filter list partial so the dropdown stays consistent."""
+    sf = db.get(SavedFilter, filter_id)
+    if not sf:
+        raise HTTPException(404, "filter not found")
+    if sf.owner_id is None and user.role != "admin":
+        raise HTTPException(403, "only admins can edit team filters")
+    if sf.owner_id and sf.owner_id != user.id:
+        raise HTTPException(403, "not your filter")
+    form = await request.form()
+    filters = _parse_stream_filters(form)
+    spec = {
+        "competitor": filters["competitor"],
+        "signal_types": filters["signal_types"],
+        "min_materiality": filters["min_materiality"],
+        "since_days": filters["since_days"],
+        "downweight_stale": filters["downweight_stale"],
+    }
+    sf.spec = {k: v for k, v in spec.items() if v not in (None, [], "")}
+    db.commit()
+    from sqlalchemy import or_ as _or
+    saved = (
+        db.query(SavedFilter)
+        .filter(_or(SavedFilter.owner_id == user.id, SavedFilter.owner_id.is_(None)))
+        .order_by(SavedFilter.created_at.desc())
+        .all()
+    )
+    return templates.TemplateResponse(request, "_stream_saved_filters.html", {
+        "saved_filters": saved,
+        "default_filter_id": user.default_filter_id,
+        "user": user,
     })
 
 
@@ -2041,6 +2259,7 @@ async def partial_stream_toggle_default(
     return templates.TemplateResponse(request, "_stream_saved_filters.html", {
         "saved_filters": saved,
         "default_filter_id": user.default_filter_id,
+        "user": user,
     })
 
 
@@ -2079,4 +2298,153 @@ async def partial_stream_delete_filter(
     return templates.TemplateResponse(request, "_stream_saved_filters.html", {
         "saved_filters": saved,
         "default_filter_id": user.default_filter_id,
+        "user": user,
     })
+
+
+# ---- Public share-link UI partials (docs/stream/01-public-share-link.md) ----
+#
+# JSON endpoints live in app/routes/filters.py. These thin partial wrappers
+# return the rendered share-panel HTML so the saved-filter row's HTMX swap
+# can work without a JSON ↔ DOM bridge in JavaScript.
+
+
+def _can_share_filter(sf: SavedFilter, user) -> bool:
+    """Mirrors _check_share_owner in routes/filters.py: own private filter
+    or admin on a team filter. Used to decide whether to render the
+    mint/rotate/revoke buttons in the share panel."""
+    if sf.owner_id is None:
+        return user.role == "admin"
+    return sf.owner_id == user.id
+
+
+def _share_panel_context(request: Request, sf: SavedFilter, user) -> dict:
+    """Common context dict for _stream_filter_share.html so each partial
+    route doesn't repeat the URL-build / pinned-only / can_share calculus."""
+    base = str(request.base_url).rstrip("/")
+    return {
+        "sf": sf,
+        "share_url": f"{base}/p/{sf.public_token}" if sf.public_token else None,
+        "can_share": _can_share_filter(sf, user),
+        "pinned_only": bool((sf.spec or {}).get("pinned_only")),
+    }
+
+
+@router.get("/partials/stream_filter_share/{filter_id}", response_class=HTMLResponse)
+def partial_filter_share_open(
+    filter_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Open the share panel for one filter — current state only, no mutation."""
+    sf = db.get(SavedFilter, filter_id)
+    if not sf:
+        raise HTTPException(404, "filter not found")
+    # Permission to even view the share state matches the mint gate so a
+    # non-admin can't probe team-filter tokens by walking ids.
+    if sf.owner_id is None and user.role != "admin":
+        raise HTTPException(403, "only admins can view team-filter share state")
+    if sf.owner_id and sf.owner_id != user.id:
+        raise HTTPException(403, "not your filter")
+    return templates.TemplateResponse(
+        request,
+        "_stream_filter_share.html",
+        _share_panel_context(request, sf, user),
+    )
+
+
+@router.post("/partials/stream_filter_share/{filter_id}", response_class=HTMLResponse)
+def partial_filter_share_mint(
+    filter_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Mint or rotate the share token. Same permission shape as the JSON
+    endpoint; returns the re-rendered panel so the URL appears in place."""
+    from .routes.filters import _check_share_owner, _check_mintable
+    from sqlalchemy.exc import IntegrityError
+    import secrets as _secrets
+    sf = db.get(SavedFilter, filter_id)
+    if not sf:
+        raise HTTPException(404, "filter not found")
+    _check_share_owner(sf, user)
+    _check_mintable(sf)
+    for _ in range(2):
+        sf.public_token = _secrets.token_urlsafe(32)
+        sf.public_token_created_at = datetime.utcnow()
+        try:
+            db.commit()
+            break
+        except IntegrityError:
+            db.rollback()
+            continue
+    else:
+        raise HTTPException(500, "failed to mint a unique share token")
+    return templates.TemplateResponse(
+        request,
+        "_stream_filter_share.html",
+        _share_panel_context(request, sf, user),
+    )
+
+
+@router.delete("/partials/stream_filter_share/{filter_id}", response_class=HTMLResponse)
+def partial_filter_share_revoke(
+    filter_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Revoke the share token. Returns the re-rendered panel (now in the
+    "not shared" state) so the user sees the URL field disappear."""
+    from .routes.filters import _check_share_owner
+    sf = db.get(SavedFilter, filter_id)
+    if not sf:
+        raise HTTPException(404, "filter not found")
+    _check_share_owner(sf, user)
+    sf.public_token = None
+    sf.public_token_created_at = None
+    db.commit()
+    return templates.TemplateResponse(
+        request,
+        "_stream_filter_share.html",
+        _share_panel_context(request, sf, user),
+    )
+
+
+@router.post("/partials/stream_filter_share/{filter_id}/qa", response_class=HTMLResponse)
+def partial_filter_share_toggle_qa(
+    filter_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Flip the public_qa_enabled flag and re-render the share panel.
+
+    Permissions match mint/revoke (own private filter or admin on team).
+    No body needed — this is a toggle: read the current value, flip it,
+    save, re-render. We don't bother validating the share has a token
+    first; toggling QA on a not-yet-shared filter is harmless because
+    the public route gates on token presence anyway.
+    """
+    from .routes.filters import _check_share_owner
+    sf = db.get(SavedFilter, filter_id)
+    if not sf:
+        raise HTTPException(404, "filter not found")
+    _check_share_owner(sf, user)
+    sf.public_qa_enabled = not bool(getattr(sf, "public_qa_enabled", False))
+    db.commit()
+    return templates.TemplateResponse(
+        request,
+        "_stream_filter_share.html",
+        _share_panel_context(request, sf, user),
+    )
+
+
+@router.post("/partials/stream_filter_share/{filter_id}/close", response_class=HTMLResponse)
+def partial_filter_share_close(filter_id: int):
+    """Close the panel. Returns an empty fragment so the slot collapses
+    back to its zero-height state. Filter id in path is unused — kept for
+    URL symmetry with the other panel endpoints."""
+    return HTMLResponse("")

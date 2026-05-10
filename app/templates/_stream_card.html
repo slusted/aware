@@ -7,13 +7,19 @@
    - view_count       (int,  default 0)     — how many times the current user has viewed
                                               this finding (server-side count of `view`
                                               events in user_signal_events).
+   - public           (bool, default False) — read-only render for /p/{token}. Strips
+                                              every per-user affordance (new-dot,
+                                              view-count, flip / expand actions, state
+                                              classes) so the card has no auth-coupled
+                                              behavior. See docs/stream/01-public-share-link.md.
 #}
 {% set show_competitor = show_competitor if show_competitor is defined else True %}
 {% set expandable = expandable if expandable is defined else False %}
 {% set view = view if view is defined else None %}
 {% set view_count = view_count if view_count is defined else 0 %}
+{% set public = public if public is defined else False %}
 {% set state = view.state if view else None %}
-<article id="card-{{ f.id }}" data-finding-id="{{ f.id }}"{% if expandable %} data-expandable="true"{% endif %} class="signal-card {% if state %}state-{{ state }}{% else %}state-new{% endif %}">
+<article id="card-{{ f.id }}" data-finding-id="{{ f.id }}"{% if expandable %} data-expandable="true"{% endif %} class="signal-card{% if not public %} {% if state %}state-{{ state }}{% else %}state-new{% endif %}{% endif %}">
   <div class="signal-card-inner">
   {% if show_competitor %}
     {% set logo_src = logos.get(f.competitor) if logos else None %}
@@ -25,8 +31,14 @@
   {% endif %}
   <div class="signal-card-content">
   <header class="signal-card-head">
+    {% if not public %}
     <span class="new-dot" aria-label="Unread" title="New — not yet viewed"></span>
-    <span class="badge type-{{ f.signal_type or 'other' }}">{{ f.signal_type or 'unclassified' }}</span>
+    {% endif %}
+    {# Label dict is registered on each Jinja2Templates env that renders this
+       partial (ui.py, routes/scenarios.py). The default({}) guard means a
+       future renderer that forgets to register won't 500 — it just falls
+       back to the raw signal_type. #}
+    <span class="badge type-{{ f.signal_type or 'other' }}">{{ (signal_type_labels|default({})).get(f.signal_type, f.signal_type) or 'unclassified' }}</span>
     {% if f.materiality is not none %}
     <span class="materiality" title="materiality {{ '%.1f' % f.materiality }}">
       <span class="mat-bar" style="width: {{ (f.materiality * 100)|int }}%"></span>
@@ -46,8 +58,9 @@
       </span>
     {% endif %}
     {# Debug: ?explain=1 surfaces the spec-08 semantic contribution. Only
-       renders when the centroid + finding embedding produced a value. #}
-    {% if explain is defined and explain and f._semantic_contribution is defined %}
+       renders when the centroid + finding embedding produced a value.
+       Suppressed entirely on public renders so internals don't leak. #}
+    {% if not public and explain is defined and explain and f._semantic_contribution is defined %}
       <span class="semantic-chip{% if f._semantic_contribution < 0 %} is-neg{% endif %}"
             title="cosine={{ '%.3f' % f._semantic_cosine }} × EMBEDDING_WEIGHT → score delta">
         sem {{ '%+.2f' % f._semantic_contribution }}
@@ -64,8 +77,9 @@
 
     {# Per-user view counter — `view` events fire once per page-load when a
        card is ≥50% visible for ≥500ms. Hidden when the user hasn't viewed
-       it yet (the new-dot already covers that state). #}
-    {% if view_count > 0 %}
+       it yet (the new-dot already covers that state). Hidden entirely on
+       public renders since there is no viewer. #}
+    {% if not public and view_count > 0 %}
     <span class="view-count muted" title="You've viewed this {{ view_count }} time{{ 's' if view_count != 1 else '' }}">
       <span aria-hidden="true">👁</span> {{ view_count }}×
     </span>
@@ -74,6 +88,7 @@
        f._predicate_evidence is undefined or empty. See
        docs/scenarios/02-card-tagging.md §"Card front: predicate tag chip". #}
     {% include "_predicate_badges.html" %}
+    {% if not public %}
     {% if expandable %}
     <span class="card-actions expand-actions">
       <button type="button" class="btn-mini expand-toggle"
@@ -87,9 +102,10 @@
        follow-up-question textarea). Same gesture, more useful payload. #}
     <span class="card-actions flip-actions">
       <button type="button" class="btn-mini flip-toggle"
-              aria-label="Tag predicate evidence"
-              title="Tag predicate evidence">↻</button>
+              aria-label="Tag prediction evidence"
+              title="Tag prediction evidence">↻</button>
     </span>
+    {% endif %}
     {% endif %}
   </header>
 
@@ -131,12 +147,12 @@
   </div>
   {% endif %}
 
-  {% if state == 'snoozed' and view and view.snoozed_until %}
+  {% if not public and state == 'snoozed' and view and view.snoozed_until %}
     <footer class="signal-card-foot muted">Snoozed until {{ view.snoozed_until.strftime('%b %d') }}</footer>
   {% endif %}
   </div>{# /signal-card-content #}
 
-  {% if not expandable %}
+  {% if not public and not expandable %}
   {# Stage-2 (docs/scenarios/02-card-tagging.md): on first flip, HTMX
      loads /partials/finding/{id}/predicate_form into this container.
      Empty until the user clicks the flip-toggle — keeps initial /stream

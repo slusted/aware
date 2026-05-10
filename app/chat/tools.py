@@ -584,6 +584,8 @@ def _h_add_competitor(
     db.add(comp)
     db.commit()
     db.refresh(comp)
+    from .. import competitor_backfill
+    competitor_backfill.kick_off(db, comp.id, triggered_by="chat_add_competitor")
     return {
         "added": True,
         "competitor_id": comp.id,
@@ -592,6 +594,235 @@ def _h_add_competitor(
         "homepage_domain": comp.homepage_domain,
         "threat_angle": comp.threat_angle,
         "keywords": comp.keywords or [],
+        "url": f"/competitors/{comp.id}",
+    }
+
+
+_UPDATE_LIST_FIELDS = (
+    "keywords", "subreddits", "careers_domains", "newsroom_domains",
+    "ats_tenants", "positioning_pages",
+)
+_UPDATE_CATEGORIES = {"job_board", "ats", "labour_hire", "adjacent", "other"}
+
+
+def _h_update_competitor(
+    db: Session,
+    user: User,
+    *,
+    competitor: str | int,
+    name: str | None = None,
+    category: str | None = None,
+    threat_angle: str | None = None,
+    homepage_domain: str | None = None,
+    app_store_id: str | None = None,
+    play_package: str | None = None,
+    trends_keyword: str | None = None,
+    keywords: list[str] | None = None,
+    subreddits: list[str] | None = None,
+    careers_domains: list[str] | None = None,
+    newsroom_domains: list[str] | None = None,
+    ats_tenants: list[str] | None = None,
+    positioning_pages: list[str] | None = None,
+    min_relevance_score: float | None = None,
+    social_score_multiplier: float | None = None,
+    active: bool | None = None,
+    **_: Any,
+) -> dict:
+    """Update fields on an existing competitor. Resolves by id or
+    case-insensitive name. Only fields explicitly passed are touched —
+    omit a field to leave it alone. List fields use replace semantics
+    (pass the full new list). Same write path as the admin edit form."""
+    comp = _competitor_by_ref(db, competitor)
+    if not comp:
+        return {"error": f"competitor not found: {competitor!r}"}
+
+    locals_map = {
+        "name": name,
+        "category": category,
+        "threat_angle": threat_angle,
+        "homepage_domain": homepage_domain,
+        "app_store_id": app_store_id,
+        "play_package": play_package,
+        "trends_keyword": trends_keyword,
+        "keywords": keywords,
+        "subreddits": subreddits,
+        "careers_domains": careers_domains,
+        "newsroom_domains": newsroom_domains,
+        "ats_tenants": ats_tenants,
+        "positioning_pages": positioning_pages,
+        "min_relevance_score": min_relevance_score,
+        "social_score_multiplier": social_score_multiplier,
+        "active": active,
+    }
+    provided = {k: v for k, v in locals_map.items() if v is not None}
+    if not provided:
+        return {"error": "no fields to update — pass at least one field besides 'competitor'."}
+
+    if "category" in provided and provided["category"] not in _UPDATE_CATEGORIES:
+        return {
+            "error": (
+                f"invalid category {provided['category']!r}; "
+                f"must be one of {sorted(_UPDATE_CATEGORIES)}"
+            )
+        }
+
+    if "name" in provided:
+        new_name = str(provided["name"]).strip()
+        if not new_name:
+            return {"error": "name cannot be empty"}
+        if new_name.lower() != comp.name.lower():
+            clash = (
+                db.query(Competitor)
+                .filter(Competitor.name.ilike(new_name), Competitor.id != comp.id)
+                .first()
+            )
+            if clash:
+                return {
+                    "error": f"competitor {clash.name!r} already exists (id={clash.id})",
+                    "competitor_id": clash.id,
+                }
+        provided["name"] = new_name
+
+    if "homepage_domain" in provided:
+        hd = str(provided["homepage_domain"]).strip()
+        if "//" in hd:
+            hd = hd.split("//", 1)[1]
+        hd = hd.split("/", 1)[0].lower()
+        import re as _re
+        if hd and not _re.match(r"^[a-z0-9][a-z0-9.-]*$", hd):
+            return {"error": f"invalid homepage_domain {provided['homepage_domain']!r}"}
+        provided["homepage_domain"] = hd or None
+
+    for field in _UPDATE_LIST_FIELDS:
+        if field in provided:
+            v = provided[field]
+            if not isinstance(v, list):
+                return {"error": f"{field} must be a list of strings"}
+            cleaned = [str(x).strip() for x in v if str(x).strip()]
+            if field == "subreddits":
+                cleaned = [s.lstrip("r/").lstrip("/") for s in cleaned]
+            provided[field] = cleaned
+
+    changed: dict[str, dict] = {}
+    for field, new_val in provided.items():
+        old_val = getattr(comp, field, None)
+        if isinstance(old_val, list):
+            old_val = list(old_val)
+        if old_val == new_val:
+            continue
+        setattr(comp, field, new_val)
+        changed[field] = {"old": old_val, "new": new_val}
+
+    if not changed:
+        return {
+            "noop": True,
+            "competitor_id": comp.id,
+            "name": comp.name,
+            "url": f"/competitors/{comp.id}",
+        }
+
+    db.commit()
+    db.refresh(comp)
+
+    try:
+        from ..config_sync import sync_db_to_config
+        sync_db_to_config(db)
+    except Exception:
+        pass
+
+    out = _format_competitor(comp)
+    out.update({
+        "updated": True,
+        "competitor_id": comp.id,
+        "changed_fields": sorted(changed.keys()),
+        "diff": changed,
+        "url": f"/competitors/{comp.id}",
+    })
+    return out
+
+
+def _summarise_update_competitor(inputs: dict) -> str:
+    ref = inputs.get("competitor")
+    fields = [k for k, v in (inputs or {}).items() if k != "competitor" and v is not None]
+    if not fields:
+        return f"Update competitor {ref!r}? (no fields specified yet)"
+    return (
+        f"Update competitor {ref!r} — change "
+        f"{', '.join(fields)}? Updates the watchlist row and resyncs config.json."
+    )
+
+
+def _h_optimise_competitor(
+    db: Session,
+    user: User,
+    *,
+    competitor: str | int,
+    **_: Any,
+) -> dict:
+    """Re-run the autofill agent in proposals mode against an existing
+    competitor. Returns a list of {action, field, value, old_value,
+    rationale, evidence_url} cards — same shape the 'Optimise with agent'
+    button on /admin/competitors/{id}/edit produces. Read-only: does not
+    apply anything. The chat agent presents the cards, the user picks
+    which to apply, and each accepted proposal is then written via
+    update_competitor."""
+    comp = _competitor_by_ref(db, competitor)
+    if not comp:
+        return {"error": f"competitor not found: {competitor!r}"}
+
+    existing = {
+        "category": comp.category,
+        "threat_angle": comp.threat_angle,
+        "keywords": list(comp.keywords or []),
+        "subreddits": list(comp.subreddits or []),
+        "careers_domains": list(comp.careers_domains or []),
+        "newsroom_domains": list(comp.newsroom_domains or []),
+        "homepage_domain": comp.homepage_domain,
+        "app_store_id": comp.app_store_id,
+        "play_package": comp.play_package,
+        "trends_keyword": comp.trends_keyword,
+        "min_relevance_score": comp.min_relevance_score,
+        "social_score_multiplier": comp.social_score_multiplier,
+    }
+
+    try:
+        from ..competitor_performance import build_performance_report
+        performance_report = build_performance_report(db, comp.id, days=60) or None
+    except Exception:
+        performance_report = None
+
+    cfg_path = os.environ.get("CONFIG_PATH", "config.json")
+    try:
+        with open(cfg_path, encoding="utf-8") as _f:
+            cfg = json.load(_f)
+    except Exception:
+        cfg = {}
+    company = cfg.get("company", "our company")
+    industry = cfg.get("industry", "our industry")
+
+    try:
+        from ..competitor_autofill import autofill as _autofill
+        result = _autofill(
+            comp.name, company, industry,
+            existing=existing, performance_report=performance_report,
+        )
+    except Exception as e:
+        return {"error": f"autofill failed: {type(e).__name__}: {e}"}
+
+    proposals = result.get("proposals") or []
+    return {
+        "competitor_id": comp.id,
+        "competitor_name": comp.name,
+        "proposals": proposals,
+        "proposal_count": len(proposals),
+        "hint": (
+            "Each proposal is a suggested edit with rationale + evidence_url. "
+            "Present them to the user, then call update_competitor for each "
+            "they accept. Pass replace-semantics list values when applying "
+            "add/drop proposals (read current value, mutate, write back)."
+            if proposals else
+            "No changes proposed — the autofill agent thinks the current row is fine."
+        ),
         "url": f"/competitors/{comp.id}",
     }
 
@@ -673,7 +904,7 @@ TOOLS: list[Tool] = [
                 "signal_type": {
                     "type": "string",
                     "enum": [
-                        "funding", "new_hire", "product_launch", "messaging_shift",
+                        "funding", "m_and_a", "new_hire", "product_launch", "messaging_shift",
                         "price_change", "integration", "voc_mention", "momentum_point",
                         "news", "other",
                     ],
@@ -782,11 +1013,12 @@ TOOLS: list[Tool] = [
     Tool(
         name="add_competitor",
         description=(
-            "Add a new competitor to the watchlist by name. The autofill agent "
-            "researches the company (search + fetch) and populates category, "
-            "homepage, threat angle, keywords, subreddits, and careers/newsroom "
-            "domains automatically — the user can edit any field afterwards at "
-            "/admin/competitors/{id}/edit. Takes ~10–30 seconds."
+            "Add a NEW competitor to the watchlist by name (use update_competitor "
+            "to modify an existing one). The autofill agent researches the company "
+            "(search + fetch) and populates category, homepage, threat angle, "
+            "keywords, subreddits, and careers/newsroom domains automatically — "
+            "the user can edit any field afterwards at /admin/competitors/{id}/edit. "
+            "Takes ~10–30 seconds."
         ),
         input_schema={
             "type": "object",
@@ -805,6 +1037,88 @@ TOOLS: list[Tool] = [
         confirmation_summary=lambda i: (
             f"Add {i.get('name', '?')!r} to the watchlist? The autofill agent "
             "will research the company and populate the fields (~10–30s, ~$0.10–0.30)."
+        ),
+    ),
+    Tool(
+        name="update_competitor",
+        description=(
+            "Update fields on an existing competitor. Resolves by id or "
+            "case-insensitive name. Pass only the fields you want to change — "
+            "omitted fields stay as-is. List fields (keywords, subreddits, "
+            "careers_domains, newsroom_domains, ats_tenants, positioning_pages) "
+            "use replace semantics, so to add an item first read the current "
+            "list via get_competitor_profile and pass the merged list back. "
+            "Set active=false to soft-delete (the competitor stops being "
+            "scanned but history is preserved). Same write path as the admin "
+            "edit form."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "competitor": {
+                    "type": ["string", "integer"],
+                    "description": "Competitor id (int) or current name (string).",
+                },
+                "name": {"type": "string", "description": "New name (rename)."},
+                "category": {
+                    "type": "string",
+                    "enum": ["job_board", "ats", "labour_hire", "adjacent", "other"],
+                },
+                "threat_angle": {"type": "string"},
+                "homepage_domain": {"type": "string", "description": "Apex domain, no scheme/path."},
+                "app_store_id": {"type": "string"},
+                "play_package": {"type": "string"},
+                "trends_keyword": {"type": "string"},
+                "keywords": {"type": "array", "items": {"type": "string"}},
+                "subreddits": {"type": "array", "items": {"type": "string"}},
+                "careers_domains": {"type": "array", "items": {"type": "string"}},
+                "newsroom_domains": {"type": "array", "items": {"type": "string"}},
+                "ats_tenants": {"type": "array", "items": {"type": "string"}},
+                "positioning_pages": {"type": "array", "items": {"type": "string"}},
+                "min_relevance_score": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                "social_score_multiplier": {"type": "number", "minimum": 0.0},
+                "active": {
+                    "type": "boolean",
+                    "description": "false soft-deletes (stops scanning); true reactivates.",
+                },
+            },
+            "required": ["competitor"],
+            "additionalProperties": False,
+        },
+        handler=_h_update_competitor,
+        requires_role="analyst",
+        requires_confirmation=True,
+        confirmation_summary=_summarise_update_competitor,
+    ),
+    Tool(
+        name="optimise_competitor",
+        description=(
+            "Re-run the autofill research agent against an existing competitor "
+            "and return a list of proposed field changes (replace/add/drop) "
+            "with rationale + evidence_url for each. Same backend as the "
+            "'Optimise with agent' button on /admin/competitors/{id}/edit. "
+            "Read-only — does NOT apply anything. After this returns, present "
+            "the proposals to the user and call update_competitor for each "
+            "one they accept. Takes ~10–30 seconds and costs ~$0.10–0.30."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "competitor": {
+                    "type": ["string", "integer"],
+                    "description": "Competitor id (int) or name (string).",
+                },
+            },
+            "required": ["competitor"],
+            "additionalProperties": False,
+        },
+        handler=_h_optimise_competitor,
+        requires_role="analyst",
+        requires_confirmation=True,
+        confirmation_summary=lambda i: (
+            f"Re-research {i.get('competitor')!r} and propose field updates? "
+            "Read-only — you'll review each proposal before anything is written. "
+            "Takes ~10–30 seconds, costs ~$0.10–0.30."
         ),
     ),
     Tool(

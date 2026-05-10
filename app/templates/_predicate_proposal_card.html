@@ -56,7 +56,7 @@
       </div>
     {% elif proposal.kind == "retire" %}
       <div class="proposal-card-payload">
-        Retire predicate
+        Retire prediction
         {% if proposal.target_payload.reason_short %}
           <span class="muted">— {{ proposal.target_payload.reason_short }}</span>
         {% endif %}
@@ -107,7 +107,7 @@
         Reject
       </button>
       <a class="btn-ghost"
-         href="/chat?prompt=Refine+predicate+proposal+{{ proposal.id }}+via+scenarios_update_predicate">
+         href="/chat?prompt=Refine+prediction+proposal+{{ proposal.id }}+via+scenarios_update_predicate">
         Refine in chat
       </a>
     </footer>

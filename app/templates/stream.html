@@ -101,7 +101,7 @@
       {# Stage-2 (docs/scenarios/02-card-tagging.md): scope to findings
          that have no confirmed predicate evidence and no pending LLM
          proposal — useful when sweeping the queue. #}
-      <label class="filter-label" style="margin-left:16px" title="Show only findings with no confirmed predicate evidence and no pending LLM proposal.">
+      <label class="filter-label" style="margin-left:16px" title="Show only findings with no confirmed prediction evidence and no pending LLM proposal.">
         <input type="checkbox" name="tagged" value="untagged"
                {% if filters.tagged == "untagged" %}checked{% endif %}>
         Untagged only
@@ -133,6 +133,23 @@
      don't bubble up and re-trigger the list reload on every keystroke.
      The save form hx-includes the filter form so current state is captured. #}
   <div class="stream-secondary">
+    {# When a saved filter is currently active (loaded via its link or as
+       the user's default), offer an inline "Update <name>" button that
+       overwrites that row's spec with the current form state. Keeps the
+       Save-as-new path available below for "fork into a new preset". #}
+    {% if active_filter_id %}
+    <form id="stream-update-form"
+          hx-post="/partials/stream_update_filter/{{ active_filter_id }}"
+          hx-include="#stream-filters"
+          hx-target="#saved-filters-slot"
+          hx-swap="innerHTML"
+          hx-confirm="Overwrite '{{ active_filter_name }}' with the current filter settings?"
+          hx-on::after-request="if(event.detail.successful){const s=this.querySelector('.stream-update-status');s.textContent='Updated';clearTimeout(s._t);s._t=setTimeout(()=>{s.textContent=''},2000)}"
+          class="stream-update-form">
+      <button type="submit" class="btn-ghost">Update “{{ active_filter_name }}”</button>
+      <span class="stream-update-status muted" aria-live="polite"></span>
+    </form>
+    {% endif %}
     <form id="stream-save-form"
           hx-post="/partials/stream_save_filter"
           hx-include="#stream-filters"
@@ -140,13 +157,13 @@
           hx-swap="innerHTML"
           hx-on::after-request="if(event.detail.successful){this.reset();const s=this.querySelector('.stream-save-status');s.textContent='Saved';clearTimeout(s._t);s._t=setTimeout(()=>{s.textContent=''},2000)}"
           class="stream-save-form">
-      <input type="text" name="name" placeholder="Name this filter…" class="stream-save-name"
+      <input type="text" name="name" placeholder="{% if active_filter_id %}…or save as new{% else %}Name this filter…{% endif %}" class="stream-save-name"
              required maxlength="80">
       <select name="visibility" class="stream-save-visibility">
         <option value="private">Private</option>
         <option value="team">Team</option>
       </select>
-      <button type="submit" class="btn-ghost">Save filter</button>
+      <button type="submit" class="btn-ghost">{% if active_filter_id %}Save as new{% else %}Save filter{% endif %}</button>
       <span class="stream-save-status muted" aria-live="polite"></span>
     </form>
   </div>

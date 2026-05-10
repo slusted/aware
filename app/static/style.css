@@ -98,6 +98,12 @@
   --type-integration-border:        rgba(45,212,191,0.35);
   --type-integration-border-strong: rgba(45,212,191,0.45);
 
+  --type-m-and-a:                   #a855f7;
+  --type-m-and-a-soft:              rgba(168,85,247,0.08);
+  --type-m-and-a-soft-strong:       rgba(168,85,247,0.12);
+  --type-m-and-a-border:            rgba(168,85,247,0.35);
+  --type-m-and-a-border-strong:     rgba(168,85,247,0.45);
+
   --type-price-change:              #e0a500;
   --type-price-change-soft:         rgba(224,165,0,0.08);
   --type-price-change-soft-strong:  rgba(224,165,0,0.12);
@@ -216,6 +222,11 @@
   --type-integration-soft-strong:   rgba(45,212,191,0.20);
   --type-integration-border:        rgba(45,212,191,0.45);
   --type-integration-border-strong: rgba(45,212,191,0.55);
+
+  --type-m-and-a-soft:              rgba(168,85,247,0.14);
+  --type-m-and-a-soft-strong:       rgba(168,85,247,0.18);
+  --type-m-and-a-border:            rgba(168,85,247,0.40);
+  --type-m-and-a-border-strong:     rgba(168,85,247,0.50);
 
   --type-price-change-soft:         rgba(224,165,0,0.14);
   --type-price-change-soft-strong:  rgba(224,165,0,0.18);
@@ -1010,6 +1021,237 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
 .saved-filter-default.is-default { color: var(--warn); }
 .saved-filter-delete:hover { color: var(--err); }
 
+/* docs/stream/01-public-share-link.md — Share button + inline panel.
+   The button matches .saved-filter-default/.saved-filter-delete sizing so
+   the row stays visually balanced; the panel sits on its own line below
+   the row so it doesn't shove other filters around when open. */
+.saved-filter-share {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1;
+}
+.saved-filter-share:hover {
+  color: var(--text-primary);
+  background: var(--surface-2);
+}
+.saved-filter-share.is-shared { color: var(--accent); }
+.saved-filter-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 10px;
+  cursor: help;
+}
+.saved-filter-hint svg { opacity: 0.6; }
+.filter-share-slot { flex-basis: 100%; }
+.filter-share-slot:empty { display: none; }
+.filter-share-panel {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 520px;
+}
+.filter-share-url-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.filter-share-url {
+  flex: 1 1 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 4px 6px;
+  background: var(--surface-0);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  color: var(--text-primary);
+}
+.filter-share-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.filter-share-panel .small { font-size: 12px; }
+.filter-share-qa-toggle {
+  margin: 8px 0 12px;
+  padding: 8px 0;
+  border-top: 1px dashed var(--border-subtle);
+}
+.filter-share-qa-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.filter-share-qa-toggle p { margin: 4px 0 0 22px; }
+.filter-share-panel .btn-danger:hover { color: var(--err); }
+
+/* docs/stream/01-public-share-link.md — /p/{token} page.
+   Deliberately bare: no sidebar, no top nav, just centred content with a
+   header strip identifying the source and a soft footer disclaimer. The
+   stream cards inside reuse all .signal-card-* styling so the visual
+   match between owner-side and public-side is automatic. */
+.public-stream-page {
+  background: var(--surface-0);
+  color: var(--text-primary);
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.public-stream-header {
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+}
+.public-stream-header-inner {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.public-stream-title h1 {
+  font-size: 20px;
+  margin: 2px 0 0;
+  line-height: 1.2;
+}
+.public-stream-eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.public-stream-wordmark {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+.public-stream-wordmark:hover { color: var(--text-primary); }
+.public-stream-main {
+  max-width: 920px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 20px;
+  flex: 1 1 auto;
+}
+.public-stream-empty,
+.public-stream-more {
+  padding: 24px 0;
+  text-align: center;
+}
+.public-stream-footer {
+  border-top: 1px solid var(--border-subtle);
+  padding: 16px 20px;
+  text-align: center;
+  background: var(--surface-1);
+}
+.public-stream-footer p { margin: 2px 0; }
+
+/* Public Q&A on /p/{token}. The launcher + drawer reuse the
+   .chat-launcher / .chat-drawer styling from the authenticated app
+   (rules near the bottom of this file) so the public surface uses
+   the same agent identity, motion, and shadow as the in-product
+   chat. The rules below cover only the bits unique to public Q&A:
+   the Q/A thread inside the drawer body, the form, and the on-page
+   scroll lock while open. */
+
+.public-qa-thread-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px;
+}
+.public-qa-thread { min-height: 40px; }
+.public-qa-empty { margin: 0; font-size: 0.85rem; }
+.public-qa-turn { margin: 0 0 16px 0; }
+.public-qa-turn:last-child { margin-bottom: 0; }
+.public-qa-q {
+  margin: 0 0 6px 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.public-qa-q::before {
+  content: "Q ";
+  opacity: 0.6;
+  font-weight: 500;
+}
+.public-qa-a {
+  margin: 0;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+.public-qa-a::before {
+  content: "A ";
+  opacity: 0.6;
+  font-weight: 500;
+}
+.public-qa-a-error { color: var(--text-warn, #c53030); }
+
+.public-qa-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+}
+.public-qa-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-1);
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+  min-height: 60px;
+}
+.public-qa-input:disabled { opacity: 0.6; cursor: not-allowed; }
+.public-qa-form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.public-qa-budget { font-size: 0.8rem; }
+.public-qa-submit {
+  padding: 6px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-2, var(--surface-1));
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.public-qa-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.chat-drawer-meta { margin: 4px 0 0; font-size: 0.8rem; }
+
+/* Lock body scroll while the drawer is open so background swipe gestures
+   don't pull the public stream around behind it. */
+html.public-qa-drawer-active,
+html.public-qa-drawer-active body { overflow: hidden; }
+
 /* Collapse the filter form behind a toggle — the stream is the answer,
    not the filter UI. Saved-filter picker stays visible so preset
    switching is one click away. */
@@ -1096,6 +1338,16 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
 .stream-save-name { min-width: 160px; }
 .stream-save-visibility { min-width: 90px; }
 .stream-save-form button { white-space: nowrap; flex-shrink: 0; }
+
+/* "Update <name>" form sits beside Save-as-new when a saved filter is
+   active. Same visual rhythm as .stream-save-form so the two read as a
+   pair. No name/visibility inputs — Update overwrites the spec only. */
+.stream-update-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.stream-update-form button { white-space: nowrap; flex-shrink: 0; }
 
 .stream-list {
   display: grid;
@@ -1630,6 +1882,7 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
 .badge.type-new_hire       { color: var(--type-new-hire);         border-color: var(--type-new-hire-border);         background: var(--type-new-hire-soft); }
 .badge.type-product_launch { color: var(--type-product-launch);   border-color: var(--type-product-launch-border);   background: var(--type-product-launch-soft); }
 .badge.type-integration    { color: var(--type-integration);      border-color: var(--type-integration-border);      background: var(--type-integration-soft); }
+.badge.type-m_and_a        { color: var(--type-m-and-a);          border-color: var(--type-m-and-a-border);          background: var(--type-m-and-a-soft); }
 .badge.type-price_change   { color: var(--type-price-change);     border-color: var(--type-price-change-border);     background: var(--type-price-change-soft); }
 .badge.type-messaging_shift{ color: var(--type-messaging-shift);  border-color: var(--type-messaging-shift-border);  background: var(--type-messaging-shift-soft); }
 .badge.type-voc_mention    { color: var(--text-secondary); border-color: var(--border-strong); background: var(--surface-2); }
@@ -1662,6 +1915,7 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
 .event-material-badge.type-new_hire       { color: var(--type-new-hire);        border-color: var(--type-new-hire-border);        background: var(--type-new-hire-soft-strong); }
 .event-material-badge.type-product_launch { color: var(--type-product-launch);  border-color: var(--type-product-launch-border);  background: var(--type-product-launch-soft-strong); }
 .event-material-badge.type-integration    { color: var(--type-integration);     border-color: var(--type-integration-border);     background: var(--type-integration-soft-strong); }
+.event-material-badge.type-m_and_a        { color: var(--type-m-and-a);         border-color: var(--type-m-and-a-border);         background: var(--type-m-and-a-soft-strong); }
 .event-material-badge.type-price_change   { color: var(--type-price-change);    border-color: var(--type-price-change-border);    background: var(--type-price-change-soft-strong); }
 .event-material-badge.type-messaging_shift{ color: var(--type-messaging-shift); border-color: var(--type-messaging-shift-border); background: var(--type-messaging-shift-soft-strong); }
 .event-material-link {
@@ -1675,6 +1929,7 @@ hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 24px 0; }
 .chip input:checked + .chip-body.type-new_hire       { color: var(--type-new-hire);        border-color: var(--type-new-hire-border-strong);        background: var(--type-new-hire-soft-strong); }
 .chip input:checked + .chip-body.type-product_launch { color: var(--type-product-launch);  border-color: var(--type-product-launch-border-strong);  background: var(--type-product-launch-soft-strong); }
 .chip input:checked + .chip-body.type-integration    { color: var(--type-integration);     border-color: var(--type-integration-border-strong);     background: var(--type-integration-soft-strong); }
+.chip input:checked + .chip-body.type-m_and_a        { color: var(--type-m-and-a);         border-color: var(--type-m-and-a-border-strong);         background: var(--type-m-and-a-soft-strong); }
 .chip input:checked + .chip-body.type-price_change   { color: var(--type-price-change);    border-color: var(--type-price-change-border-strong);    background: var(--type-price-change-soft-strong); }
 .chip input:checked + .chip-body.type-messaging_shift{ color: var(--type-messaging-shift); border-color: var(--type-messaging-shift-border-strong); background: var(--type-messaging-shift-soft-strong); }
 .chip input:checked + .chip-body.type-momentum_point { color: var(--type-momentum-point);  border-color: var(--type-momentum-point-border-strong);  background: var(--type-momentum-point-soft-strong); }
@@ -3805,6 +4060,35 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 }
 .evidence-table-muted { opacity: 0.65; }
 .evidence-row-user_rejected td { text-decoration: line-through; }
+
+/* Stage 7: scorer trail nested under each evidence row in the math view.
+   Two clicks deep on purpose — the primary table stays scannable, and
+   anyone who wants the receipts can drill into mechanism / base rate /
+   counter-evidence / incentive bias / redundancy. */
+.evidence-scorer-trail {
+  margin-top: 6px;
+  font-size: 11px;
+}
+.evidence-scorer-trail > summary {
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 2px 0;
+}
+.evidence-scorer-trail-list {
+  list-style: none;
+  margin: 4px 0 4px 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.evidence-scorer-trail-list li {
+  line-height: 1.4;
+}
+.evidence-scorer-trail-list .mono {
+  font-size: 10px;
+  margin-left: 4px;
+}
 
 .evidence-hidden-toggle { margin-top: 10px; }
 .evidence-hidden-toggle summary { cursor: pointer; font-size: 12px; }

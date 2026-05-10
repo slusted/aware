@@ -48,6 +48,13 @@ templates = Jinja2Templates(
 )
 from .. import agent_brand as _agent_brand
 _agent_brand.register_template_globals(templates)
+from ..ui import register_signal_globals as _register_signal_globals
+_register_signal_globals(templates)
+
+# Surface the per-evidence cap in templates so the math view can show
+# users the exact bound their posteriors were computed against.
+from ..scenarios.posterior import MAX_ABS_LOGIT_DELTA as _SCENARIOS_MAX_LOGIT
+templates.env.globals["scenarios_max_logit_delta"] = _SCENARIOS_MAX_LOGIT
 
 
 VALID_DIRECTIONS = ("support", "contradict", "neutral")
@@ -248,7 +255,7 @@ def predicate_states(
     selected predicate_key — no JS substitution needed."""
     pred = db.query(Predicate).filter(Predicate.key == predicate_key).one_or_none()
     if pred is None:
-        raise HTTPException(404, "predicate not found")
+        raise HTTPException(404, "prediction not found")
     states = (
         db.query(PredicateState)
         .filter(PredicateState.predicate_id == pred.id)
@@ -282,7 +289,7 @@ def _validate_evidence_input(
         .one_or_none()
     )
     if pred is None:
-        raise HTTPException(400, f"unknown or inactive predicate {predicate_key!r}")
+        raise HTTPException(400, f"unknown or inactive prediction {predicate_key!r}")
     state = (
         db.query(PredicateState)
         .filter(
@@ -294,7 +301,7 @@ def _validate_evidence_input(
     if state is None:
         raise HTTPException(
             400,
-            f"unknown state {target_state_key!r} for predicate {predicate_key!r}",
+            f"unknown state {target_state_key!r} for prediction {predicate_key!r}",
         )
     return pred
 
@@ -570,7 +577,7 @@ def predicate_dismiss_review(
         db.query(Predicate).filter(Predicate.key == predicate_key).one_or_none()
     )
     if pred is None:
-        raise HTTPException(404, f"predicate {predicate_key!r} not found")
+        raise HTTPException(404, f"prediction {predicate_key!r} not found")
     days = review_svc.dismiss_days(db)
     pred.next_review_due_at = datetime.utcnow() + timedelta(days=days)
     db.commit()
@@ -737,7 +744,7 @@ def predicate_expand(
     Targets `#predicate-detail-{key}` on the parent page."""
     detail = dashboard_svc.predicate_detail(db, predicate_key)
     if detail is None:
-        raise HTTPException(404, f"predicate {predicate_key!r} not found or inactive")
+        raise HTTPException(404, f"prediction {predicate_key!r} not found or inactive")
     pred = (
         db.query(Predicate).filter(Predicate.key == predicate_key).one_or_none()
     )
@@ -868,7 +875,7 @@ def predicate_edit_form(
         db.query(Predicate).filter(Predicate.key == predicate_key).one_or_none()
     )
     if pred is None:
-        raise HTTPException(404, f"predicate {predicate_key!r} not found")
+        raise HTTPException(404, f"prediction {predicate_key!r} not found")
     states = (
         db.query(PredicateState)
         .filter(PredicateState.predicate_id == pred.id)
@@ -974,7 +981,7 @@ def _predicate_edit_with_error(
         db.query(Predicate).filter(Predicate.key == predicate_key).one_or_none()
     )
     if pred is None:
-        raise HTTPException(404, f"predicate {predicate_key!r} not found")
+        raise HTTPException(404, f"prediction {predicate_key!r} not found")
     states = (
         db.query(PredicateState)
         .filter(PredicateState.predicate_id == pred.id)

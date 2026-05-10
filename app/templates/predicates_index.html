@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Predicates{% endblock %}
+{% block title %}Predictions{% endblock %}
 
 {% block content %}
 <header class="scenarios-page-head">
   <div class="scenarios-page-head-row">
-    <h1 class="scenarios-page-title">Predicates</h1>
+    <h1 class="scenarios-page-title">Predictions</h1>
     <div class="scenarios-page-actions">
       {% if user.role in ("admin", "analyst") %}
         <button type="button" id="predicates-propose-btn" class="btn-ghost"
-                title="Ask the LLM to scan recent findings + the current roster and propose any new predicates worth tracking. Lands in the Proposed tab.">
+                title="Ask the LLM to scan recent findings + the current roster and propose any new predictions worth tracking. Lands in the Proposed tab.">
           ✦ Propose
         </button>
         <button type="button" id="scenarios-recompute-btn" class="btn">Recompute</button>
@@ -22,7 +22,7 @@
          data-tab="predicates-page"
          data-has-data="{{ 'true' if header.n_predicates > 0 else 'false' }}">
     <div class="tab-explainer-head">
-      <h2 class="tab-explainer-title">What is a predicate?</h2>
+      <h2 class="tab-explainer-title">What is a prediction?</h2>
       <button type="button" class="tab-explainer-toggle" aria-expanded="true">
         <span class="tab-explainer-toggle-expanded">▾ Hide</span>
         <span class="tab-explainer-toggle-collapsed">ⓘ What is this?</span>
@@ -30,17 +30,17 @@
     </div>
     <div class="tab-explainer-body">
       <p class="tab-explainer-text">
-        A <strong>predicate</strong> is a named claim about the market with
+        A <strong>prediction</strong> is a named claim about the market with
         a small set of mutually-exclusive states — e.g. <em>"do buyers
-        prefer self-serve or sales-led?"</em>. Each predicate has a
+        prefer self-serve or sales-led?"</em>. Each prediction has a
         statement, a category, and a list of state labels. The forecast
         math (probabilities, velocity, scenario rollups) lives on the
         <a href="/scenarios">Scenarios</a> page.
       </p>
       <p class="tab-explainer-text">
-        The agent reviews predicates against incoming findings and
+        The agent reviews predictions against incoming findings and
         proposes refinements: rename a state, refine the wording, split
-        a state, retire the predicate, etc. Open a predicate to see its
+        a state, retire the prediction, etc. Open a prediction to see its
         definition and review pending proposals.
       </p>
     </div>
@@ -66,7 +66,7 @@
 
   {# Source filter — chip row instead of a dropdown so the review
      queue is visible at a glance. Each chip carries its current count. #}
-  <nav class="predicate-source-tabs" aria-label="Filter by predicate source">
+  <nav class="predicate-source-tabs" aria-label="Filter by prediction source">
     {% set tab_defs = [
       ('all', 'All', None),
       ('user', 'User', source_counts.user),
@@ -130,12 +130,12 @@
   {% else %}
     {% if source == 'llm_proposed' %}
       <p class="muted">
-        No proposed predicates right now. The LLM-suggestion job (Phase 3b) hasn't been wired up yet — until then this queue will stay empty unless an analyst manually creates a predicate with <code>source='llm_proposed'</code> via the Agent.
+        No proposed predictions right now. The LLM-suggestion job (Phase 3b) hasn't been wired up yet — until then this queue will stay empty unless an analyst manually creates a prediction with <code>source='llm_proposed'</code> via the Agent.
       </p>
     {% elif source == 'llm_promoted' %}
-      <p class="muted">No promoted predicates yet. Predicates that pass review move here.</p>
+      <p class="muted">No promoted predictions yet. Predictions that pass review move here.</p>
     {% else %}
-      <p class="muted">No active predicates match the current filters. Try clearing the category filter or the "no recent evidence" toggle.</p>
+      <p class="muted">No active predictions match the current filters. Try clearing the category filter or the "no recent evidence" toggle.</p>
     {% endif %}
   {% endif %}
 </section>
@@ -217,14 +217,14 @@
     if (promote) {
       e.preventDefault();
       const card = promote.closest('.predicate-card');
-      if (card && confirm('Promote this proposed predicate?')) applyAction(card, 'promote');
+      if (card && confirm('Promote this proposed prediction?')) applyAction(card, 'promote');
       return;
     }
     const reject = e.target.closest('.predicate-card-reject');
     if (reject) {
       e.preventDefault();
       const card = reject.closest('.predicate-card');
-      if (card && confirm('Reject this predicate? It will be marked inactive.')) applyAction(card, 'reject');
+      if (card && confirm('Reject this prediction? It will be marked inactive.')) applyAction(card, 'reject');
       return;
     }
   });

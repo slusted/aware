@@ -8,7 +8,7 @@ touching the call sites — the return contract stays the same.
 
 Taxonomy (keep in sync with Finding.signal_type docstring in models.py):
     news | price_change | new_hire | product_launch | messaging_shift |
-    funding | integration | voc_mention | momentum_point | other
+    funding | m_and_a | integration | voc_mention | momentum_point | other
 
 Materiality is the 0–1 float the stream UI filters on. Rule defaults
 encode a rough "how likely is this worth surfacing" — they're a first
@@ -36,8 +36,12 @@ _LAUNCH_RE = re.compile(
     r"\b(launches?|launched|introduces?|introducing|unveils?|unveiled|rolls?\s+out|released?\s+(?:today|new))\b",
     re.IGNORECASE,
 )
+_M_AND_A_RE = re.compile(
+    r"\b(acquires?|acquired(?:\s+by)?|acquisition\s+of|to\s+acquire|merges?\s+with|merger\s+(?:of|with)|acqui-?hires?)\b",
+    re.IGNORECASE,
+)
 _INTEGRATION_RE = re.compile(
-    r"\b(partners?\s+with|partnership\s+with|integrates?\s+with|integration\s+with|acquires?|acquired|acquisition\s+of)\b",
+    r"\b(partners?\s+with|partnership\s+with|integrates?\s+with|integration\s+with)\b",
     re.IGNORECASE,
 )
 _PRICING_RE = re.compile(
@@ -72,6 +76,11 @@ def classify(finding: dict) -> tuple[str, float, dict]:
 
     if _FUNDING_RE.search(haystack):
         return "funding", 0.9, {"matched": "funding_regex"}
+    # M&A beats integration: acquisitions are higher-materiality and used to
+    # share the integration bucket, which made acquisition cards render as
+    # "INTEGRATION" badges in the stream.
+    if _M_AND_A_RE.search(haystack):
+        return "m_and_a", 0.9, {"matched": "m_and_a_regex"}
     if _ROLE_RE.search(haystack) and _HIRE_VERBS.search(haystack):
         return "new_hire", 0.8, {"matched": "hire_role_regex"}
     if _LAUNCH_RE.search(haystack):

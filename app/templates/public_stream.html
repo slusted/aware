@@ -1,0 +1,357 @@
+<!doctype html>
+{# Public read-only stream view for /p/{token}.
+
+   Deliberately does NOT extend base.html — the public surface should not
+   carry the sidebar, top nav, chat launcher, or anything that implies
+   the viewer has an account. Just the cards, lightly framed.
+
+   See docs/stream/01-public-share-link.md.
+#}
+<html lang="en" data-theme="{{ request.cookies.get('theme', 'dark') }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Aware — shared signals view</title>
+  <link rel="preconnect" href="https://rsms.me/">
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+  <link rel="stylesheet" href="/static/style.css?v=public-qa-agent-1">
+  <script>
+    // Same clamp behavior as base.html so signal titles and snippets
+    // stay 3-line bounded with a more/less toggle. Public page never
+    // gets HTMX swaps so we only need the initial pass.
+    (function () {
+      var SELECTOR = '.signal-card-body .signal-title, .signal-card-body .signal-snippet';
+      function process(el) {
+        if (el.dataset.clampChecked) return;
+        el.dataset.clampChecked = '1';
+        el.classList.add('is-clamped');
+        if (el.scrollHeight <= el.clientHeight + 1) {
+          el.classList.remove('is-clamped');
+          return;
+        }
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'signal-clamp-toggle';
+        btn.textContent = 'more';
+        btn.setAttribute('aria-expanded', 'false');
+        btn.addEventListener('click', function () {
+          var nowClamped = el.classList.toggle('is-clamped');
+          btn.textContent = nowClamped ? 'more' : 'less';
+          btn.setAttribute('aria-expanded', nowClamped ? 'false' : 'true');
+        });
+        el.insertAdjacentElement('afterend', btn);
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () {
+          document.querySelectorAll(SELECTOR).forEach(process);
+        });
+      } else {
+        document.querySelectorAll(SELECTOR).forEach(process);
+      }
+    })();
+  </script>
+</head>
+<body class="public-stream-page">
+  <header class="public-stream-header">
+    <div class="public-stream-header-inner">
+      <div class="public-stream-title">
+        <span class="public-stream-eyebrow">Shared from Aware</span>
+        <h1>{{ filter_name }}</h1>
+      </div>
+      <a class="public-stream-wordmark" href="https://aware.app" rel="noopener" target="_blank">aware</a>
+    </div>
+  </header>
+
+  <main class="public-stream-main">
+    {% if not findings %}
+      <p class="public-stream-empty muted">No signals match this view right now.</p>
+    {% else %}
+      <div class="stream-list">
+        {% for f in findings %}
+          {% include "_stream_card.html" with context %}
+        {% endfor %}
+      </div>
+      {% if has_more %}
+        <p class="public-stream-more muted">Older signals exist beyond this window. The owner can adjust the filter to widen the date range.</p>
+      {% endif %}
+    {% endif %}
+
+  </main>
+
+  <footer class="public-stream-footer">
+    <p class="muted">Snapshot reflects live data — this view updates as new signals come in.</p>
+    <p class="muted"><small>Last loaded {{ now.strftime('%b %d, %Y · %H:%M UTC') }}</small></p>
+  </footer>
+
+  {% if qa_enabled %}
+    {# Floating launcher + slide-in drawer. Reuses the .chat-launcher and
+       .chat-drawer styling from the authenticated app so the public Q&A
+       feels like the same agent — same avatar, same name, same motion.
+       Distinct DOM ids (public-qa-*) keep the public JS from colliding
+       with chat-drawer.js, which is never loaded on /p/{token} anyway. #}
+    <button type="button"
+            id="public-qa-launcher"
+            class="chat-launcher"
+            aria-label="Ask Agent {{ agent_brand.name }} about this view"
+            aria-controls="public-qa-drawer"
+            aria-expanded="false">
+      <img src="{{ agent_brand.avatar_url }}" alt="" width="56" height="56">
+    </button>
+
+    <div class="chat-drawer-backdrop" data-public-qa-backdrop hidden></div>
+
+    <aside id="public-qa-drawer"
+           class="chat-drawer"
+           role="dialog"
+           aria-modal="true"
+           aria-labelledby="public-qa-drawer-title"
+           aria-hidden="true"
+           data-share-token="{{ share_token }}">
+      <div class="chat-drawer-body">
+        <div class="chat-drawer-header">
+          <div class="chat-drawer-header-row">
+            <img src="{{ agent_brand.avatar_url }}" alt="" class="chat-drawer-avatar">
+            <h2 id="public-qa-drawer-title" class="chat-title">Ask Agent {{ agent_brand.name }}</h2>
+            <div class="chat-drawer-header-actions">
+              <button type="button"
+                      class="btn-mini chat-drawer-close"
+                      data-public-qa-close
+                      title="Close (Esc)"
+                      aria-label="Close">×</button>
+            </div>
+          </div>
+          <p class="muted chat-drawer-meta">
+            Answers are based only on the signals shown on this page.
+            Daily usage is capped per share.
+          </p>
+        </div>
+
+        <div class="public-qa-thread-wrap">
+          <div class="public-qa-thread" id="public-qa-thread" aria-live="polite">
+            <p class="public-qa-empty muted">No questions yet. Try one below.</p>
+          </div>
+        </div>
+
+        <form class="public-qa-form" id="public-qa-form">
+          <textarea
+            id="public-qa-input"
+            class="public-qa-input"
+            name="question"
+            rows="2"
+            placeholder="e.g. Which competitor has the most product momentum this month?"
+            aria-label="Your question"
+            maxlength="500"
+          ></textarea>
+          <div class="public-qa-form-row">
+            <small class="muted public-qa-budget" id="public-qa-budget">Loading budget…</small>
+            <button type="submit" class="public-qa-submit" id="public-qa-submit">Ask</button>
+          </div>
+        </form>
+      </div>
+    </aside>
+
+    <script>
+      // Public Q&A — floating launcher + slide-in drawer, mirroring
+      // base.html's chat-drawer pattern. Vanilla JS because the public
+      // page deliberately doesn't load HTMX or chat-drawer.js.
+      (function () {
+        var drawer = document.getElementById('public-qa-drawer');
+        var launcher = document.getElementById('public-qa-launcher');
+        var backdrop = document.querySelector('[data-public-qa-backdrop]');
+        if (!drawer || !launcher || !backdrop) return;
+
+        var token = drawer.dataset.shareToken;
+        var thread = document.getElementById('public-qa-thread');
+        var form = document.getElementById('public-qa-form');
+        var input = document.getElementById('public-qa-input');
+        var submit = document.getElementById('public-qa-submit');
+        var budgetEl = document.getElementById('public-qa-budget');
+        var lastFocus = null;
+
+        function refreshBudget() {
+          fetch('/p/' + encodeURIComponent(token) + '/ask/budget', {
+            headers: { 'Accept': 'application/json' },
+          }).then(function (r) {
+            if (!r.ok) throw new Error('budget unavailable');
+            return r.json();
+          }).then(function (j) {
+            budgetEl.textContent =
+              j.remaining_requests + ' question' +
+              (j.remaining_requests === 1 ? '' : 's') +
+              ' left today · ' +
+              j.remaining_tokens.toLocaleString() + ' tokens';
+          }).catch(function () {
+            budgetEl.textContent = 'Budget unavailable.';
+          });
+        }
+
+        function openDrawer() {
+          if (drawer.classList.contains('chat-drawer-open')) return;
+          lastFocus = document.activeElement;
+          drawer.classList.add('chat-drawer-open');
+          drawer.setAttribute('aria-hidden', 'false');
+          backdrop.hidden = false;
+          launcher.setAttribute('aria-expanded', 'true');
+          launcher.classList.add('is-hidden');
+          document.documentElement.classList.add('public-qa-drawer-active');
+          refreshBudget();
+          // Focus is announced after the slide-in finishes so screen
+          // readers don't read the textarea before the dialog is "live".
+          setTimeout(function () { input.focus(); }, 220);
+        }
+
+        function closeDrawer() {
+          if (!drawer.classList.contains('chat-drawer-open')) return;
+          drawer.classList.remove('chat-drawer-open');
+          drawer.setAttribute('aria-hidden', 'true');
+          backdrop.hidden = true;
+          launcher.setAttribute('aria-expanded', 'false');
+          launcher.classList.remove('is-hidden');
+          document.documentElement.classList.remove('public-qa-drawer-active');
+          if (lastFocus && typeof lastFocus.focus === 'function') {
+            try { lastFocus.focus(); } catch (e) {}
+          }
+        }
+
+        function clearEmpty() {
+          var empty = thread.querySelector('.public-qa-empty');
+          if (empty) empty.remove();
+        }
+
+        function appendQuestion(text) {
+          clearEmpty();
+          var wrap = document.createElement('div');
+          wrap.className = 'public-qa-turn';
+          var q = document.createElement('p');
+          q.className = 'public-qa-q';
+          q.textContent = text;
+          var a = document.createElement('p');
+          a.className = 'public-qa-a';
+          a.textContent = '';
+          wrap.appendChild(q);
+          wrap.appendChild(a);
+          thread.appendChild(wrap);
+          // Scroll the latest turn into view inside the drawer body.
+          var body = thread.parentElement;
+          if (body) body.scrollTop = body.scrollHeight;
+          return a;
+        }
+
+        // Parse SSE: "event: NAME\ndata: JSON\n\n". Anthropic's stream
+        // emits text_delta events we append; usage / turn_end events
+        // drive the budget refresh; error sets a failure message.
+        function consumeStream(response, answerEl) {
+          var reader = response.body.getReader();
+          var decoder = new TextDecoder('utf-8');
+          var buf = '';
+          var hadError = false;
+          var bodyEl = thread.parentElement;
+
+          function handleEvent(eventName, dataStr) {
+            if (!eventName) return;
+            var data = {};
+            try { data = JSON.parse(dataStr); } catch (e) {}
+            if (eventName === 'text_delta' && data.text) {
+              answerEl.textContent += data.text;
+              if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
+            } else if (eventName === 'error') {
+              hadError = true;
+              answerEl.classList.add('public-qa-a-error');
+              answerEl.textContent = data.message || 'Something went wrong.';
+            }
+          }
+
+          function pump() {
+            return reader.read().then(function (chunk) {
+              if (chunk.done) return;
+              buf += decoder.decode(chunk.value, { stream: true });
+              var idx;
+              while ((idx = buf.indexOf('\n\n')) >= 0) {
+                var raw = buf.slice(0, idx);
+                buf = buf.slice(idx + 2);
+                var ev = '', data = '';
+                raw.split('\n').forEach(function (line) {
+                  if (line.indexOf('event:') === 0) ev = line.slice(6).trim();
+                  else if (line.indexOf('data:') === 0) {
+                    data += (data ? '\n' : '') + line.slice(5).trim();
+                  }
+                });
+                handleEvent(ev, data);
+              }
+              return pump();
+            });
+          }
+          return pump().then(function () { return hadError; });
+        }
+
+        form.addEventListener('submit', function (ev) {
+          ev.preventDefault();
+          var text = input.value.trim();
+          if (!text) return;
+          input.disabled = true;
+          submit.disabled = true;
+          var prevButton = submit.textContent;
+          submit.textContent = 'Asking…';
+          var answerEl = appendQuestion(text);
+          answerEl.textContent = '…';
+
+          fetch('/p/' + encodeURIComponent(token) + '/ask', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'text/event-stream',
+            },
+            body: JSON.stringify({ question: text }),
+          }).then(function (response) {
+            if (!response.ok && response.status !== 200) {
+              return response.text().then(function (t) {
+                var msg = t;
+                try { msg = JSON.parse(t).detail || msg; } catch (e) {}
+                answerEl.classList.add('public-qa-a-error');
+                answerEl.textContent = msg || 'Request failed.';
+                return true;
+              });
+            }
+            answerEl.textContent = '';
+            return consumeStream(response, answerEl);
+          }).catch(function (err) {
+            answerEl.classList.add('public-qa-a-error');
+            answerEl.textContent = String(err);
+          }).finally(function () {
+            input.value = '';
+            input.disabled = false;
+            submit.disabled = false;
+            submit.textContent = prevButton;
+            input.focus();
+            refreshBudget();
+          });
+        });
+
+        // Cmd/Ctrl+Enter submits; plain Enter inserts a newline so
+        // long questions don't fire by accident.
+        input.addEventListener('keydown', function (ev) {
+          if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
+            ev.preventDefault();
+            form.requestSubmit();
+          }
+        });
+
+        launcher.addEventListener('click', openDrawer);
+        backdrop.addEventListener('click', closeDrawer);
+        drawer.addEventListener('click', function (ev) {
+          if (ev.target.closest('[data-public-qa-close]')) {
+            ev.preventDefault();
+            closeDrawer();
+          }
+        });
+        document.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Escape' && drawer.classList.contains('chat-drawer-open')) {
+            closeDrawer();
+          }
+        });
+      })();
+    </script>
+  {% endif %}
+</body>
+</html>
