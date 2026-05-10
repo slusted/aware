@@ -1,7 +1,6 @@
-{# Discover panel — idle form, running status, key-missing nudge, and
-   suggested-candidate list. Used by both the full page render and the
-   HTMX status poller. The outer element has id='discover-panel' and
-   hx-target=this so the poller can swap the whole panel in place. #}
+{# Discover panel — compact triage surface. The outer element has
+   id='discover-panel' and hx-target=this so the HTMX status poller
+   can swap the whole panel in place while a run is active. #}
 {% set key_ok = discover_anthropic_key_set %}
 <section id="discover-panel" class="panel discover-panel"
   {% if discover_active_run %}
@@ -10,115 +9,91 @@
   {% endif %}>
   <div class="panel-header">
     <h2>Discover new competitors</h2>
-    <div class="hint" style="font-size:12px">
+    <div class="discover-header-actions">
       {% if discover_last_run %}
-        Last run {{ discover_last_run.started_at.strftime('%Y-%m-%d %H:%M') }}
-        · <a href="/runs/{{ discover_last_run.id }}">run #{{ discover_last_run.id }}</a>
-      {% else %}
-        Never run.
+        <span class="discover-meta">
+          Last {{ discover_last_run.started_at.strftime('%Y-%m-%d %H:%M') }}
+          · <a href="/runs/{{ discover_last_run.id }}">#{{ discover_last_run.id }}</a>
+        </span>
+      {% endif %}
+      {% if key_ok and not discover_active_run %}
+        <form method="post" action="/api/competitors/discover/run" style="margin:0">
+          <input type="hidden" name="hint" value="">
+          <button type="submit">Run</button>
+        </form>
       {% endif %}
     </div>
   </div>
 
+  <p class="discover-explainer">
+    Mines the last 90 days of findings for companies mentioned in the
+    corpus that aren't already on the watchlist. Each suggestion cites
+    the findings that surfaced it.
+  </p>
+
   {% if not key_ok %}
-    <div class="hint" style="padding:12px 14px; background:rgba(200,120,0,0.05);
-         border:1px solid rgba(200,120,0,0.2); border-radius:4px">
+    <div class="hint" style="padding:10px 12px; background:var(--err-soft-subtle);
+         border:1px solid var(--err-border); border-radius:4px; font-size:13px">
       Discovery needs <code>ANTHROPIC_API_KEY</code>.
       Add it on <a href="/settings/keys">/settings/keys</a> to enable the Run button.
     </div>
   {% elif discover_active_run %}
-    <div class="discover-running" style="padding:14px;
-         background:rgba(100,120,255,0.04);
-         border:1px solid rgba(100,120,255,0.2); border-radius:4px">
-      <div style="display:flex; gap:10px; align-items:center">
-        <span class="spinner" aria-hidden="true"
-              style="width:14px; height:14px; border:2px solid rgba(100,120,255,0.3);
-                     border-top-color:rgba(100,120,255,0.9); border-radius:50%;
-                     display:inline-block; animation:spin 0.9s linear infinite"></span>
-        <strong>Mining findings…</strong>
-        <span class="hint" style="font-size:13px">
-          started {{ discover_active_run.started_at.strftime('%H:%M:%S') }}
-        </span>
-      </div>
-      <div class="hint" style="margin-top:6px; font-size:13px">
-        Reading the last 90 days of findings for company names mentioned
-        but not yet tracked. Usually ~10–30s. Watch
-        <a href="/runs/{{ discover_active_run.id }}">run #{{ discover_active_run.id }}</a>
-        for live events.
-      </div>
+    <div class="discover-running-strip">
+      <span class="spinner" aria-hidden="true"></span>
+      <strong>Mining findings…</strong>
+      <span class="discover-meta">
+        started {{ discover_active_run.started_at.strftime('%H:%M:%S') }}
+        · <a href="/runs/{{ discover_active_run.id }}">live log</a>
+      </span>
     </div>
   {% else %}
-    <p class="hint" style="margin:0 0 10px; font-size:13px">
-      Scans the last 90 days of findings for companies mentioned in
-      the corpus that aren't already on the watchlist. Each suggestion
-      cites the findings that surfaced it.
-    </p>
-    <form method="post" action="/api/competitors/discover/run"
-          style="display:flex; flex-direction:column; gap:10px; padding:4px 0">
-      <label class="label" style="margin:0">
-        Optional focus
-        <span class="hint" style="font-weight:normal">
-          Steer the pass — e.g. "ATS players" or "AI-native job search."
-          Leave blank to surface the strongest signals across the corpus.
-        </span>
-      </label>
-      <input name="hint" type="text" maxlength="300"
-             placeholder="(blank = broad sweep)"
-             style="padding:6px 8px">
-      <div style="display:flex; justify-content:flex-end">
-        <button type="submit">Run discovery</button>
-      </div>
-    </form>
+    <details class="discover-focus-details" style="margin:0 0 6px">
+      <summary class="discover-focus-toggle">+ Add focus to next run</summary>
+      <form method="post" action="/api/competitors/discover/run" class="discover-focus-form">
+        <input name="hint" type="text" maxlength="300"
+               placeholder='e.g. "ATS players" or "AI-native job search"'>
+        <button type="submit">Run with focus</button>
+      </form>
+    </details>
   {% endif %}
 
   {% if discover_suggested %}
-    <div style="margin-top:18px">
-      <h3 style="margin:0 0 8px; font-size:14px">
-        {{ discover_suggested|length }} suggested
-        {{ 'candidate' if discover_suggested|length == 1 else 'candidates' }}
-      </h3>
-      <div class="candidate-list" style="display:flex; flex-direction:column; gap:10px">
-        {% for cand in discover_suggested %}
-          {% include "_discover_candidate.html" %}
-        {% endfor %}
-      </div>
+    <div class="discover-list-head">
+      <h3>{{ discover_suggested|length }} suggested</h3>
+    </div>
+    <div class="discover-rows">
+      {% for cand in discover_suggested %}
+        {% include "_discover_candidate.html" %}
+      {% endfor %}
     </div>
   {% elif not discover_active_run and key_ok and discover_last_run %}
-    <p class="hint" style="margin-top:14px">
-      Last run surfaced nothing new — every company name mentioned in the
-      last 90 days of findings is already tracked or previously dismissed.
-      Try a focus hint to shift what the model looks for.
+    <p class="discover-empty">
+      Last run surfaced nothing new — every name mentioned in the last
+      90 days is already tracked or previously dismissed. Try a focus
+      hint to shift what the model looks for.
     </p>
   {% endif %}
 
   {% if discover_dismissed %}
-    <details style="margin-top:18px">
-      <summary class="hint" style="cursor:pointer">
-        Dismissed · {{ discover_dismissed|length }}
-      </summary>
-      <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px">
+    <details class="discover-dismissed-list" style="margin-top:14px">
+      <summary>Dismissed · {{ discover_dismissed|length }}</summary>
+      <div class="discover-dismissed-rows">
         {% for cand in discover_dismissed %}
-          <div style="display:flex; justify-content:space-between; gap:10px;
-                      padding:6px 10px; background:rgba(0,0,0,0.02);
-                      border:1px solid rgba(0,0,0,0.06); border-radius:3px">
-            <div style="min-width:0; flex:1">
-              <div style="font-size:13px">
-                <strong>{{ cand.name }}</strong>
-                {% if cand.homepage_domain %}
-                  · <span class="hint">{{ cand.homepage_domain }}</span>
-                {% endif %}
-              </div>
+          <div class="discover-dismissed-row">
+            <div style="min-width:0; flex:1; overflow:hidden">
+              <strong>{{ cand.name }}</strong>
+              {% if cand.homepage_domain %}
+                <span class="reason">· {{ cand.homepage_domain }}</span>
+              {% endif %}
               {% if cand.dismissed_reason %}
-                <div class="hint" style="font-size:12px; margin-top:2px">
-                  {{ cand.dismissed_reason }}
-                </div>
+                <span class="reason">· {{ cand.dismissed_reason }}</span>
               {% endif %}
             </div>
             <form method="post"
                   action="/api/competitors/candidates/{{ cand.id }}/undismiss"
-                  style="margin:0; align-self:center">
+                  style="margin:0">
               <button type="submit" class="btn btn-ghost"
-                      style="padding:2px 8px; font-size:12px">undo</button>
+                      style="padding:2px 8px; font-size:11.5px">undo</button>
             </form>
           </div>
         {% endfor %}
