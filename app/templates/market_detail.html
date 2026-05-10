@@ -21,10 +21,88 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
+  // See market_index.html for the canonical implementation. Duplicated
+  // here so historical release briefs viewed at /market/{id} get the
+  // same theme-card treatment without forcing a shared static JS file.
+  window.transformReleaseThemes = window.transformReleaseThemes || function (root) {
+    if (!root) return;
+    var byTheme = null;
+    var heads = root.querySelectorAll('h2');
+    for (var i = 0; i < heads.length; i++) {
+      if (heads[i].textContent.trim().toLowerCase().indexOf('by theme') === 0) {
+        byTheme = heads[i]; break;
+      }
+    }
+    if (!byTheme) return;
+    var sections = [];
+    var cur = byTheme.nextElementSibling;
+    var section = null;
+    while (cur && cur.tagName !== 'H2') {
+      var next = cur.nextElementSibling;
+      if (cur.tagName === 'H3') { section = { heading: cur, content: [] }; sections.push(section); }
+      else if (section) { section.content.push(cur); }
+      cur = next;
+    }
+    if (sections.length === 0) return;
+    var container = document.createElement('div');
+    container.className = 'theme-list theme-list-releases';
+    sections.forEach(function (s) {
+      var card = document.createElement('div');
+      card.className = 'theme-card theme-card-release';
+      var header = document.createElement('div');
+      header.className = 'theme-card-header';
+      var headText = (s.heading.textContent || '').trim();
+      var m = headText.match(/^(.*?)\s*\((\d+)\s+releases?\)\s*$/i);
+      var label = document.createElement('strong');
+      label.className = 'theme-card-label';
+      label.textContent = m ? m[1].trim() : headText;
+      header.appendChild(label);
+      if (m) {
+        var chip = document.createElement('span');
+        chip.className = 'chip';
+        var n = parseInt(m[2], 10);
+        chip.textContent = n + ' release' + (n === 1 ? '' : 's');
+        header.appendChild(chip);
+      }
+      card.appendChild(header);
+      var rest = s.content.slice();
+      while (rest.length && rest[0].nodeType === 1 && rest[0].tagName === 'P') {
+        var p = rest.shift();
+        p.classList.add('theme-card-desc');
+        card.appendChild(p);
+      }
+      if (rest.length) {
+        var details = document.createElement('details');
+        details.className = 'theme-card-release-details';
+        var summary = document.createElement('summary');
+        summary.className = 'theme-card-release-toggle';
+        var closed = document.createElement('span');
+        closed.className = 'theme-card-release-toggle-label-closed';
+        closed.textContent = 'Show releases';
+        var open = document.createElement('span');
+        open.className = 'theme-card-release-toggle-label-open';
+        open.textContent = 'Hide releases';
+        summary.appendChild(closed); summary.appendChild(open);
+        details.appendChild(summary);
+        rest.forEach(function (el) {
+          if (el.tagName === 'UL') el.classList.add('theme-card-release-list');
+          details.appendChild(el);
+        });
+        card.appendChild(details);
+      }
+      container.appendChild(card);
+      s.heading.remove();
+    });
+    byTheme.parentNode.insertBefore(container, byTheme.nextSibling);
+  };
+
   (function() {
     var src = document.getElementById('report-src');
     var out = document.getElementById('report-body');
-    if (src && out && window.marked) out.innerHTML = window.marked.parse(src.textContent);
+    if (src && out && window.marked) {
+      out.innerHTML = window.marked.parse(src.textContent);
+      window.transformReleaseThemes(out);
+    }
   })();
 </script>
 
