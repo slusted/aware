@@ -17,22 +17,32 @@
 <div class="panel">
   <div class="panel-header"><h2>Active · {{ active|length }}</h2></div>
   <table>
-    <thead><tr><th>Name</th><th>Category</th><th>Source</th><th>Keywords</th><th>Last activity</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Category</th><th>Source</th><th>Keywords</th><th>Material news (90d)</th><th></th></tr></thead>
     <tbody>
     {% for c in active %}
+      {% set act = activity.get(c.id, {}) %}
       <tr>
         <td><a href="/competitors/{{ c.id }}">{{ c.name }}</a></td>
         <td class="muted">{{ c.category or '—' }}</td>
         <td class="muted">{{ c.source }}</td>
         <td class="muted">{{ (c.keywords or [])|length }} kw</td>
-        <td class="muted">{% if c.last_activity_at %}{{ c.last_activity_at.strftime('%Y-%m-%d') }}{% else %}—{% endif %}</td>
+        <td>
+          {% if act.stale %}
+            <span title="No findings with materiality ≥0.6 in the last 90 days. Consider removing if you no longer track this competitor."
+                  style="display:inline-block; padding:2px 8px; font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:0.02em; border-radius:4px; color:var(--warn); border:1px solid var(--warn-border); background:var(--warn-soft)">
+              stale · 90d+
+            </span>
+          {% else %}
+            <span class="muted">{{ act.material_90d }} · last {{ act.last_material_at.strftime('%Y-%m-%d') }}</span>
+          {% endif %}
+        </td>
         <td style="text-align:right">
           <a href="/admin/competitors/{{ c.id }}/edit">edit</a>
           &nbsp;·&nbsp;
           <a href="#" style="color:var(--err)"
              hx-delete="/api/competitors/{{ c.id }}"
              hx-confirm="Deactivate {{ c.name }}?"
-             hx-on::after-request="if(event.detail.successful) location.reload()">delete</a>
+             hx-on::after-request="if(event.detail.successful) location.reload()">{% if act.stale %}remove{% else %}delete{% endif %}</a>
         </td>
       </tr>
     {% else %}

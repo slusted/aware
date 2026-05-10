@@ -681,7 +681,33 @@ def _discover_page_context(db) -> dict:
 def admin_competitors(request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)):
     active = db.query(Competitor).filter(Competitor.active == True).order_by(Competitor.name).all()
     inactive = db.query(Competitor).filter(Competitor.active == False).order_by(Competitor.name).all()
-    ctx = {"user": user, "active": active, "inactive": inactive}
+    # Per-competitor staleness for the inline "no recent material news" hint.
+    # One grouped query: count + max(created_at) of material findings in the
+    # last 90 days, keyed by competitor name (Finding.competitor is a string,
+    # not an FK — historical quirk). 0.6 matches MATERIAL_EVENT_THRESHOLD
+    # used elsewhere (jobs.py, competitor_performance.py).
+    stale_cutoff = datetime.utcnow() - timedelta(days=90)
+    rows = (
+        db.query(
+            Finding.competitor,
+            func.count(Finding.id),
+            func.max(Finding.created_at),
+        )
+        .filter(Finding.created_at >= stale_cutoff)
+        .filter(Finding.materiality >= 0.6)
+        .group_by(Finding.competitor)
+        .all()
+    )
+    material_by_name = {name: (cnt, last) for name, cnt, last in rows if name}
+    activity = {}
+    for c in active:
+        cnt, last = material_by_name.get(c.name, (0, None))
+        activity[c.id] = {
+            "material_90d": cnt,
+            "last_material_at": last,
+            "stale": cnt == 0,
+        }
+    ctx = {"user": user, "active": active, "inactive": inactive, "activity": activity}
     ctx.update(_discover_page_context(db))
     return templates.TemplateResponse(request, "admin_competitors.html", ctx)
 

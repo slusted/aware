@@ -1,5 +1,7 @@
-"""Competitor discovery — mines the last 90 days of findings for company
-names mentioned but not yet on the watchlist.
+"""Competitor discovery — mines recent findings for company names
+mentioned but not yet on the watchlist. Default window is 90 days for
+manual on-demand runs; the weekly scheduled pass uses a 7-day window
+so suggestions stay fresh between runs.
 
 The previous implementation drove an Anthropic tool-use loop with web
 search exposed; it was slow, expensive, and frequently surfaced nothing
@@ -27,6 +29,8 @@ from .skills import load_active
 
 MODEL = "claude-sonnet-4-6"
 MAX_CANDIDATES = 12
+# Default lookback for the manual "Run" button. Scheduled runs override
+# this with a much shorter window via the `lookback_days` arg.
 LOOKBACK_DAYS = 90
 # Cap how many findings we hand the model. High-materiality first; the
 # tail is rarely informative once we're past the top few hundred and the
@@ -229,6 +233,7 @@ def discover_stream(
     dismissed_names: list[str],
     dismissed_domains: list[str],
     hint: str | None = None,
+    lookback_days: int = LOOKBACK_DAYS,
 ) -> Iterator[dict]:
     """Generator — yields progress events ending with either
     {"type": "done", "candidates": [...]} or {"type": "error", "message": ...}.
@@ -245,8 +250,8 @@ def discover_stream(
     else:
         yield {"type": "progress", "message": "discovering new competitors"}
 
-    cutoff = datetime.utcnow() - timedelta(days=LOOKBACK_DAYS)
-    yield {"type": "progress", "message": f"loading findings from last {LOOKBACK_DAYS} days"}
+    cutoff = datetime.utcnow() - timedelta(days=lookback_days)
+    yield {"type": "progress", "message": f"loading findings from last {lookback_days} days"}
 
     findings = (
         db.query(Finding)
@@ -319,6 +324,7 @@ def discover(
     dismissed_names: list[str],
     dismissed_domains: list[str],
     hint: str | None = None,
+    lookback_days: int = LOOKBACK_DAYS,
 ) -> list[dict]:
     """Blocking variant — drains the stream and returns the candidate list."""
     for event in discover_stream(
@@ -326,6 +332,7 @@ def discover(
         existing_names, existing_domains,
         dismissed_names, dismissed_domains,
         hint=hint,
+        lookback_days=lookback_days,
     ):
         if event["type"] == "error":
             raise RuntimeError(event["message"])

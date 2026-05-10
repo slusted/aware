@@ -2125,14 +2125,19 @@ def run_market_synthesis_job(
 
 
 def run_discover_competitors_job(hint: str | None = None,
-                                 triggered_by: str = "manual") -> None:
+                                 triggered_by: str = "manual",
+                                 lookback_days: int | None = None) -> None:
     """Background job: run the competitor-discovery tool-use loop and
     persist each returned candidate as a CompetitorCandidate row.
 
     Exclusion list = active competitors ∪ previously dismissed candidates
-    (both keyed on homepage_domain). The prompt is told to skip them; we
-    also drop anything that slips through at persist time as defence in
-    depth.
+    ∪ currently suggested candidates (so the weekly cron doesn't pile up
+    duplicates of names already waiting for triage). The prompt is told
+    to skip them; we also drop anything that slips through at persist
+    time as defence in depth.
+
+    `lookback_days` defaults to the module's LOOKBACK_DAYS (90) — manual
+    button runs use that; the scheduled weekly pass passes 7.
 
     Writes RunEvents for progress + a single 'material' event on completion
     so /runs and the live log surface the outcome.
@@ -2160,25 +2165,45 @@ def run_discover_competitors_job(hint: str | None = None,
         )
         dismissed_names = [r[0] for r in dismissed_rows if r[0]]
         dismissed_domains = [r[1] for r in dismissed_rows if r[1]]
+        # Treat currently-suggested rows as "already known" so the weekly
+        # cron only adds genuinely new names — the operator hasn't acted
+        # on them yet, no need to re-surface.
+        suggested_rows = (
+            db.query(CompetitorCandidate.name, CompetitorCandidate.homepage_domain)
+            .filter(CompetitorCandidate.status == "suggested")
+            .all()
+        )
+        suggested_names = [r[0] for r in suggested_rows if r[0]]
+        suggested_domains = [r[1] for r in suggested_rows if r[1]]
 
-        _log(db, run, f"discovering (excluding {len(existing_names)} tracked · "
+        from .competitor_discover import discover_stream, LOOKBACK_DAYS as _DEFAULT_LOOKBACK
+        effective_lookback = lookback_days if lookback_days is not None else _DEFAULT_LOOKBACK
+
+        _log(db, run, f"discovering last {effective_lookback}d (excluding "
+                      f"{len(existing_names)} tracked · "
+                      f"{len(suggested_names)} pending · "
                       f"{len(dismissed_names)} dismissed)")
         if hint:
             _log(db, run, f"focus: {hint[:200]}")
 
-        from .competitor_discover import discover_stream
-
-        exclude_domains = {d for d in (existing_domains + dismissed_domains) if d}
-        exclude_names_lc = {n.lower() for n in (existing_names + dismissed_names) if n}
+        # Combined exclusion sets passed to the model AND used as the
+        # final defence-in-depth filter when persisting.
+        exclude_domains = {
+            d for d in (existing_domains + dismissed_domains + suggested_domains) if d
+        }
+        exclude_names_lc = {
+            n.lower() for n in (existing_names + dismissed_names + suggested_names) if n
+        }
         candidates: list[dict] = []
         with _StreamToRunEvents(run.id) as tee, contextlib.redirect_stdout(tee):
             for event in discover_stream(
                 db, company, industry,
-                existing_names=existing_names,
-                existing_domains=existing_domains,
+                existing_names=existing_names + suggested_names,
+                existing_domains=existing_domains + suggested_domains,
                 dismissed_names=dismissed_names,
                 dismissed_domains=dismissed_domains,
                 hint=hint,
+                lookback_days=effective_lookback,
             ):
                 etype = event.get("type")
                 if etype == "progress":

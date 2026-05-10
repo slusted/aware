@@ -57,6 +57,36 @@ def _run_predicate_review_scheduled():
         db.close()
 
 
+def _run_discover_competitors_scheduled():
+    """Cron entrypoint for the weekly competitor-discovery pass. Uses a
+    7-day window so suggestions stay fresh without re-mining months of
+    findings each week. Skips when a discovery is already in flight —
+    manual button presses take priority."""
+    from .db import SessionLocal
+    db = SessionLocal()
+    try:
+        load = jobs.current_discovery_load(db)
+    finally:
+        db.close()
+    if load > 0:
+        print(
+            "  [scheduler] discover_competitors_weekly skipped — "
+            f"{load} discovery already in flight",
+            flush=True,
+        )
+        return
+    if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        print(
+            "  [scheduler] discover_competitors_weekly skipped — "
+            "ANTHROPIC_API_KEY not set",
+            flush=True,
+        )
+        return
+    jobs.run_discover_competitors_job(
+        hint=None, triggered_by="scheduled", lookback_days=7,
+    )
+
+
 def _run_market_synthesis_scheduled():
     """Cron entrypoint for the weekly market synthesis. Skips (does not
     queue) when a synthesis is already in flight — manual runs take
@@ -194,6 +224,30 @@ def start():
             print(
                 f"[scheduler] invalid MARKET_SYNTHESIS_CRON={ms_cron!r}; "
                 "expected 'min hour dow'. Skipping weekly synthesis."
+            )
+
+    # Weekly competitor discovery. Mines the last 7 days of findings for
+    # company names not yet on the watchlist; the resulting suggestions
+    # accumulate in the Discover panel until the operator adopts or
+    # dismisses each one. Monday 04:00 local TZ by default — same morning
+    # as the market synthesis, so a fresh batch is waiting at the start
+    # of the week. DISCOVER_COMPETITORS_CRON = "min hour day_of_week".
+    # Empty string disables.
+    dc_cron = os.environ.get("DISCOVER_COMPETITORS_CRON", "0 4 mon")
+    if dc_cron.strip():
+        try:
+            dcmin, dchour, dcdow = dc_cron.split()
+            sched.add_job(
+                _run_discover_competitors_scheduled,
+                CronTrigger(minute=dcmin, hour=dchour, day_of_week=dcdow),
+                id="discover_competitors_weekly",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
+        except ValueError:
+            print(
+                f"[scheduler] invalid DISCOVER_COMPETITORS_CRON={dc_cron!r}; "
+                "expected 'min hour dow'. Skipping weekly discovery."
             )
 
     # Monthly predicate review (docs/scenarios/06-predicate-review.md).
