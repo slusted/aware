@@ -4784,18 +4784,17 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 .fitness-chip.is-awkward { background: rgba(201, 136, 58, 0.2); color: #c9883a; }
 .fitness-chip.is-misfit { background: rgba(181, 72, 72, 0.2); color: #b54848; }
 
-.predicate-finding-row .predicate-finding-reject {
+.predicate-finding-reject {
   margin-left: auto;
   font-size: 0.75rem;
   padding: 1px 8px;
-  opacity: 0.55;
   flex: 0 0 auto;
+  border: 1px solid rgba(181, 72, 72, 0.35);
+  color: #b54848;
 }
-.predicate-finding-row:hover .predicate-finding-reject { opacity: 1; }
-.predicate-finding-row .predicate-finding-reject:hover {
+.predicate-finding-reject:hover {
   background: rgba(181, 72, 72, 0.15);
   color: #b54848;
-  opacity: 1;
 }
 
 .predicate-finding-row.fitness-misfit {

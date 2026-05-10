@@ -111,6 +111,8 @@
 {# 3. The receipts ─────────────────────────────────────────────────────── #}
 {% set _top = detail.evidence_confirmed[:5] %}
 {% if _top %}
+  {% set _refresh = "if(event.detail.successful) window.location.reload()" %}
+  {% set _can_reject = user is defined and user and user.role in ("admin", "analyst") %}
   <section class="prediction-page-section">
     <h2 class="prediction-page-h">Top evidence</h2>
     <ol class="prediction-top-evidence">
@@ -139,6 +141,15 @@
             {% endif %}
             {% if ev.competitor %}
               <span class="muted">· {{ ev.competitor }}</span>
+            {% endif %}
+            {% if _can_reject and ev.finding_id %}
+              <button type="button" class="btn-ghost predicate-finding-reject"
+                      hx-post="/partials/finding/{{ ev.finding_id }}/evidence/{{ ev.id }}/reject"
+                      hx-swap="none"
+                      hx-on::after-request="{{ _refresh }}"
+                      title="This evidence doesn't fit — drop it from the math (kept for audit).">
+                ✗ Reject
+              </button>
             {% endif %}
           </div>
           <div class="prediction-top-evidence-body">
