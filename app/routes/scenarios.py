@@ -757,6 +757,9 @@ def prediction_page(
     )
     return templates.TemplateResponse(request, "scenarios_prediction_page.html", {
         "user": user,
+        # Highlight the Predictions tab in the shared scenarios nav so
+        # the prediction page reads as a drill-in, not a separate area.
+        "tab": "predicates",
         "detail": detail,
         "p": pred,
         "review": review,

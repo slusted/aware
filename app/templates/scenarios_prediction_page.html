@@ -7,10 +7,9 @@
 {% set _shift = s.dominant_state_velocity_pp_30d %}
 {% set _shift_abs = _shift if _shift >= 0 else -_shift %}
 
+{% include "_scenarios_page_head.html" %}
+
 <header class="prediction-page-head">
-  <nav class="prediction-page-crumbs">
-    <a href="/scenarios?tab=predicates">← Predictions</a>
-  </nav>
   <div class="prediction-page-title-row">
     <h1 class="prediction-page-title">{{ _topic }}</h1>
     <div class="prediction-page-shift

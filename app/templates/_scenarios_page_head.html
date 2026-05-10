@@ -1,0 +1,66 @@
+{# Shared "Scenarios" page header — title + Recompute button + tab nav.
+   Both /scenarios and the per-prediction page include this so the
+   navigation stays in place when you drill in.
+
+   Args:
+     user - current User (for the analyst/admin Recompute affordance)
+     tab  - one of "predicates"|"scenarios"|"evidence"|"settings", marks
+            the active tab. The prediction page passes "predicates".
+#}
+<header class="scenarios-page-head">
+  <div class="scenarios-page-head-row">
+    <h1 class="scenarios-page-title">
+      <a class="scenarios-page-title-link" href="/scenarios">Scenarios</a>
+    </h1>
+    <div class="scenarios-page-actions">
+      {% if user is defined and user and user.role in ("admin", "analyst") %}
+        <button type="button" id="scenarios-recompute-btn" class="btn">Recompute</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <nav class="tabs" role="tablist" aria-label="Scenarios sections">
+    {% for t, label in [("predicates", "Predictions"), ("scenarios", "Scenarios"), ("evidence", "Evidence"), ("settings", "Settings")] %}
+      <a class="tab {% if tab == t %}active{% endif %}"
+         href="/scenarios?tab={{ t }}"
+         role="tab"
+         aria-selected="{% if tab == t %}true{% else %}false{% endif %}">
+        {{ label }}
+      </a>
+    {% endfor %}
+  </nav>
+</header>
+
+<script>
+(() => {
+  // Recompute button — fire-and-forget. Toast via inline label change;
+  // the page doesn't auto-refresh because recompute is a queued background job.
+  const recomputeBtn = document.getElementById('scenarios-recompute-btn');
+  if (!recomputeBtn) return;
+  recomputeBtn.addEventListener('click', async () => {
+    recomputeBtn.disabled = true;
+    const orig = recomputeBtn.textContent;
+    recomputeBtn.textContent = 'Queueing…';
+    try {
+      const r = await fetch('/api/runs/scenarios-recompute', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'Accept': 'application/json'},
+      });
+      if (!r.ok) throw new Error('http ' + r.status);
+      const data = await r.json();
+      recomputeBtn.textContent = 'Queued · run #' + data.run_id;
+      setTimeout(() => {
+        recomputeBtn.disabled = false;
+        recomputeBtn.textContent = orig;
+      }, 4000);
+    } catch (err) {
+      recomputeBtn.textContent = 'Failed — ' + err;
+      setTimeout(() => {
+        recomputeBtn.disabled = false;
+        recomputeBtn.textContent = orig;
+      }, 3000);
+    }
+  });
+})();
+</script>
