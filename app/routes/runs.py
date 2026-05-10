@@ -138,6 +138,35 @@ def trigger_market_releases(
     }
 
 
+@router.post("/market-hiring", status_code=202)
+def trigger_market_hiring(
+    days: int | None = None,
+    db: Session = Depends(get_db),
+    _=Depends(require_role("admin", "analyst")),
+):
+    """Enqueue a cross-market Hiring brief regen over existing
+    new_hire/careers findings. Two-step LLM pipeline (per-competitor
+    snapshot → cross-stitch). `days` overrides DEFAULT_WINDOW_DAYS in
+    app.market_hiring; per-competitor cap and total-input ceiling are
+    env-driven (HIRING_PER_COMPETITOR_CAP, HIRING_INPUT_HARD_CEILING)."""
+    _enforce_queue_cap(db)
+    if days is not None and (days < 1 or days > 365):
+        raise HTTPException(400, detail="days must be between 1 and 365")
+    run = jobs.enqueue_run(
+        db,
+        "market_hiring",
+        triggered_by="manual",
+        job_args={"days": days},
+    )
+    return {
+        "queued": True,
+        "kind": "market_hiring",
+        "days": days,
+        "run_id": run.id,
+        "queue_position": jobs.queue_position(db, run.id),
+    }
+
+
 # Manual cooldown default: 6h. Within this window, an extra Run click is
 # refused unless `force=1` is passed (which the UI supplies after the user
 # confirms the "already fresh" prompt). The cron path ignores this — it's
