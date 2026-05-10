@@ -19,16 +19,16 @@
       {% if key_ok and not discover_active_run %}
         <form method="post" action="/api/competitors/discover/run" style="margin:0">
           <input type="hidden" name="hint" value="">
-          <button type="submit">Run</button>
+          <button type="submit" title="Mine the last 90 days of findings now. The weekly pass already covers the last 7 days automatically.">Run 90-day sweep</button>
         </form>
       {% endif %}
     </div>
   </div>
 
   <p class="discover-explainer">
-    Mines the last 90 days of findings for companies mentioned in the
-    corpus that aren't already on the watchlist. Each suggestion cites
-    the findings that surfaced it.
+    Runs automatically every Monday over the last 7 days of findings —
+    suggestions stay here until you adopt or dismiss each one. Use
+    <strong>Run 90-day sweep</strong> for a deeper one-off mine.
   </p>
 
   {% if not key_ok %}
@@ -68,9 +68,9 @@
     </div>
   {% elif not discover_active_run and key_ok and discover_last_run %}
     <p class="discover-empty">
-      Last run surfaced nothing new — every name mentioned in the last
-      90 days is already tracked or previously dismissed. Try a focus
-      hint to shift what the model looks for.
+      Nothing new to triage. The next weekly pass will check again, or
+      run a 90-day sweep now to look further back. A focus hint shifts
+      what the model looks for.
     </p>
   {% endif %}
 
