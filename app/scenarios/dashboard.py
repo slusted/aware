@@ -515,6 +515,18 @@ def evidence_list(
 
 # ─── Stage 4: scenario summary + detail ────────────────────────────────
 
+class ScenarioConstraintView(NamedTuple):
+    """One predicate-link as the card wants it: enough to render
+    "<predicate> needs <state> · currently P=…" with a tracking bar."""
+    predicate_key: str
+    predicate_name: str
+    required_state_key: str
+    required_state_label: str
+    weight: float
+    current_p_required: float           # 0–1, how well this constraint is met today
+    is_weakest: bool                    # one row flagged per scenario for emphasis
+
+
 class ScenarioSummary(NamedTuple):
     key: str
     name: str
@@ -523,6 +535,7 @@ class ScenarioSummary(NamedTuple):
     rank: int                           # 1 = highest probability
     constraint_count: int               # number of predicate links
     constraint_satisfaction: float      # weighted avg of P(predicate=required)
+    constraints: list[ScenarioConstraintView]   # sorted by weight desc; powers the card list
     weakest_link_predicate_key: str
     weakest_link_required_state: str
     weakest_link_required_state_label: str
@@ -618,12 +631,14 @@ def scenario_summary(db: Session) -> list[ScenarioSummary]:
         total_weight = 0.0
         weakest_link = None
         weakest_p = 1.0
+        link_rows: list[tuple[ScenarioPredicateLink, float]] = []
         for ln in links:
             p_required = probs_by_pred.get(ln.predicate_id, {}).get(
                 ln.required_state_key, 0.0,
             )
             weighted_sum += ln.weight * p_required
             total_weight += ln.weight
+            link_rows.append((ln, p_required))
             if p_required < weakest_p:
                 weakest_p = p_required
                 weakest_link = ln
@@ -643,6 +658,25 @@ def scenario_summary(db: Session) -> list[ScenarioSummary]:
             weakest_state_label = ""
             weakest_required_state = ""
 
+        # Card-facing per-link rows. Sorted by weight desc so the most
+        # load-bearing constraints sit at the top of the card.
+        constraints_view: list[ScenarioConstraintView] = []
+        weakest_link_id = id(weakest_link) if weakest_link is not None else None
+        for ln, p_required in link_rows:
+            constraints_view.append(ScenarioConstraintView(
+                predicate_key=pred_id_to_key.get(ln.predicate_id, "?"),
+                predicate_name=pred_id_to_name.get(ln.predicate_id, "?"),
+                required_state_key=ln.required_state_key,
+                required_state_label=label_lookup.get(
+                    (ln.predicate_id, ln.required_state_key),
+                    ln.required_state_key,
+                ),
+                weight=ln.weight,
+                current_p_required=p_required,
+                is_weakest=(id(ln) == weakest_link_id),
+            ))
+        constraints_view.sort(key=lambda c: c.weight, reverse=True)
+
         summaries.append(ScenarioSummary(
             key=sc.key,
             name=sc.name,
@@ -651,6 +685,7 @@ def scenario_summary(db: Session) -> list[ScenarioSummary]:
             rank=0,  # filled in after sort
             constraint_count=len(links),
             constraint_satisfaction=constraint_satisfaction,
+            constraints=constraints_view,
             weakest_link_predicate_key=weakest_pred_key,
             weakest_link_required_state=weakest_required_state,
             weakest_link_required_state_label=weakest_state_label,

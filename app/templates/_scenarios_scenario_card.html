@@ -27,6 +27,33 @@
     <p class="scenario-card-description muted">{{ s.description[:200] }}{% if s.description|length > 200 %}…{% endif %}</p>
   {% endif %}
 
+  {% if s.constraints %}
+    <ul class="scenario-card-constraints"
+        title="Each row: prediction, the state it requires, and how supported that state is right now (its current posterior).">
+      {% for c in s.constraints %}
+        {% set _pp = (c.current_p_required * 100)|round(0)|int %}
+        {% set _track =
+              'is-strong' if c.current_p_required >= 0.6
+              else 'is-mid' if c.current_p_required >= 0.35
+              else 'is-weak' %}
+        <li class="scenario-card-constraint {{ _track }}{% if c.is_weakest %} is-weakest{% endif %}"
+            title="{{ c.predicate_name }} → {{ c.required_state_label }} (weight {{ c.weight|round(2) }})">
+          <span class="scenario-card-constraint-label">
+            <span class="mono scenario-card-constraint-key">{{ c.predicate_key }}</span>
+            <span class="scenario-card-constraint-state">{{ c.required_state_label }}</span>
+          </span>
+          <span class="scenario-card-constraint-bar">
+            <span class="scenario-card-constraint-bar-fill"
+                  style="width: {{ (c.current_p_required * 100)|round(1) }}%"></span>
+          </span>
+          <span class="scenario-card-constraint-value mono">{{ _pp }}%</span>
+          <span class="scenario-card-constraint-weight mono"
+                title="Link weight">·{{ (c.weight * 100)|round(0)|int }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
   <footer class="scenario-card-foot">
     <span class="scenario-card-stat muted">{{ s.constraint_count }} constraint{{ s.constraint_count != 1 and 's' or '' }}</span>
     {% if s.weakest_link_predicate_key %}

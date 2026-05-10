@@ -4209,6 +4209,89 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   font-size: 11px;
 }
 
+/* ─── Scenario card: per-constraint tracking list ─────────────────────
+   One row per predicate link: key + required state on the left, a
+   tracking bar fed by the predicate's current posterior P(required),
+   the % value, and the link weight (×100). Color-coded by tracking
+   so a glance at the card tells you how each constraint is doing. */
+.scenario-card-constraints {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.scenario-card-constraint {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px 36px 28px;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.scenario-card-constraint-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.scenario-card-constraint-key {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  flex: 0 0 auto;
+}
+.scenario-card-constraint-state {
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.scenario-card-constraint-bar {
+  display: block;
+  height: 6px;
+  background: var(--surface-2, var(--border-subtle));
+  border-radius: 3px;
+  overflow: hidden;
+}
+.scenario-card-constraint-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+.scenario-card-constraint-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.scenario-card-constraint-weight {
+  text-align: right;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tracking colours: green when a constraint is well-supported,
+   neutral in the middle, warm when the evidence is pulling against. */
+.scenario-card-constraint.is-strong .scenario-card-constraint-bar-fill { background: #2e7d32; }
+.scenario-card-constraint.is-mid    .scenario-card-constraint-bar-fill { background: var(--accent, #5e6ad2); }
+.scenario-card-constraint.is-weak   .scenario-card-constraint-bar-fill { background: #b8540f; }
+.scenario-card-constraint.is-strong .scenario-card-constraint-value { color: #1b5e20; }
+.scenario-card-constraint.is-weak   .scenario-card-constraint-value { color: #92400e; }
+
+/* Weakest link: subtle outline so the eye can find it without
+   reading the footer. Doesn't change the bar colour — that's already
+   driven by the same number. */
+.scenario-card-constraint.is-weakest {
+  outline: 1px dashed var(--border-strong, rgba(0, 0, 0, 0.18));
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 .scenario-detail-mount { width: 100%; }
 .scenario-detail-panel {
   margin-top: 12px;
