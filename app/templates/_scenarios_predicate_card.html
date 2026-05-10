@@ -22,7 +22,7 @@
       <h3 class="predicate-card-name" title="{{ s.name }}">{{ _topic }}</h3>
       <div class="predicate-card-sub">
         <span class="predicate-card-category">{{ s.category }}</span>
-        <span class="predicate-card-key-mini mono" title="Predicate key">{{ s.key }}</span>
+        <span class="predicate-card-key-mini mono" title="Prediction key">{{ s.key }}</span>
         {% if s.source == 'llm_proposed' %}
           <span class="predicate-source-pill predicate-source-proposed"
                 title="Proposed by the suggestion model — needs review">proposed</span>
@@ -102,15 +102,15 @@
                 hx-target="#predicate-card-{{ s.key }}"
                 hx-swap="outerHTML"
                 data-predicate-key="{{ s.key }}"
-                title="Edit predicate"
-                aria-label="Edit predicate">✎</button>
+                title="Edit prediction"
+                aria-label="Edit prediction">✎</button>
         {% if predicate_actions_enabled and s.source == 'llm_proposed' %}
           <button type="button" class="btn-ghost predicate-card-promote"
                   data-predicate-key="{{ s.key }}"
-                  title="Accept this LLM-proposed predicate">✓ Promote</button>
+                  title="Accept this LLM-proposed prediction">✓ Promote</button>
           <button type="button" class="btn-ghost predicate-card-reject"
                   data-predicate-key="{{ s.key }}"
-                  title="Reject — marks the predicate inactive">✗ Reject</button>
+                  title="Reject — marks the prediction inactive">✗ Reject</button>
         {% endif %}
       {% endif %}
     </div>
