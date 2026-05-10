@@ -9,6 +9,8 @@
           aria-selected="false" aria-controls="tab-digest">Findings summary</button>
   <button role="tab" class="tab" data-tab="releases" id="tabbtn-releases"
           aria-selected="false" aria-controls="tab-releases">Product releases</button>
+  <button role="tab" class="tab" data-tab="hiring" id="tabbtn-hiring"
+          aria-selected="false" aria-controls="tab-hiring">Hiring</button>
 </nav>
 
 {# ─── Market synthesis tab (Gemini Deep Research, spec 05) ──────── #}
@@ -252,10 +254,109 @@
   {% endif %}
 </section>
 
+{# ─── Hiring tab (cross-market job postings, by competitor type) ─────
+   Two-step Haiku pipeline (per-competitor snapshot fanned out, then
+   cross-stitch). Filters new_hire findings to postings only
+   (source=careers OR topic="strategic hiring"); named-hire
+   announcements are excluded. The headline cut is by Competitor
+   category (job_board / ats / labour_hire / adjacent), not per
+   competitor. #}
+<section class="tab-panel" id="tab-hiring" role="tabpanel" aria-labelledby="tabbtn-hiring" hidden>
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-top:4px; margin-bottom:14px">
+    <p class="muted" style="margin:0; max-width:640px">
+      A cross-market read of what every tracked competitor is recruiting
+      for in the last <span id="hiring-window-label">{{ hiring_default_days }}</span> days, grouped by competitor type.
+      Built for "what's common vs unusual within each type" — not
+      per-competitor depth.
+    </p>
+    <div style="flex-shrink:0; display:flex; gap:6px; align-items:center">
+      <label class="muted" for="hiring-days" style="font-size:12px">Window</label>
+      <select id="hiring-days" class="input" style="width:auto; padding:4px 8px; font-size:13px">
+        <option value="7">7 days</option>
+        <option value="14">14 days</option>
+        <option value="30" selected>30 days</option>
+        <option value="60">60 days</option>
+        <option value="90">90 days</option>
+      </select>
+      <button id="regen-hiring-btn" type="button" class="btn btn-ghost"
+              title="LLM only — fan out per-competitor snapshots, then cross-stitch the brief">
+        Regenerate
+      </button>
+    </div>
+  </div>
+
+  {% if hiring %}
+    <div class="panel">
+      <div class="panel-header">
+        <h2>{{ hiring.title }}</h2>
+      </div>
+      <div class="panel-body">
+        <div class="brief-meta">
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Refreshed</span>
+            <span class="brief-meta-value">{{ hiring.created_at.strftime('%b %d, %Y') }}</span>
+          </div>
+          {% if hiring.run_id %}
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Run</span>
+            <span class="brief-meta-value"><a href="/runs/{{ hiring.run_id }}">#{{ hiring.run_id }}</a></span>
+          </div>
+          {% endif %}
+          {% if hiring_model %}
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Model</span>
+            <span class="brief-meta-value mono">{{ hiring_model }}</span>
+          </div>
+          {% endif %}
+          <div class="brief-meta-item">
+            <span class="brief-meta-label">Scope</span>
+            <span class="brief-meta-value">All tracked competitors</span>
+          </div>
+        </div>
+        <div id="hiring-body" class="markdown research-body"></div>
+        <script id="hiring-src" type="text/plain">{{ hiring.body_md }}</script>
+      </div>
+    </div>
+  {% else %}
+    <div class="panel">
+      <div class="panel-body">
+        <p class="muted" style="margin:0">
+          No hiring brief yet. Pick a window above and click
+          <strong>Regenerate</strong> to build the first one.
+        </p>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if hiring_history %}
+    <details style="margin-top:12px">
+      <summary class="muted" style="cursor:pointer; font-size:12px">
+        Prior briefs ({{ hiring_history|length }})
+      </summary>
+      <div class="panel" style="margin-top:8px">
+        <table>
+          <thead><tr><th>Date</th><th>Title</th><th></th></tr></thead>
+          <tbody>
+          {% for r in hiring_history %}
+            <tr>
+              <td class="muted">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td><a href="/market/{{ r.id }}">{{ r.title }}</a></td>
+              <td style="text-align:right; font-size:12px" class="muted">
+                {% if r.run_id %}<a href="/runs/{{ r.run_id }}">run #{{ r.run_id }}</a>{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  {% endif %}
+</section>
+
 {# ─── Tab controller (hash-driven, matches competitor profile pattern) ─── #}
 <script>
   (function initMarketTabs() {
-    var TABS = ['synthesis', 'digest', 'releases'];
+    var TABS = ['synthesis', 'digest', 'releases', 'hiring'];
     var buttons = document.querySelectorAll('.tabs .tab');
     var panels  = document.querySelectorAll('.tab-panel');
 
@@ -393,6 +494,58 @@
     });
   })();
 
+  (function wireHiringRegen() {
+    var btn = document.getElementById('regen-hiring-btn');
+    var sel = document.getElementById('hiring-days');
+    var label = document.getElementById('hiring-window-label');
+    if (!btn || !sel) return;
+    var latestId = {{ hiring.id if hiring else 0 }};
+
+    sel.addEventListener('change', function () {
+      if (label) label.textContent = sel.value;
+    });
+
+    btn.addEventListener('click', async function () {
+      var days = parseInt(sel.value, 10) || {{ hiring_default_days }};
+      btn.disabled = true;
+      var origLabel = btn.textContent;
+      btn.textContent = 'Queued…';
+      try {
+        var r = await fetch('/api/runs/market-hiring?days=' + days, {method: 'POST'});
+        if (!r.ok) {
+          alert('Failed: ' + r.status + '\n' + await r.text());
+          btn.disabled = false; btn.textContent = origLabel;
+          return;
+        }
+        btn.textContent = 'Generating…';
+        var start = Date.now();
+        var iv = setInterval(async function () {
+          try {
+            var rr = await fetch('/api/reports?limit=1&kind=market_hiring');
+            if (rr.ok) {
+              var rows = await rr.json();
+              if (rows.length && rows[0].id > latestId) {
+                clearInterval(iv);
+                location.reload();
+                return;
+              }
+            }
+          } catch (e) { /* keep polling */ }
+          // Hiring runs do a per-competitor fan-out so they're slower
+          // than digest/releases — give them a bit more headroom before
+          // calling timeout.
+          if (Date.now() - start > 600000) {
+            clearInterval(iv);
+            alert('Timed out after 10 minutes. Check /runs for status.');
+            btn.disabled = false; btn.textContent = origLabel;
+          }
+        }, 4000);
+      } catch (e) {
+        btn.disabled = false; btn.textContent = origLabel;
+      }
+    });
+  })();
+
   (function () {
     var btn = document.getElementById('regen-digest-btn');
     if (!btn) return;
@@ -455,6 +608,7 @@
     paint('digest-src', 'digest-body');
     paint('synthesis-src', 'synthesis-body');
     paint('releases-src', 'releases-body');
+    paint('hiring-src', 'hiring-body');
   })();
 </script>
 {% endblock %}

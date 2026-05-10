@@ -1178,6 +1178,24 @@ def market_index(request: Request, db: Session = Depends(get_db), user=Depends(g
         .all()
     )
 
+    # Hiring tab: cross-market read of new_hire/careers postings in the
+    # window, grouped by Competitor.category. Same kind-discriminator
+    # pattern as releases.
+    latest_hiring = (
+        db.query(Report)
+        .filter(Report.kind == "market_hiring")
+        .order_by(Report.created_at.desc())
+        .first()
+    )
+    hiring_history = (
+        db.query(Report)
+        .filter(Report.kind == "market_hiring")
+        .order_by(Report.created_at.desc())
+        .offset(1)
+        .limit(20)
+        .all()
+    )
+
     latest_synthesis = (
         db.query(MarketSynthesisReport)
         .order_by(MarketSynthesisReport.started_at.desc())
@@ -1198,7 +1216,14 @@ def market_index(request: Request, db: Session = Depends(get_db), user=Depends(g
         and latest_synthesis.status in ("queued", "running")
     )
     from analyzer import MODEL as _DIGEST_MODEL
-    from .market_releases import MODEL as _RELEASES_MODEL, DEFAULT_WINDOW_DAYS
+    from .market_releases import (
+        MODEL as _RELEASES_MODEL,
+        DEFAULT_WINDOW_DAYS as _RELEASES_DEFAULT_DAYS,
+    )
+    from .market_hiring import (
+        MODEL as _HIRING_MODEL,
+        DEFAULT_WINDOW_DAYS as _HIRING_DEFAULT_DAYS,
+    )
     return templates.TemplateResponse(request, "market_index.html", {
         "user": user,
         "digest": latest_digest,
@@ -1207,7 +1232,11 @@ def market_index(request: Request, db: Session = Depends(get_db), user=Depends(g
         "releases": latest_releases,
         "releases_history": releases_history,
         "releases_model": _RELEASES_MODEL,
-        "releases_default_days": DEFAULT_WINDOW_DAYS,
+        "releases_default_days": _RELEASES_DEFAULT_DAYS,
+        "hiring": latest_hiring,
+        "hiring_history": hiring_history,
+        "hiring_model": _HIRING_MODEL,
+        "hiring_default_days": _HIRING_DEFAULT_DAYS,
         "synthesis": latest_synthesis,
         "synthesis_history": synthesis_history,
         "synthesis_poll": synthesis_poll,
