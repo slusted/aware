@@ -278,7 +278,25 @@ a:hover { color: var(--accent-hover); }
   position: sticky;
   top: 0;
   height: 100vh;
+  /* Sidebar is taller than the viewport on small / zoomed displays —
+     without internal scroll the footer (Settings, theme, user) gets
+     clipped below the fold and the page itself can't scroll it into
+     view because the sidebar is sticky-pinned to 100vh.
+     overflow-y:scroll (not auto) reserves the gutter even when content
+     fits, so the bar is always visible and content doesn't shift when
+     it appears. */
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
+.sidebar::-webkit-scrollbar { width: 8px; }
+.sidebar::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+.sidebar::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
 
 .sidebar .brand {
   display: flex;
