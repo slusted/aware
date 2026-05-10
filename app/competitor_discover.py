@@ -1,29 +1,40 @@
-"""Competitor discovery — given our company + industry + an exclusion list,
-run an Anthropic tool-use loop with search + fetch exposed, and return a
-list of candidate competitors we're not already tracking.
+"""Competitor discovery — mines the last 90 days of findings for company
+names mentioned but not yet on the watchlist.
 
-Shape mirrors app/competitor_autofill.py — same model, same tools, same
-extraction helpers. Different system prompt, different output schema
-(a list of candidates rather than one filled form).
+The previous implementation drove an Anthropic tool-use loop with web
+search exposed; it was slow, expensive, and frequently surfaced nothing
+new because cold speculation rarely beats what's already in our corpus.
+
+The current implementation is single-shot: load high-materiality findings
+from the recent window, hand the title+snippet of each to Claude, and ask
+it to surface companies mentioned by name that we should consider
+tracking. Each candidate cites the finding ids that mentioned it; we
+turn those back into clickable evidence chips on the panel.
 """
 from __future__ import annotations
 
 import json
-from typing import Iterator
+from datetime import datetime, timedelta
+from typing import Iterator, Iterable
 
 import anthropic
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
 
-from .competitor_autofill import (
-    TOOLS,
-    _extract_json,
-    _run_tool,
-    _describe_tool_call,
-)
+from .competitor_autofill import _extract_json
+from .models import Finding
 from .skills import load_active
 
 MODEL = "claude-sonnet-4-6"
-MAX_TOOL_ROUNDS = 10
-MAX_CANDIDATES = 8
+MAX_CANDIDATES = 12
+LOOKBACK_DAYS = 90
+# Cap how many findings we hand the model. High-materiality first; the
+# tail is rarely informative once we're past the top few hundred and the
+# extra tokens cost real money.
+MAX_FINDINGS = 400
+# Per-finding text budget (chars). Title + summary together; the model
+# only needs enough context to spot a company name + what they did.
+FINDING_SNIPPET_CHARS = 400
 
 CATEGORIES = ["job_board", "ats", "labour_hire", "adjacent", "other"]
 
@@ -37,7 +48,7 @@ def _render_skill(
     dismissed: list[str],
     hint: str | None,
 ) -> str:
-    """Fill the discover_competitors_brief skill template. Falls back to a
+    """Fill the discover_competitors skill template. Falls back to a
     minimal built-in prompt if the skill file is missing, so discovery
     still works on a fresh install before the seed pass runs."""
     template = load_active("discover_competitors") or _FALLBACK_PROMPT
@@ -51,8 +62,6 @@ def _render_skill(
     out = template
     for k, v in vals.items():
         out = out.replace("{{" + k + "}}", v)
-    # Strip the optional `{{#hint}}...{{/hint}}` block when no hint is
-    # provided. Keep it (sans tags) otherwise.
     if vals["hint"]:
         out = out.replace("{{#hint}}", "").replace("{{/hint}}", "")
     else:
@@ -74,9 +83,10 @@ def _strip_block(text: str, open_tag: str, close_tag: str) -> str:
 _FALLBACK_PROMPT = """\
 You are a competitive-intelligence analyst for {{our_company}} in {{our_industry}}.
 
-Find up to 8 companies we should consider adding to our competitor watchlist
-that we are NOT already tracking. Use search_web and fetch_url to discover
-candidates and confirm each one is a real, operating business.
+You will be given a JSON array of recent findings. Each finding's
+`competitor` is a company we ALREADY track — that's not who you're
+looking for. Mine the `title` and `snippet` for OTHER company names
+mentioned that {{our_company}} should consider tracking.
 
 Already tracked (do not return):
 {{existing_list}}
@@ -86,18 +96,19 @@ Previously dismissed (do not return):
 
 {{#hint}}Focus: {{hint}}{{/hint}}
 
-For each candidate return: name, homepage_domain (apex, verified), category
-from [job_board, ats, labour_hire, adjacent, other], a one-sentence
-one_line_why, and up to 5 evidence items of {title, url}.
+For each candidate return: name, homepage_domain (apex if confidently
+inferable, else null), category from [job_board, ats, labour_hire,
+adjacent, other], a one-sentence one_line_why grounded in the findings,
+and up to 5 finding_ids you used as evidence.
 
 Respond with ONLY a JSON object:
-{"candidates": [{"name":"...","homepage_domain":"...","category":"...","one_line_why":"...","evidence":[{"title":"...","url":"..."}]}]}
+{"candidates":[{"name":"...","homepage_domain":"...","category":"...","one_line_why":"...","finding_ids":[1,2]}]}
 """
 
 
 def _normalize_domain(raw) -> str | None:
-    """Same shape as the autofill path — strip scheme / path / www,
-    lowercase, validate charset. Return None if unusable for dedup."""
+    """Strip scheme / path / www, lowercase, validate charset. Return
+    None if unusable for dedup."""
     if raw is None:
         return None
     s = str(raw).strip().lower()
@@ -114,31 +125,63 @@ def _normalize_domain(raw) -> str | None:
     return s
 
 
-def _normalize_candidates(payload: dict, exclude: set[str]) -> list[dict]:
+def _build_findings_blob(findings: Iterable[Finding]) -> tuple[list[dict], dict[int, dict]]:
+    """Project Findings to a slim payload for the LLM and an id→meta
+    lookup the caller uses to build evidence links once candidates come
+    back."""
+    blob: list[dict] = []
+    lookup: dict[int, dict] = {}
+    for f in findings:
+        text = (f.summary or f.content or "").strip()
+        title = (f.title or "").strip()
+        if not text and not title:
+            continue
+        snippet = text[:FINDING_SNIPPET_CHARS] if text else ""
+        blob.append({
+            "id": f.id,
+            "competitor": f.competitor,
+            "title": title[:200],
+            "snippet": snippet,
+        })
+        lookup[f.id] = {
+            "title": title or (f.url or f"finding #{f.id}"),
+            "url": f.url or "",
+        }
+    return blob, lookup
+
+
+def _normalize_candidates(
+    payload: dict,
+    exclude_domains: set[str],
+    exclude_names_lc: set[str],
+    finding_lookup: dict[int, dict],
+) -> list[dict]:
     """Coerce the agent's candidate list into clean dicts. Drops entries
-    missing a name or homepage domain, entries whose domain is excluded,
-    and entries past the cap. Dedupes within the same response."""
+    missing a name, entries already on the exclude lists, and entries
+    past the cap. Dedupes within the same response by domain (when
+    present) and by lower-cased name (always)."""
     raw = payload.get("candidates")
     if not isinstance(raw, list):
         return []
     out: list[dict] = []
-    seen: set[str] = set()
+    seen_domains: set[str] = set()
+    seen_names: set[str] = set()
+
     for item in raw:
         if not isinstance(item, dict):
             continue
         name = str(item.get("name") or "").strip()
         if not name:
             continue
-        domain = _normalize_domain(item.get("homepage_domain"))
-        if not domain:
-            # Keep the row but with a null domain — the UI will still show
-            # it; the operator can dismiss or decide whether to research.
-            # Skip dedup check in this case.
-            pass
-        elif domain in exclude or domain in seen:
+        name_lc = name.lower()
+        if name_lc in exclude_names_lc or name_lc in seen_names:
             continue
+
+        domain = _normalize_domain(item.get("homepage_domain"))
         if domain:
-            seen.add(domain)
+            if domain in exclude_domains or domain in seen_domains:
+                continue
+            seen_domains.add(domain)
 
         category = str(item.get("category") or "").strip().lower()
         if category not in CATEGORIES:
@@ -146,17 +189,25 @@ def _normalize_candidates(payload: dict, exclude: set[str]) -> list[dict]:
 
         why = str(item.get("one_line_why") or "").strip()
 
+        # Build evidence from cited finding ids. Cap at 5 and silently
+        # drop unknown ids — the model occasionally hallucinates extras.
         evidence: list[dict] = []
-        ev_raw = item.get("evidence")
-        if isinstance(ev_raw, list):
-            for ev in ev_raw[:5]:
-                if not isinstance(ev, dict):
+        ids_raw = item.get("finding_ids")
+        if isinstance(ids_raw, list):
+            for fid in ids_raw[:5]:
+                try:
+                    fid_int = int(fid)
+                except (TypeError, ValueError):
                     continue
-                url = str(ev.get("url") or "").strip()
-                title = str(ev.get("title") or "").strip() or url
-                if url:
-                    evidence.append({"title": title, "url": url})
+                meta = finding_lookup.get(fid_int)
+                if not meta or not meta.get("url"):
+                    continue
+                evidence.append({
+                    "title": meta["title"],
+                    "url": meta["url"],
+                })
 
+        seen_names.add(name_lc)
         out.append({
             "name": name,
             "homepage_domain": domain,
@@ -170,10 +221,13 @@ def _normalize_candidates(payload: dict, exclude: set[str]) -> list[dict]:
 
 
 def discover_stream(
+    db: Session,
     our_company: str,
     our_industry: str,
-    existing: list[str],
-    dismissed: list[str],
+    existing_names: list[str],
+    existing_domains: list[str],
+    dismissed_names: list[str],
+    dismissed_domains: list[str],
     hint: str | None = None,
 ) -> Iterator[dict]:
     """Generator — yields progress events ending with either
@@ -183,89 +237,95 @@ def discover_stream(
     drive an SSE stream or collect the list via the blocking wrapper
     without handling exceptions.
     """
-    exclude = {d for d in (list(existing) + list(dismissed)) if d}
+    exclude_domains = {d for d in (existing_domains + dismissed_domains) if d}
+    exclude_names_lc = {n.lower() for n in (existing_names + dismissed_names) if n}
 
     if hint:
         yield {"type": "progress", "message": f"discovering with focus: {hint[:80]}"}
     else:
         yield {"type": "progress", "message": "discovering new competitors"}
 
-    system = _render_skill(our_company, our_industry, existing, dismissed, hint)
-    user_msg = (
-        f"Find up to {MAX_CANDIDATES} candidate competitors for "
-        f"{our_company}. Start with a broad search, then verify each "
-        f"candidate's homepage with fetch_url. Skip anyone already in "
-        f"the 'already tracked' or 'previously dismissed' lists above."
+    cutoff = datetime.utcnow() - timedelta(days=LOOKBACK_DAYS)
+    yield {"type": "progress", "message": f"loading findings from last {LOOKBACK_DAYS} days"}
+
+    findings = (
+        db.query(Finding)
+        .filter(Finding.created_at >= cutoff)
+        # NULL materiality sorts last under "NULLS LAST" in PG; SQLite
+        # treats NULL as smallest with DESC, which is what we want here
+        # (rated low/zero rows fall to the bottom). created_at is the
+        # tiebreaker so we prefer recent on equal-weight findings.
+        .order_by(desc(Finding.materiality), desc(Finding.created_at))
+        .limit(MAX_FINDINGS)
+        .all()
     )
-    messages = [{"role": "user", "content": user_msg}]
-    final_text = ""
+
+    if not findings:
+        yield {"type": "progress", "message": "no findings in window — nothing to mine"}
+        yield {"type": "done", "candidates": []}
+        return
+
+    blob, lookup = _build_findings_blob(findings)
+    if not blob:
+        yield {"type": "progress", "message": "findings have no usable text — nothing to mine"}
+        yield {"type": "done", "candidates": []}
+        return
+
+    yield {
+        "type": "progress",
+        "message": f"scanning {len(blob)} findings for new competitor mentions",
+    }
+
+    system = _render_skill(
+        our_company, our_industry,
+        existing=existing_names + existing_domains,
+        dismissed=dismissed_names + dismissed_domains,
+        hint=hint,
+    )
+    user_msg = (
+        "Recent findings to mine (JSON):\n"
+        + json.dumps({"findings": blob}, ensure_ascii=False)
+    )
+
+    yield {"type": "progress", "message": "asking the model to surface candidates"}
 
     try:
-        for round_idx in range(MAX_TOOL_ROUNDS):
-            yield {"type": "progress", "message": f"thinking (round {round_idx + 1})"}
-            resp = _client.messages.create(
-                model=MODEL,
-                max_tokens=2500,
-                system=system,
-                tools=TOOLS,
-                messages=messages,
-            )
-            messages.append({"role": "assistant", "content": resp.content})
-
-            if resp.stop_reason != "tool_use":
-                for block in resp.content:
-                    if getattr(block, "type", None) == "text":
-                        final_text += block.text
-                break
-
-            tool_results = []
-            for block in resp.content:
-                if getattr(block, "type", None) == "tool_use":
-                    label = _describe_tool_call(block.name, block.input or {})
-                    yield {"type": "progress", "message": label}
-                    result = _run_tool(block.name, block.input or {})
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
-            if not tool_results:
-                break
-            messages.append({"role": "user", "content": tool_results})
-        else:
-            yield {"type": "progress", "message": "wrapping up — asking for final JSON"}
-            messages.append({
-                "role": "user",
-                "content": "Stop researching. Return the JSON object now with the candidates you've found.",
-            })
-            resp = _client.messages.create(
-                model=MODEL,
-                max_tokens=2000,
-                system=system,
-                messages=messages,
-            )
-            for block in resp.content:
-                if getattr(block, "type", None) == "text":
-                    final_text += block.text
+        resp = _client.messages.create(
+            model=MODEL,
+            max_tokens=4000,
+            system=system,
+            messages=[{"role": "user", "content": user_msg}],
+        )
     except Exception as e:
         yield {"type": "error", "message": f"{type(e).__name__}: {e}"}
         return
 
+    final_text = "".join(
+        b.text for b in resp.content if getattr(b, "type", None) == "text"
+    )
     payload = _extract_json(final_text) or {}
-    candidates = _normalize_candidates(payload, exclude)
+    candidates = _normalize_candidates(
+        payload, exclude_domains, exclude_names_lc, lookup,
+    )
     yield {"type": "done", "candidates": candidates}
 
 
 def discover(
+    db: Session,
     our_company: str,
     our_industry: str,
-    existing: list[str],
-    dismissed: list[str],
+    existing_names: list[str],
+    existing_domains: list[str],
+    dismissed_names: list[str],
+    dismissed_domains: list[str],
     hint: str | None = None,
 ) -> list[dict]:
     """Blocking variant — drains the stream and returns the candidate list."""
     for event in discover_stream(
-        our_company, our_industry, existing, dismissed, hint=hint,
+        db, our_company, our_industry,
+        existing_names, existing_domains,
+        dismissed_names, dismissed_domains,
+        hint=hint,
     ):
         if event["type"] == "error":
             raise RuntimeError(event["message"])

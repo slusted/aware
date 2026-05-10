@@ -554,20 +554,15 @@ def run_discover_competitors(
     db: Session = Depends(get_db),
     _=Depends(require_role("admin")),
 ):
-    """Kick off the 'Discover new competitors' tool-use loop. Creates a
-    Run(kind='discover_competitors') and enqueues the background job.
-    Enforces a single-in-flight cap so the operator can't stampede Anthropic
-    or Tavily by mashing the button. Redirects back to Manage Watchlist on
-    the Discover panel."""
+    """Kick off the 'Discover new competitors' pass over the last 90 days
+    of findings. Creates a Run(kind='discover_competitors') and enqueues
+    the background job. Enforces a single-in-flight cap so the operator
+    can't stampede Anthropic by mashing the button. Redirects back to
+    Manage Watchlist on the Discover panel."""
     if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
         raise HTTPException(
             400,
             detail="ANTHROPIC_API_KEY is not set. Add it on /settings/keys before running discovery.",
-        )
-    if not os.environ.get("TAVILY_API_KEY", "").strip():
-        raise HTTPException(
-            400,
-            detail="TAVILY_API_KEY is not set. Add it on /settings/keys before running discovery.",
         )
     from ..jobs import current_discovery_load, run_discover_competitors_job
     if current_discovery_load(db) >= 1:
