@@ -4829,6 +4829,22 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
    header with inline action, optional collapsible focus, and a dense
    row per candidate (name · category · cite-count · rationale · Add). */
 
+/* Body content gets horizontal breathing room. .panel itself has no
+   padding (it's optimised for full-width tables), and panel-header
+   carries its own padding, so we inset every other direct child here.
+   The trailing rule gives the panel some bottom space below the last
+   element instead of butting up against the rounded border. */
+.discover-panel > :not(.panel-header) {
+  margin-left: 16px;
+  margin-right: 16px;
+}
+.discover-panel > .panel-header + * {
+  margin-top: 14px;
+}
+.discover-panel > :last-child:not(.panel-header) {
+  margin-bottom: 16px;
+}
+
 .discover-panel .panel-header {
   align-items: center;
 }
