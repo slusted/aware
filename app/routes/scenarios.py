@@ -731,6 +731,42 @@ def scenarios_evidence_alias(
 
 
 @router.get(
+    "/scenarios/predictions/{predicate_key}",
+    response_class=HTMLResponse,
+)
+def prediction_page(
+    predicate_key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Full-page view for one prediction. Restates the prediction, charts
+    each state's probability over the last 90 days on a shared y-axis,
+    and surfaces the agent's qualitative read with the top weighted
+    evidence above a disclosure for the long tail of findings."""
+    detail = dashboard_svc.predicate_detail(db, predicate_key)
+    if detail is None:
+        raise HTTPException(404, f"prediction {predicate_key!r} not found or inactive")
+    pred = (
+        db.query(Predicate).filter(Predicate.key == predicate_key).one_or_none()
+    )
+    review = review_svc.latest_review_for(db, predicate_key)
+    proposals = review_svc.pending_proposals_for(db, predicate_key)
+    chart_series = dashboard_svc.multi_line_chart_series(
+        detail.summary.states, detail.sparklines,
+    )
+    return templates.TemplateResponse(request, "scenarios_prediction_page.html", {
+        "user": user,
+        "detail": detail,
+        "p": pred,
+        "review": review,
+        "pending_proposals": proposals,
+        "proposals_by_id": {pr.id: pr for pr in proposals},
+        "chart_series": chart_series,
+    })
+
+
+@router.get(
     "/scenarios/predicates/{predicate_key}/expand",
     response_class=HTMLResponse,
 )

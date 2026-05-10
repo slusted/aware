@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}{{ detail.summary.name }} · Prediction{% endblock %}
+
+{% block content %}
+{% set s = detail.summary %}
+{% set _topic = s.name.split(':', 1)[0]|trim %}
+{% set _shift = s.dominant_state_velocity_pp_30d %}
+{% set _shift_abs = _shift if _shift >= 0 else -_shift %}
+
+<header class="prediction-page-head">
+  <nav class="prediction-page-crumbs">
+    <a href="/scenarios?tab=predicates">← Predictions</a>
+  </nav>
+  <div class="prediction-page-title-row">
+    <h1 class="prediction-page-title">{{ _topic }}</h1>
+    <div class="prediction-page-shift
+        {% if _shift_abs < 1 %}is-flat
+        {% elif _shift > 0 %}is-up
+        {% else %}is-down{% endif %}"
+        title="{{ s.dominant_state_label }} probability change over the last 30 days">
+      {% if _shift_abs < 0.1 %}
+        <span class="prediction-page-shift-empty">
+          {% if s.has_recent_evidence %}no shift · 30d{% else %}no evidence yet{% endif %}
+        </span>
+      {% else %}
+        <span class="prediction-page-shift-arrow" aria-hidden="true">
+          {% if _shift > 0 %}↑{% else %}↓{% endif %}
+        </span>
+        <span class="prediction-page-shift-num">{{ _shift_abs|round(1) }}pp</span>
+        <span class="prediction-page-shift-window">30d · {{ s.dominant_state_label }}</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="prediction-page-meta">
+    <span class="prediction-page-category">{{ s.category }}</span>
+    <span class="prediction-page-key mono" title="Prediction key">{{ s.key }}</span>
+    {% if s.source == 'llm_proposed' %}
+      <span class="predicate-source-pill predicate-source-proposed"
+            title="Proposed by the suggestion model — needs review">proposed</span>
+    {% elif s.source == 'llm_promoted' %}
+      <span class="predicate-source-pill predicate-source-promoted"
+            title="Originally LLM-proposed, accepted by a reviewer">promoted</span>
+    {% endif %}
+    <span class="muted">·</span>
+    <span class="muted">{{ s.evidence_count }} evidence</span>
+    {% if s.last_updated_at %}
+      <span class="muted">· updated {{ s.last_updated_at.strftime('%b %d, %H:%M') }}</span>
+    {% endif %}
+    {% if not s.has_recent_evidence %}
+      <span class="predicate-coverage-warn"
+            title="No confirmed evidence in the last 30 days.">· no recent evidence</span>
+    {% endif %}
+  </div>
+
+  <p class="prediction-page-statement">{{ s.statement }}</p>
+</header>
+
+{# 1. Where we are now ─────────────────────────────────────────────────── #}
+<section class="prediction-page-section">
+  <h2 class="prediction-page-h">Current state</h2>
+  <div class="predicate-card-bars prediction-page-bars">
+    {% for st in s.states %}
+      {% set _d = st.velocity_pp_30d %}
+      {% set _d_abs = _d if _d >= 0 else -_d %}
+      <div class="predicate-bar-row" data-ordinal="{{ st.ordinal_position }}">
+        <span class="predicate-bar-label" title="{{ st.label }}">{{ st.label }}</span>
+        <span class="predicate-bar-track">
+          <span class="predicate-bar-fill ordinal-{{ st.ordinal_position }}"
+                style="width: {{ (st.current * 100)|round(1) }}%"></span>
+        </span>
+        <span class="predicate-bar-value mono">{{ (st.current * 100)|round(1) }}%</span>
+        <span class="predicate-bar-delta mono
+            {% if _d_abs < 0.1 %}is-flat
+            {% elif _d > 0 %}is-up
+            {% else %}is-down{% endif %}"
+            title="30-day change for {{ st.label }}">
+          {% if _d_abs < 0.1 %}±0{% else %}{% if _d > 0 %}+{% endif %}{{ _d|round(1) }}{% endif %}
+        </span>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+{# 2. How we got here ──────────────────────────────────────────────────── #}
+<section class="prediction-page-section">
+  <h2 class="prediction-page-h">Probability over time</h2>
+  <p class="muted small prediction-page-chart-help">
+    Last 90 days. Shared y-axis (0–100%) — bigger absolute moves draw bigger lines.
+  </p>
+  {% with chart_series=chart_series %}
+    {% include "_scenarios_multi_line_chart.html" %}
+  {% endwith %}
+</section>
+
+{# 3. Agent's qualitative read ─────────────────────────────────────────── #}
+<section class="prediction-page-section">
+  <h2 class="prediction-page-h">Agent's read</h2>
+  {% if review %}
+    <div class="prediction-page-summary
+                {% if review.decided_no_change %}is-no-change{% endif %}">
+      <p class="prediction-page-summary-text">
+        {% if review.summary_text %}{{ review.summary_text }}
+        {% else %}Statement still fits, no action recommended.{% endif %}
+      </p>
+      <p class="prediction-page-summary-meta muted small">
+        reviewed {{ review.reviewed_at.strftime('%Y-%m-%d') }} ·
+        {{ review.findings_seen_count }} finding{% if review.findings_seen_count != 1 %}s{% endif %} considered
+      </p>
+    </div>
+  {% else %}
+    <p class="muted prediction-page-summary-empty">
+      No agent summary yet — the predicate-review job runs monthly and will populate one
+      once there's enough confirmed evidence to read.
+    </p>
+  {% endif %}
+</section>
+
+{# 4. The receipts ─────────────────────────────────────────────────────── #}
+{% set _top = detail.evidence_confirmed[:5] %}
+{% if _top %}
+  <section class="prediction-page-section">
+    <h2 class="prediction-page-h">Most compelling evidence</h2>
+    <p class="muted small prediction-page-chart-help">
+      Top {{ _top|length }} confirmed findings ranked by their current weight on the posterior.
+    </p>
+    <ol class="prediction-top-evidence">
+      {% for ev in _top %}
+        <li class="prediction-top-evidence-row{% if ev.fitness %} fitness-{{ ev.fitness }}{% endif %}">
+          <div class="prediction-top-evidence-head">
+            <span class="prediction-top-evidence-rank mono">#{{ loop.index }}</span>
+            {% if ev.fitness %}
+              <span class="fitness-chip is-{{ ev.fitness }}">
+                {% if ev.fitness == "fits" %}✓ fits
+                {% elif ev.fitness == "awkward" %}⚠ awkward
+                {% elif ev.fitness == "misfit" %}✗ misfit
+                {% endif %}
+              </span>
+            {% endif %}
+            <span class="muted mono">{{ ev.observed_at.strftime('%Y-%m-%d') }}</span>
+            {% if ev.finding_url %}
+              <a class="prediction-top-evidence-title"
+                 href="{{ ev.finding_url }}" target="_blank" rel="noopener">
+                {{ (ev.finding_title or '#' ~ ev.finding_id)[:140] }}
+              </a>
+            {% elif ev.finding_id %}
+              <span class="prediction-top-evidence-title">finding #{{ ev.finding_id }}</span>
+            {% else %}
+              <span class="prediction-top-evidence-title muted">manual</span>
+            {% endif %}
+            {% if ev.competitor %}
+              <span class="muted">· {{ ev.competitor }}</span>
+            {% endif %}
+          </div>
+          <div class="prediction-top-evidence-body">
+            <span class="prediction-top-evidence-points muted mono"
+                  title="Direction · strength bucket · target state">
+              {{ ev.direction }} · {{ ev.strength_bucket }} → {{ ev.target_state_label }}
+            </span>
+            {% if ev.fitness_read_as %}
+              <p class="prediction-top-evidence-readas">{{ ev.fitness_read_as }}</p>
+            {% elif ev.notes %}
+              <p class="prediction-top-evidence-readas muted">{{ ev.notes }}</p>
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ol>
+  </section>
+{% endif %}
+
+{# 5. Long tail — review proposals + every finding + math view ────────── #}
+<section class="prediction-page-section prediction-page-details-section">
+  <details class="prediction-page-details">
+    <summary class="prediction-page-details-summary">
+      All findings &amp; math
+      <span class="muted">·
+        {{ detail.evidence_confirmed|length }} confirmed{% set _hidden = detail.evidence_pending|length + detail.evidence_rejected|length %}{% if _hidden %} · {{ _hidden }} pending or rejected{% endif %}
+      </span>
+    </summary>
+    <div class="prediction-page-details-body">
+      {% include "_predicate_review_block.html" %}
+      {% include "_predicate_findings_list.html" %}
+      {% include "_predicate_math_view.html" %}
+    </div>
+  </details>
+</section>
+
+{% endblock %}

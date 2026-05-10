@@ -1,0 +1,59 @@
+{# Multi-line chart for one prediction's state-probability history.
+   Shared 0–100% y-axis so absolute moves stay comparable across states.
+
+   Args:
+     chart_series - list of LineChartSeries (app/scenarios/dashboard.py)
+       - .state_key, .label, .ordinal_position, .current, .points, .is_dominant
+
+   Polyline points are pre-computed in viewBox coordinates (100 wide × 80
+   tall by default). Y-axis labels (0/50/100%) live in HTML next to the
+   SVG so they don't get stretched by preserveAspectRatio="none".
+   Renders an empty-state notice when no state has any history yet.
+#}
+{% if chart_series %}
+  <div class="prediction-chart">
+    <div class="prediction-chart-y-labels mono muted" aria-hidden="true">
+      <span>100%</span>
+      <span>50%</span>
+      <span>0%</span>
+    </div>
+    <div class="prediction-chart-plot">
+      <svg class="prediction-chart-svg" viewBox="0 0 100 80"
+           preserveAspectRatio="none" aria-hidden="true">
+        {# Gridlines at 0 / 50 / 100% — drawn first so the lines sit on top. #}
+        <line x1="0" x2="100" y1="0"  y2="0"  stroke="var(--border-subtle)" stroke-width="0.5"/>
+        <line x1="0" x2="100" y1="40" y2="40" stroke="var(--border-subtle)" stroke-width="0.5" stroke-dasharray="2 2"/>
+        <line x1="0" x2="100" y1="80" y2="80" stroke="var(--border-subtle)" stroke-width="0.5"/>
+        {% for line in chart_series %}
+          <polyline class="prediction-chart-line ordinal-{{ line.ordinal_position }}{% if line.is_dominant %} is-dominant{% endif %}"
+                    points="{{ line.points }}"
+                    fill="none"
+                    stroke="var(--ordinal-{{ line.ordinal_position }})"
+                    stroke-width="{% if line.is_dominant %}1.8{% else %}1.2{% endif %}"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    vector-effect="non-scaling-stroke">
+            <title>{{ line.label }} · {{ (line.current * 100)|round(1) }}%</title>
+          </polyline>
+        {% endfor %}
+      </svg>
+    </div>
+  </div>
+  <div class="prediction-chart-x-labels muted">
+    <span>90 days ago</span>
+    <span>today</span>
+  </div>
+  <ul class="prediction-chart-legend">
+    {% for line in chart_series %}
+      <li class="prediction-chart-legend-row{% if line.is_dominant %} is-dominant{% endif %}">
+        <span class="ordinal-swatch ordinal-{{ line.ordinal_position }}" aria-hidden="true"></span>
+        <span class="prediction-chart-legend-label">{{ line.label }}</span>
+        <span class="muted mono">{{ (line.current * 100)|round(1) }}%</span>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <div class="prediction-chart-empty muted">
+    Not enough history to chart yet — comes online after a couple of recomputes with snapshots.
+  </div>
+{% endif %}

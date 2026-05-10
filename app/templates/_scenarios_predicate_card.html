@@ -6,8 +6,8 @@
        Promote / Reject action buttons in the footer. The /predicates
        page enables this; /scenarios doesn't (source-tagged predicates
        still show the pill there, but actions live on the library page).
-   The card carries an HTMX-loadable expand panel below; clicking the
-   header swaps in the detail partial via /scenarios/predicates/{key}/expand.
+   The "Open →" footer link navigates to the dedicated full prediction
+   page at /scenarios/predictions/{key}.
 #}
 {# Title schema is "{topic}: {opt1} vs {opt2}…" — show the topic only;
    the bars enumerate the options and the full string lives on hover. #}
@@ -89,13 +89,10 @@
       </span>
     {% endif %}
     <div class="predicate-card-foot-actions">
-      <button type="button" class="btn-ghost predicate-card-expand"
-              hx-get="/scenarios/predicates/{{ s.key }}/expand"
-              hx-target="#predicate-detail-{{ s.key }}"
-              hx-swap="innerHTML"
-              data-predicate-key="{{ s.key }}"
-              aria-expanded="false"
-              aria-controls="predicate-detail-{{ s.key }}">▸ Expand</button>
+      <a class="btn-ghost predicate-card-open"
+         href="/scenarios/predictions/{{ s.key }}"
+         data-predicate-key="{{ s.key }}"
+         title="Open the full prediction page">Open →</a>
       {% if user is defined and user and user.role in ("admin", "analyst") %}
         <button type="button" class="btn-ghost predicate-card-edit predicate-card-edit-icon"
                 hx-get="/scenarios/predicates/{{ s.key }}/edit"
@@ -115,9 +112,4 @@
       {% endif %}
     </div>
   </footer>
-
-  {# Inline expand target. Empty until the user clicks Expand. The
-     detail partial includes its own Collapse button which clears this
-     container and resets aria-expanded via the inline JS in scenarios_index.html. #}
-  <div id="predicate-detail-{{ s.key }}" class="predicate-detail-mount" hidden></div>
 </article>

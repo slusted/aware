@@ -120,6 +120,60 @@ class PredicateDetail(NamedTuple):
     evidence_rejected: list[EvidenceContribView]
 
 
+class LineChartSeries(NamedTuple):
+    """One state's polyline for the prediction-page multi-line chart.
+    `points` is a space-separated "x,y" string ready for <polyline points>,
+    in viewBox coordinates (0..width × 0..height) with y growing downward
+    so probability=1 maps to y=0."""
+    state_key: str
+    label: str
+    ordinal_position: int
+    current: float
+    points: str
+    is_dominant: bool             # highest current prob — bold in legend
+
+
+def multi_line_chart_series(
+    states: list[StateView],
+    sparklines: dict[str, list[tuple[datetime, float]]],
+    *,
+    width: float = 100.0,
+    height: float = 80.0,
+) -> list[LineChartSeries]:
+    """Build SVG polyline point strings for a shared-y multi-line chart.
+
+    All states plot against the same 0–1 y-axis so absolute probability
+    moves stay comparable across them. A state with <2 frames renders as
+    a flat line at its current value (so the legend swatch still has a
+    line). Returns [] when no state has any history at all."""
+    if not states:
+        return []
+    if not any(sparklines.get(s.state_key) for s in states):
+        return []
+    dominant_key = max(states, key=lambda s: s.current).state_key
+    out: list[LineChartSeries] = []
+    for s in sorted(states, key=lambda sv: sv.ordinal_position):
+        series = sparklines.get(s.state_key, [])
+        if len(series) < 2:
+            y = round((1 - s.current) * height, 2)
+            pts = f"0,{y} {width},{y}"
+        else:
+            step = width / (len(series) - 1)
+            pts = " ".join(
+                f"{round(i * step, 2)},{round((1 - p) * height, 2)}"
+                for i, (_ts, p) in enumerate(series)
+            )
+        out.append(LineChartSeries(
+            state_key=s.state_key,
+            label=s.label,
+            ordinal_position=s.ordinal_position,
+            current=s.current,
+            points=pts,
+            is_dominant=(s.state_key == dominant_key),
+        ))
+    return out
+
+
 # ─── Helpers ────────────────────────────────────────────────────────────
 
 def _state_label_lookup(db: Session) -> dict[tuple[int, str], tuple[str, int, float]]:
