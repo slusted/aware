@@ -154,7 +154,7 @@ def predicate_expand_definition(
     findings view used on /predicates."""
     detail = dashboard_svc.predicate_detail(db, predicate_key)
     if detail is None:
-        raise HTTPException(404, f"predicate {predicate_key!r} not found or inactive")
+        raise HTTPException(404, f"prediction {predicate_key!r} not found or inactive")
     pred = (
         db.query(Predicate).filter(Predicate.key == predicate_key).one_or_none()
     )
@@ -181,10 +181,10 @@ def promote_predicate(
     user-authored (nothing to promote)."""
     p = db.query(Predicate).filter(Predicate.key == predicate_key).first()
     if not p:
-        raise HTTPException(404, f"predicate {predicate_key!r} not found")
+        raise HTTPException(404, f"prediction {predicate_key!r} not found")
     if p.source == "user":
         raise HTTPException(
-            400, f"predicate {predicate_key!r} was user-authored — nothing to promote"
+            400, f"prediction {predicate_key!r} was user-authored — nothing to promote"
         )
     if p.source != "llm_promoted":
         p.source = "llm_promoted"
@@ -205,7 +205,7 @@ def reject_predicate(
     remain for audit. To undo, edit the predicate from the detail page."""
     p = db.query(Predicate).filter(Predicate.key == predicate_key).first()
     if not p:
-        raise HTTPException(404, f"predicate {predicate_key!r} not found")
+        raise HTTPException(404, f"prediction {predicate_key!r} not found")
     if p.active:
         p.active = False
         p.updated_at = datetime.utcnow()
@@ -255,5 +255,5 @@ def predicate_proposed_count_partial(
     if n <= 0:
         return HTMLResponse("")
     return HTMLResponse(
-        f'<span class="nav-badge" title="Proposed predicates awaiting review">{n}</span>'
+        f'<span class="nav-badge" title="Proposed predictions awaiting review">{n}</span>'
     )

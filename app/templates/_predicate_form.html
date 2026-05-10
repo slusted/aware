@@ -20,7 +20,7 @@
 #}
 <div class="predicate-form" data-finding-id="{{ f.id }}">
   <div class="predicate-form-header muted">
-    Predicate evidence for this finding
+    Prediction evidence for this finding
     <span class="predicate-form-counter">
       ({{ evidence_rows | rejectattr('classified_by', 'equalto', 'user_rejected') | list | length }} / {{ max_per_finding }})
     </span>
@@ -85,7 +85,7 @@
               hx-swap="outerHTML"
               hidden>
           <label class="predicate-form-label">
-            Predicate
+            Prediction
             <select name="predicate_key"
                     hx-get="/partials/predicate_states"
                     hx-trigger="change"
@@ -154,14 +154,14 @@
           hx-swap="outerHTML"
           hidden>
       <label class="predicate-form-label">
-        Predicate
+        Prediction
         <select name="predicate_key"
                 hx-get="/partials/predicate_states"
                 hx-trigger="change"
                 hx-target="#predicate-create-state-{{ f.id }}"
                 hx-vals='js:{predicate_key: event.target.value}'
                 hx-swap="innerHTML">
-          <option value="">Choose predicate…</option>
+          <option value="">Choose prediction…</option>
           {% for p in predicates %}
             <option value="{{ p.key }}">{{ p.key }} — {{ p.name }}</option>
           {% endfor %}

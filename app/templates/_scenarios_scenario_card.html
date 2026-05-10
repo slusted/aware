@@ -31,7 +31,7 @@
     <span class="scenario-card-stat muted">{{ s.constraint_count }} constraint{{ s.constraint_count != 1 and 's' or '' }}</span>
     {% if s.weakest_link_predicate_key %}
       <span class="scenario-card-stat muted"
-            title="Predicate that's pulling this scenario down most">
+            title="Prediction that's pulling this scenario down most">
         weakest: {{ s.weakest_link_predicate_key }} {{ s.weakest_link_required_state_label }}
         ({{ (s.weakest_link_current_p * 100)|round(0)|int }}%)
       </span>
