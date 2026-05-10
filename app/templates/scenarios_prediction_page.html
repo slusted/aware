@@ -164,7 +164,7 @@
     <summary class="prediction-page-details-summary">
       All findings &amp; math
       <span class="muted">·
-        {{ detail.evidence_confirmed|length }} confirmed{% set _hidden = detail.evidence_pending|length + detail.evidence_rejected|length %}{% if _hidden %} · {{ _hidden }} pending or rejected{% endif %}
+        {{ detail.evidence_confirmed|length }} accepted{% if detail.evidence_rejected %} · {{ detail.evidence_rejected|length }} rejected{% endif %}
       </span>
     </summary>
     <div class="prediction-page-details-body">
