@@ -2161,6 +2161,14 @@ html.public-qa-drawer-active body { overflow: hidden; }
     border-right: none;
     border-bottom: 1px solid var(--border-subtle);
     background: var(--surface-1);
+    /* Desktop sets the sidebar as its own scroll container
+       (height:100vh, overflow-y:scroll, overscroll-behavior:contain).
+       On mobile height is auto, so there's nothing to scroll inside,
+       but the scroll container plus overscroll:contain still swallows
+       touch swipes — so the page itself can't be scrolled while the
+       menu is open. Reset both so the open menu scrolls with the page. */
+    overflow: visible;
+    overscroll-behavior: auto;
   }
 
   .sidebar .brand {
