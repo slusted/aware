@@ -22,7 +22,10 @@
     {% for r in runs %}
       <tr>
         <td><a href="/runs/{{ r.id }}">{{ r.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</a></td>
-        <td class="muted">{{ r.kind }}</td>
+        <td class="muted">
+          {{ r.kind }}
+          {% with kind=r.kind %}{% include "_skill_cue.html" %}{% endwith %}
+        </td>
         <td>
           <span class="pill {{ r.status }}">{{ r.status }}</span>
           {% if r.status == 'queued' and queue_positions.get(r.id) %}

@@ -2,6 +2,7 @@
   <summary>
     <span class="live-dot"></span>
     <strong style="font-size:13px">Live — {{ run.kind }} #{{ run.id }}</strong>
+    {% with kind=run.kind %}{% include "_skill_cue.html" %}{% endwith %}
     <span class="muted" style="font-size:12px">started {{ run.started_at.strftime('%H:%M:%S') }} · {{ events|length }} events</span>
     <span class="muted" style="margin-left:auto; font-size:11px">click to collapse</span>
   </summary>

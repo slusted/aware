@@ -18,7 +18,10 @@
 
 <div class="panel">
   <div class="panel-header">
-    <h2>Market synthesis · {{ synthesis.started_at.strftime('%Y-%m-%d %H:%M') }}</h2>
+    <h2>
+      Market synthesis · {{ synthesis.started_at.strftime('%Y-%m-%d %H:%M') }}
+      {% with kind="market_synthesis" %}{% include "_skill_cue.html" %}{% endwith %}
+    </h2>
     <span class="muted" style="font-size:11px">
       agent: {{ synthesis.agent }}
       {% if synthesis.model %} · {{ synthesis.model }}{% endif %}

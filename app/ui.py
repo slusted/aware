@@ -60,6 +60,9 @@ register_signal_globals(templates)
 from . import agent_brand as _agent_brand_module
 _agent_brand_module.register_template_globals(templates)
 
+from . import skills as _skills_module
+_skills_module.register_template_globals(templates)
+
 router = APIRouter(include_in_schema=False)
 
 

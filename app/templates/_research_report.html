@@ -9,7 +9,10 @@
 
 <div class="panel">
   <div class="panel-header">
-    <h2>Deep research</h2>
+    <h2>
+      Deep research
+      {% with kind="deep_research" %}{% include "_skill_cue.html" %}{% endwith %}
+    </h2>
     <span class="muted" style="font-size:11px">
       {{ r.started_at.strftime('%Y-%m-%d %H:%M') }}
       · agent: {{ r.agent }}

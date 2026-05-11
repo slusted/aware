@@ -37,6 +37,8 @@ templates = Jinja2Templates(
 )
 from .. import agent_brand as _agent_brand
 _agent_brand.register_template_globals(templates)
+from .. import skills as _skills_module
+_skills_module.register_template_globals(templates)
 
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])

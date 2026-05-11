@@ -1,0 +1,13 @@
+{# Visual cue indicating which LLM skill(s) drive this run/report.
+   Pass `kind` (Run.kind or Report.kind). Renders nothing if the kind
+   isn't skill-driven (e.g. ingest_app_reviews, competitor_backfill).
+   Each pill links to /admin/skills/<name> for quick inspection. #}
+{% set _skills = skills_for_kind(kind) %}
+{% if _skills %}
+  <span class="skill-cue" title="LLM skill driving this run">
+    <span class="skill-cue-label" aria-hidden="true">skill</span>
+    {% for name in _skills %}
+      <a href="/admin/skills/{{ name }}" class="skill-cue-pill">{{ name }}</a>
+    {% endfor %}
+  </span>
+{% endif %}
