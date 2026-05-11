@@ -2635,6 +2635,47 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   letter-spacing: 0.01em;
 }
 
+/* Wildlife visual band between hero and meet-your-agent. Full-bleed
+   inside the landing column; image clipped via max-height + cover. */
+.landing-shot {
+  margin: 8px 0 28px;
+}
+.landing-shot-figure {
+  margin: 0;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+}
+.landing-shot-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 520px;
+  object-fit: cover;
+  object-position: center 38%;
+}
+.landing-shot-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 22px 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+.landing-shot-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  font-weight: 500;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.landing-shot-line {
+  font-size: 15px;
+  color: var(--text-primary);
+  line-height: 1.45;
+  max-width: 60ch;
+}
+
 /* Meet-your-agent band between hero and pillars. Portrait avatar on the
    left, intro copy on the right; collapses to a centered stack on mobile. */
 .landing-stage {
@@ -2822,6 +2863,9 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   .landing-headline { font-size: 32px; }
   .landing-sub { font-size: 15px; }
   .landing-pillars { grid-template-columns: 1fr; }
+  .landing-shot-img { max-height: 320px; }
+  .landing-shot-caption { padding: 14px 16px 16px; }
+  .landing-shot-line { font-size: 14px; }
   .landing-stage {
     flex-direction: column;
     align-items: center;
