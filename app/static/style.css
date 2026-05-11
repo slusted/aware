@@ -2635,6 +2635,49 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   letter-spacing: 0.01em;
 }
 
+/* Visual band between hero and pillars. Full-bleed inside the landing
+   main column; image is clipped on tall screens via max-height + cover. */
+.landing-stage {
+  margin: 8px 0 56px;
+}
+.landing-stage-figure {
+  margin: 0;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+}
+.landing-stage-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 520px;
+  object-fit: cover;
+  /* Anchor the frame on the action — image has dust on the left and the
+     animals on the right; this keeps both in view as the band shrinks. */
+  object-position: center 35%;
+}
+.landing-stage-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 22px 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+.landing-stage-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  font-weight: 500;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.landing-stage-line {
+  font-size: 15px;
+  color: var(--text-primary);
+  line-height: 1.45;
+  max-width: 60ch;
+}
+
 .landing-pillars {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -2774,6 +2817,9 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   .landing-headline { font-size: 32px; }
   .landing-sub { font-size: 15px; }
   .landing-pillars { grid-template-columns: 1fr; }
+  .landing-stage-img { max-height: 320px; }
+  .landing-stage-caption { padding: 14px 16px 16px; }
+  .landing-stage-line { font-size: 14px; }
   .landing-main { padding: 40px 18px 56px; }
   .landing-nav-inner { padding: 12px 18px; }
   .landing-nav-links { gap: 12px; }
