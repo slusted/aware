@@ -103,6 +103,7 @@ def _evidence_for_predicate(db: Session, predicate_id: int) -> list[EvidenceInpu
             counter_evidence_strength=r.counter_evidence_strength,
             incentive_bias=r.incentive_bias,
             redundancy_score=r.redundancy_score,
+            evidence_under_alt_bucket=r.evidence_under_alt_bucket,
         )
         for r in rows
     ]

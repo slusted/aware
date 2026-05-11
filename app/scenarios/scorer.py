@@ -1,7 +1,7 @@
 """Sonnet-driven multi-pass evidence scorer.
 
 Runs after the Haiku triage classifier ([classifier.py]) has emitted a
-ProposedEvidence for a finding. For each proposal, scores four
+ProposedEvidence for a finding. For each proposal, scores five
 independent dimensions of evidence quality from the
 `predicate_scorer` skill (registered in app/skills.py KNOWN_SKILLS):
 
@@ -9,6 +9,7 @@ independent dimensions of evidence quality from the
   - base_rate (high/medium/low)
   - counter_evidence (none/weak/strong + example)
   - incentive_bias (+/−/0)
+  - evidence_under_alt (rare/occasional/common) — P(E|¬H)
 
 The skill body is loaded through `app.skills.load_active(...)` so it
 appears in the admin /settings/skills tab and edits made through the UI
@@ -54,10 +55,11 @@ _VALID_MECHANISM_TYPE = ("pricing", "ux", "distribution", "trust", "other")
 _VALID_BASE_RATE = ("high", "medium", "low")
 _VALID_COUNTER = ("none", "weak", "strong")
 _VALID_INCENTIVE = ("+", "-", "0")
+_VALID_EVIDENCE_UNDER_ALT = ("rare", "occasional", "common")
 
 
 class ScoredFields(NamedTuple):
-    """All four dimensions in one tuple. None on any field means the
+    """All scored dimensions in one tuple. None on any field means the
     LLM gave us something we couldn't validate; the math layer treats
     None as a neutral multiplier (=1.0) for that field."""
     mechanism_present: str | None       # "yes" | "no"
@@ -66,6 +68,10 @@ class ScoredFields(NamedTuple):
     counter_evidence_strength: str | None  # none|weak|strong
     counter_evidence_example: str | None
     incentive_bias: str | None          # "+" | "-" | "0"
+    # P(E|¬H) — would a finding like this appear about as often if the
+    # predicate were in a different state? rare = strongly discriminating;
+    # common = the LR is ~1 regardless of headline tone.
+    evidence_under_alt_bucket: str | None  # rare|occasional|common
 
 
 # ── Skill / system prompt loading ───────────────────────────────────────
@@ -121,7 +127,7 @@ def _user_prompt(
         f"Target state: {target_state_label}\n"
         f"Direction: {direction}\n"
         f"Strength bucket: {strength_bucket}\n\n"
-        f"Score the four dimensions per the skill instructions. Return JSON only."
+        f"Score the five dimensions per the skill instructions. Return JSON only."
     )
 
 
@@ -207,6 +213,12 @@ def parse_response(raw: str) -> ScoredFields | None:
         _VALID_INCENTIVE,
     )
 
+    alt = parsed.get("evidence_under_alt") or {}
+    alt_bucket = _validate_choice(
+        alt.get("bucket") if isinstance(alt, dict) else None,
+        _VALID_EVIDENCE_UNDER_ALT,
+    )
+
     return ScoredFields(
         mechanism_present=mech_present,
         mechanism_type=mech_type,
@@ -214,6 +226,7 @@ def parse_response(raw: str) -> ScoredFields | None:
         counter_evidence_strength=counter_strength,
         counter_evidence_example=counter_example,
         incentive_bias=bias_value,
+        evidence_under_alt_bucket=alt_bucket,
     )
 
 
