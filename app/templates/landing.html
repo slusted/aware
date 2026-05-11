@@ -8,7 +8,7 @@
   <link rel="icon" type="image/png" href="{{ agent_brand.avatar_url }}">
   <link rel="preconnect" href="https://rsms.me/">
   <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
-  <link rel="stylesheet" href="/static/style.css?v=m-and-a-1">
+  <link rel="stylesheet" href="/static/style.css?v=landing-ia-1">
   <script>
     function toggleTheme() {
       var html = document.documentElement;
@@ -28,6 +28,7 @@
     </a>
     <nav class="landing-nav-links">
       <a href="#how">How it works</a>
+      <a href="#agent">Agent</a>
       <a href="#signals">Signals</a>
       <button type="button" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
         <svg class="icon-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -49,67 +50,97 @@
   <section class="landing-hero">
     <div class="landing-eyebrow">Competitive intelligence, on autopilot</div>
     <h1 class="landing-headline">
-      See what your competitors are <em>actually</em> doing — before your customers tell you.
+      An agent that watches your market — so you can decide what to <em>do</em> about it.
     </h1>
     <p class="landing-sub">
-      Press releases lag. Newsletters drown you. Competitor Watch sweeps your market every day,
-      clusters the noise into signals that matter, and ranks them against what you said you care about.
+      {{ agent_brand.name }} sweeps your competitors every day, clusters the noise into signals worth reading,
+      and ties what's happening now to what's coming next. You get a feed, a snapshot, a forecast, and the briefs
+      to act on them — in one place.
     </p>
     <div class="landing-cta-row">
       <a class="btn primary landing-cta" href="/login">Sign in</a>
       <a class="btn-ghost landing-cta" href="#how">See how it works</a>
     </div>
     <div class="landing-meta">
-      Daily scans · Funding · Hires · Launches · Pricing · Voice of customer · Market synthesis
+      Findings · Present · Future · Execute — stitched together by your agent
     </div>
   </section>
 
-  <!-- Three pillars: Watch / Detect / Decide -->
+  <!-- Four pillars mirror the in-app IA: Findings → Present → Future → Execute -->
   <section class="landing-pillars" id="how">
     <div class="landing-pillar">
-      <div class="landing-pillar-num">01</div>
-      <h2>Watch</h2>
-      <p class="landing-pillar-lede">Build a living watchlist — not a stale spreadsheet.</p>
+      <div class="landing-pillar-num">01 · Findings</div>
+      <h2>What just happened</h2>
+      <p class="landing-pillar-lede">The unfiltered feed — and the bets you make from it.</p>
       <ul class="landing-list">
-        <li>Add a competitor by name; autofill enriches homepage, positioning, ICP, and pricing.</li>
-        <li>The Discover panel proposes new competitors you aren't tracking yet, weekly.</li>
-        <li>Dismissals are sticky. The list stays clean while the market moves.</li>
+        <li>An evidence stream of funding, M&amp;A, hires, launches, integrations, pricing, and messaging shifts.</li>
+        <li>Predictions: stand up a hypothesis, and findings get matched to it as evidence accrues.</li>
+        <li>Swipe feedback teaches the ranker which signals you keep reading and which you skip.</li>
       </ul>
     </div>
     <div class="landing-pillar">
-      <div class="landing-pillar-num">02</div>
-      <h2>Detect</h2>
-      <p class="landing-pillar-lede">Signals, not headlines. Clustered, deduped, ranked.</p>
+      <div class="landing-pillar-num">02 · Present</div>
+      <h2>Where the players stand</h2>
+      <p class="landing-pillar-lede">A live snapshot of the field — yours, theirs, the customer's.</p>
       <ul class="landing-list">
-        <li>Funding rounds, key hires, product launches, integrations, pricing shifts, messaging changes.</li>
-        <li>Voice-of-customer mentions pulled from across the open web.</li>
-        <li>A swipe-feedback ranker learns which signals you keep and which you skip.</li>
+        <li>Company, Customers, and Competitors briefs — positioning, ICP, and pricing kept current.</li>
+        <li>A Market brief that synthesises across competitors, not one logo at a time.</li>
+        <li>Discover proposes new competitors you aren't tracking yet, weekly. Dismissals stick.</li>
       </ul>
     </div>
     <div class="landing-pillar">
-      <div class="landing-pillar-num">03</div>
-      <h2>Decide</h2>
-      <p class="landing-pillar-lede">From signal to response, in one click.</p>
+      <div class="landing-pillar-num">03 · Future</div>
+      <h2>Where the puck is going</h2>
+      <p class="landing-pillar-lede">Scenarios, not vibes. Pre-mortems wired to real evidence.</p>
       <ul class="landing-list">
-        <li>Deep-research reports on any single competitor when a signal demands it.</li>
-        <li>Cross-competitor market synthesis: where the puck is going, not where it was.</li>
-        <li>Briefs you can paste into a strategy doc — no re-reading the source links.</li>
+        <li>Frame a scenario, attach the predictions it depends on, watch the math update as evidence lands.</li>
+        <li>Deep-research reports on any one competitor when a single signal demands a closer look.</li>
+        <li>Audit digests show what changed in your worldview this week — and why.</li>
+      </ul>
+    </div>
+    <div class="landing-pillar">
+      <div class="landing-pillar-num">04 · Execute</div>
+      <h2>Turn intel into action</h2>
+      <p class="landing-pillar-lede">Briefs your team can actually use — not another tab to skim.</p>
+      <ul class="landing-list">
+        <li>Battle cards generated from the signals and predictions that matter <em>now</em>.</li>
+        <li>Voice-of-customer rollups for product, marketing, and CS to share a common reality.</li>
+        <li>Digests that land in inboxes on a schedule — and let recipients reply to converse.</li>
       </ul>
     </div>
   </section>
 
-  <!-- Signal taxonomy strip -->
+  <!-- Agent as connective tissue — mirrors the elevated launcher in the sidebar nav -->
+  <section class="landing-signals" id="agent">
+    <h2 class="landing-section-title">{{ agent_brand.name }} stitches it together</h2>
+    <p class="landing-section-sub">
+      Your agent isn't a chatbot bolted on — it's the connective tissue across Findings, Present,
+      Future, and Execute. Ask it a question, and it answers from the same data the rest of the
+      product runs on.
+    </p>
+    <div class="landing-chip-grid">
+      <span class="landing-chip">Scheduled questions</span>
+      <span class="landing-chip">Multi-recipient email</span>
+      <span class="landing-chip">Reply-to-converse</span>
+      <span class="landing-chip">Cites the underlying findings</span>
+      <span class="landing-chip">Reads your watchlist + briefs</span>
+    </div>
+  </section>
+
+  <!-- Signal taxonomy strip — matches the SIGNAL_TYPES tuple in app/ui.py -->
   <section class="landing-signals" id="signals">
     <h2 class="landing-section-title">The signals we surface</h2>
     <p class="landing-section-sub">Every finding is tagged so the noisy stuff stays out of your way.</p>
     <div class="landing-chip-grid">
       <span class="landing-chip">Funding</span>
+      <span class="landing-chip">M&amp;A</span>
       <span class="landing-chip">Hires</span>
       <span class="landing-chip">Launches</span>
       <span class="landing-chip">Integrations</span>
       <span class="landing-chip">Pricing</span>
       <span class="landing-chip">Messaging</span>
       <span class="landing-chip">Voice of customer</span>
+      <span class="landing-chip">VoC themes</span>
       <span class="landing-chip">News</span>
       <span class="landing-chip">Momentum</span>
     </div>
@@ -119,7 +150,7 @@
   <section class="landing-closer">
     <h2 class="landing-closer-title">Stop reacting. Start anticipating.</h2>
     <p class="landing-closer-sub">
-      Sign in to see your stream, your watchlist, and your last scan.
+      Sign in to meet {{ agent_brand.name }}, set up your watchlist, and see today's findings.
     </p>
     <div class="landing-cta-row">
       <a class="btn primary landing-cta" href="/login">Sign in</a>
