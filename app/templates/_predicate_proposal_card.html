@@ -61,6 +61,51 @@
           <span class="muted">— {{ proposal.target_payload.reason_short }}</span>
         {% endif %}
       </div>
+    {% elif proposal.kind == "merge_with" %}
+      <div class="proposal-card-payload">
+        Merge
+        <code>{{ proposal.target_payload.loser_predicate_key }}</code>
+        →
+        <code>{{ proposal.target_payload.winner_predicate_key }}</code>
+        {% if proposal.target_payload.evidence_overlap_pct is not none %}
+          <span class="muted">·
+            {{ proposal.target_payload.evidence_overlap_pct }}% evidence overlap
+          </span>
+        {% endif %}
+      </div>
+    {% elif proposal.kind == "split_predicate" %}
+      <div class="proposal-card-payload">
+        Split <code>{{ proposal.target_payload.source_predicate_key }}</code>
+        {% if proposal.target_payload.retire_source %}
+          <span class="muted">(retires the source)</span>
+        {% endif %}
+        into:
+        <ul class="proposal-card-payload-list">
+          {% for np in proposal.target_payload.new_predicates or [] %}
+            <li>
+              <code>{{ np.key }}</code> — {{ np.name }}
+            </li>
+          {% endfor %}
+        </ul>
+        {% if proposal.target_payload.evidence_remap %}
+          <p class="muted">
+            Remaps {{ proposal.target_payload.evidence_remap | length }} evidence row(s).
+          </p>
+        {% endif %}
+      </div>
+    {% elif proposal.kind == "narrow_scope" %}
+      <div class="proposal-card-payload">
+        <div>
+          Narrow <code>{{ proposal.target_payload.source_predicate_key }}</code>
+          <span class="muted">motivated by
+            <code>{{ proposal.target_payload.motivating_predicate_key }}</code>
+          </span>
+        </div>
+        {% if proposal.target_payload.new_statement %}
+          <div class="proposal-card-payload-label muted">Proposed statement</div>
+          <div>{{ proposal.target_payload.new_statement }}</div>
+        {% endif %}
+      </div>
     {% else %}
       <div class="proposal-card-payload muted">{{ proposal.target_payload }}</div>
     {% endif %}

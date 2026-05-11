@@ -57,6 +57,35 @@ def _run_predicate_review_scheduled():
         db.close()
 
 
+def _run_predicate_mece_audit_scheduled():
+    """Cron entrypoint for the monthly MECE roster audit. Enqueues a Run
+    of kind 'predicate_mece_audit'. Same in-flight guard as the review
+    cron — two MECE audits in flight at once would just duplicate
+    proposals on the queue."""
+    from .db import SessionLocal
+    db = SessionLocal()
+    try:
+        from .models import Run
+        in_flight = (
+            db.query(Run)
+            .filter(
+                Run.kind == "predicate_mece_audit",
+                Run.status.in_(("queued", "running", "cancelling")),
+            )
+            .first()
+        )
+        if in_flight is not None:
+            print(
+                "  [scheduler] predicate_mece_audit_monthly skipped — "
+                f"run #{in_flight.id} already {in_flight.status}",
+                flush=True,
+            )
+            return
+        jobs.enqueue_run(db, "predicate_mece_audit", triggered_by="schedule")
+    finally:
+        db.close()
+
+
 def _run_discover_competitors_scheduled():
     """Cron entrypoint for the weekly competitor-discovery pass. Uses a
     7-day window so suggestions stay fresh without re-mining months of
@@ -270,6 +299,27 @@ def start():
             print(
                 f"[scheduler] invalid PREDICATE_REVIEW_CRON={pr_cron!r}; "
                 "expected five-field cron. Skipping monthly review."
+            )
+
+    # Monthly MECE roster audit (docs/scenarios/07-mece-roster-audit.md).
+    # 07:00 UTC on the 1st of each month by default — staggered one hour
+    # after the per-predicate review so any Spec-06 proposals already
+    # exist when the audit reads the roster. Configurable via
+    # MECE_AUDIT_CRON; empty disables.
+    ma_cron = os.environ.get("MECE_AUDIT_CRON", "0 7 1 * *")
+    if ma_cron.strip():
+        try:
+            sched.add_job(
+                _run_predicate_mece_audit_scheduled,
+                CronTrigger.from_crontab(ma_cron),
+                id="predicate_mece_audit_monthly",
+                replace_existing=True,
+                misfire_grace_time=3600,
+            )
+        except ValueError:
+            print(
+                f"[scheduler] invalid MECE_AUDIT_CRON={ma_cron!r}; "
+                "expected five-field cron. Skipping monthly MECE audit."
             )
 
     # App-store reviews ingest (docs/voc/01-app-reviews.md). Daily, 2 hours
