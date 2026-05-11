@@ -462,6 +462,11 @@ def _dispatch_queued_run(run_id: int, kind: str, args: dict, triggered_by: str) 
                 predicate_keys=args.get("predicate_keys"),
                 run_id=run_id,
             )
+        elif kind == "predicate_mece_audit":
+            run_predicate_mece_audit_job(
+                triggered_by=triggered_by,
+                run_id=run_id,
+            )
         else:
             raise ValueError(f"queue dispatch: unknown run kind {kind!r}")
     except Exception as e:
@@ -2801,6 +2806,66 @@ def run_predicate_review_job(
         level = "warn" if result.errors else "info"
         _log(db, run, summary, level)
         # Keep the count visible on the run row's badges.
+        run.findings_count = result.proposals_created
+        db.commit()
+        _finish_run(db, run, "ok")
+    except Exception as e:
+        tb = traceback.format_exc()
+        _log(db, run, f"ERROR: {e}\n{tb}", "error")
+        _finish_run(db, run, "error", str(e))
+    finally:
+        current_run_id.reset(token)
+
+
+def run_predicate_mece_audit_job(
+    triggered_by: str = "manual",
+    run_id: int | None = None,
+) -> None:
+    """Wrap run_mece_audit in a Run row (docs/scenarios/07-mece-roster-audit.md).
+    One LLM call per run; persists 0..N cross-roster proposals to the
+    global queue surfaced at /scenarios/proposals. With ANTHROPIC_API_KEY
+    unset the underlying pipeline returns a zero-result without writing
+    rows — the run still completes 'ok' with a warning event, so empty
+    months are diagnosable.
+    """
+    run, db = _start_run("predicate_mece_audit", triggered_by, run_id=run_id)
+    run_id = run.id
+    token = current_run_id.set(run_id)
+    try:
+        from .scenarios.audit import run_mece_audit
+
+        _log(db, run, "starting MECE roster audit")
+
+        def _emit(msg: str) -> None:
+            # The audit emits a handful of lines per run (one per
+            # dropped-at-gate proposal plus a final summary). Cheap.
+            _log(db, run, msg)
+
+        result = run_mece_audit(db, run_id=run_id, log=_emit)
+        db.commit()
+
+        if result.error:
+            _log(db, run, f"audit failed: {result.error}", "warn")
+            _finish_run(db, run, "ok")
+            return
+
+        by_kind_str = ", ".join(
+            f"{k}={v}" for k, v in sorted(result.by_kind.items())
+        ) or "none"
+        drops_str = (
+            ", ".join(f"{k}={v}" for k, v in sorted(result.dropped_at_gate.items()))
+            or "none"
+        )
+        if result.no_op:
+            summary = f"no_op · 0 proposals · drops: {drops_str}"
+            if result.rationale_no_op:
+                summary += f" · rationale: {result.rationale_no_op[:240]}"
+        else:
+            summary = (
+                f"{result.proposals_created} proposals ({by_kind_str}) "
+                f"· drops: {drops_str}"
+            )
+        _log(db, run, summary)
         run.findings_count = result.proposals_created
         db.commit()
         _finish_run(db, run, "ok")

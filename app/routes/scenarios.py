@@ -31,6 +31,7 @@ from ..models import (
     SignalView,
     User,
 )
+from ..scenarios import audit as audit_svc
 from ..scenarios import dashboard as dashboard_svc
 from ..scenarios import review as review_svc
 from ..scenarios.service import (
@@ -605,6 +606,61 @@ def trigger_predicate_review(
     }
 
 
+# ── Stage 7: MECE roster audit (docs/scenarios/07-mece-roster-audit.md) ─
+
+
+@router.get("/scenarios/proposals", response_class=HTMLResponse)
+def scenarios_proposals_index(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Global proposals queue — every pending cross-roster proposal
+    (Spec 07 kinds: merge_with, split_predicate, narrow_scope), grouped
+    by kind. Spec 06's per-predicate proposals are not surfaced here —
+    each prediction's detail page already shows its own queue."""
+    proposals = audit_svc.pending_global_proposals(db)
+    proposals_by_kind: dict[str, list] = {}
+    for p in proposals:
+        proposals_by_kind.setdefault(p.kind, []).append(p)
+    # When the queue is empty, surface the last audit's completed_at so
+    # the empty-state can say "audit ran X and found nothing" rather
+    # than "audit hasn't run."
+    last_digest = audit_svc.latest_audit_digest(db, fresh_days=365)
+    last_completed = last_digest.completed_at if last_digest else None
+    return templates.TemplateResponse(
+        request,
+        "scenarios_proposals_index.html",
+        {
+            "proposals": proposals,
+            "proposals_by_kind": proposals_by_kind,
+            "last_audit_completed_at": last_completed,
+            "user": user,
+        },
+    )
+
+
+@router.post("/api/runs/predicate-mece-audit", status_code=202)
+def trigger_predicate_mece_audit(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role("admin", "analyst")),
+):
+    """Manually enqueue a MECE-audit run. Same fire-and-forget shape as
+    the predicate-review trigger. The cron fires monthly; this endpoint
+    is for the dashboard "Re-run audit" button and the chat tool."""
+    run = jobs.enqueue_run(
+        db,
+        "predicate_mece_audit",
+        triggered_by="manual",
+    )
+    return {
+        "queued": True,
+        "kind": "predicate_mece_audit",
+        "run_id": run.id,
+        "queue_position": jobs.queue_position(db, run.id),
+    }
+
+
 @router.post("/api/runs/scenarios-recompute", status_code=202)
 def trigger_recompute(
     db: Session = Depends(get_db),
@@ -704,6 +760,7 @@ def scenarios_index(
         "valid_predicate_sorts": VALID_PREDICATE_SORTS,
         "valid_evidence_sorts": VALID_EVIDENCE_SORTS,
         "review_digest": review_svc.latest_digest(db),
+        "audit_digest": audit_svc.latest_audit_digest(db),
     })
 
 

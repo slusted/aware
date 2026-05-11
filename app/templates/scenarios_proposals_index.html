@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Prediction proposals queue{% endblock %}
+
+{% block content %}
+{% include "_scenarios_page_head.html" %}
+
+<section class="proposals-queue">
+  <header class="proposals-queue-head">
+    <h2>Proposals queue</h2>
+    <p class="muted">
+      Pending cross-roster proposals from the monthly MECE audit
+      (<a href="/docs/scenarios/07-mece-roster-audit.md">Spec 07</a>).
+      Per-prediction proposals from the monthly review live on each
+      prediction's detail page.
+    </p>
+    {% if user and user.role in ("admin", "analyst") %}
+      <p>
+        <button type="button" id="mece-audit-trigger-btn" class="btn-ghost">
+          Run audit now
+        </button>
+      </p>
+    {% endif %}
+  </header>
+
+  {% if not proposals %}
+    <p class="muted proposals-queue-empty">
+      No pending audit proposals.
+      {% if last_audit_completed_at %}
+        Last audit ran {{ last_audit_completed_at.strftime('%Y-%m-%d %H:%M') }}
+        and found no MECE violations.
+      {% else %}
+        The monthly audit hasn't run yet.
+      {% endif %}
+    </p>
+  {% else %}
+    {% for kind in ("merge_with", "split_predicate", "narrow_scope") %}
+      {% set group = proposals_by_kind.get(kind) or [] %}
+      {% if group %}
+        <section class="proposals-queue-group proposals-queue-group-{{ kind }}">
+          <h3 class="proposals-queue-group-head">
+            {% if kind == "merge_with" %}Merge ({{ group | length }})
+            {% elif kind == "split_predicate" %}Split ({{ group | length }})
+            {% elif kind == "narrow_scope" %}Narrow scope ({{ group | length }})
+            {% endif %}
+          </h3>
+          <div class="proposals-queue-group-body">
+            {% for proposal in group %}
+              {% include "_predicate_proposal_card.html" %}
+            {% endfor %}
+          </div>
+        </section>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+</section>
+
+<script>
+(() => {
+  const btn = document.getElementById('mece-audit-trigger-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = 'Queueing…';
+    try {
+      const r = await fetch('/api/runs/predicate-mece-audit', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {'Accept': 'application/json'},
+      });
+      if (!r.ok) throw new Error('http ' + r.status);
+      const data = await r.json();
+      btn.textContent = 'Queued · run #' + data.run_id;
+    } catch (err) {
+      btn.textContent = 'Failed — ' + err;
+    } finally {
+      setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 4000);
+    }
+  });
+})();
+</script>
+{% endblock %}

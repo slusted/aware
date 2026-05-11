@@ -1,0 +1,72 @@
+{# MECE roster audit digest strip on /scenarios root. Auto-collapses ≥7
+   days after the run completes — the route only passes a non-None
+   `audit_digest` when within the freshness window.
+   Companion partial to _scenarios_review_digest.html (Spec 06); this
+   one (Spec 07) shows the cross-roster audit summary.
+
+   Args:
+     audit_digest - AuditDigest (app/scenarios/audit.py)
+     user         - current user (for the Re-run button gate)
+#}
+{% if audit_digest %}
+  <aside class="audit-digest-strip review-digest-strip">
+    <header class="review-digest-strip-head">
+      <strong>Monthly MECE audit</strong>
+      {% if audit_digest.completed_at %}
+        <span class="muted">·
+          ran {{ audit_digest.completed_at.strftime('%Y-%m-%d %H:%M') }}
+        </span>
+      {% endif %}
+    </header>
+
+    <p class="review-digest-strip-body">
+      {% if audit_digest.no_op %}
+        <strong>No MECE violations found.</strong> Roster is healthy.
+      {% else %}
+        {% set total = audit_digest.by_kind.values() | sum %}
+        <strong>{{ total }}</strong> proposal{% if total != 1 %}s{% endif %} pending
+        ·
+        <strong>{{ audit_digest.by_kind.get("merge_with", 0) }}</strong> merge
+        ·
+        <strong>{{ audit_digest.by_kind.get("split_predicate", 0) }}</strong> split
+        ·
+        <strong>{{ audit_digest.by_kind.get("narrow_scope", 0) }}</strong> narrow
+      {% endif %}
+    </p>
+
+    <footer class="review-digest-strip-foot">
+      {% if not audit_digest.no_op %}
+        <a class="btn-ghost" href="/scenarios/proposals">Open queue</a>
+      {% endif %}
+      {% if user and user.role in ("admin", "analyst") %}
+        <button type="button" id="predicate-mece-audit-rerun-btn" class="btn-ghost">Re-run audit</button>
+      {% endif %}
+    </footer>
+  </aside>
+
+  <script>
+  (() => {
+    const btn = document.getElementById('predicate-mece-audit-rerun-btn');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = 'Queueing…';
+      try {
+        const r = await fetch('/api/runs/predicate-mece-audit', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {'Accept': 'application/json'},
+        });
+        if (!r.ok) throw new Error('http ' + r.status);
+        const data = await r.json();
+        btn.textContent = 'Queued · run #' + data.run_id;
+      } catch (err) {
+        btn.textContent = 'Failed — ' + err;
+      } finally {
+        setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 4000);
+      }
+    });
+  })();
+  </script>
+{% endif %}
