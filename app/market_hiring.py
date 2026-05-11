@@ -189,27 +189,12 @@ def _bucket_and_cap(
 # Step 1 — per-competitor mini-summary
 # ──────────────────────────────────────────────────────────────────
 
-_PER_COMPETITOR_SYSTEM = """You are a competitive-intelligence analyst summarising one competitor's open hiring postings into a structured snapshot. Generic-role-level only — never quote raw posting titles back. Output is JSON, no prose.
-
-Schema:
-{
-  "name": "<competitor name>",
-  "count": <int>,                            // how many postings you actually classified
-  "by_function": {"engineering": 12, "product": 3, ...},  // lowercase keys; pick from: engineering, product, design, data_ml, sales, marketing, ops, finance_legal, people, customer, other
-  "by_seniority": {"leadership": 1, "principal_staff": 2, "senior": 6, "mid": 4, "junior": 1},  // counts
-  "themes": ["AI/ML platform build-out", "EU expansion", ...],   // 0-5 short phrases describing what this hiring mix is investing in
-  "locations": ["Sydney", "London", "Remote AU/NZ", ...],        // dedup'd, top 5
-  "common_roles": ["senior backend engineers", "enterprise AEs"], // GENERIC role descriptions only, 0-6 phrases
-  "unusual_roles": ["clinical operations lead", "RLHF data labellers"], // anything that stands out for THIS competitor's known posture, 0-4 phrases
-  "strategic_read": "<one sentence on what this hiring profile suggests they're investing in>"
-}
-
-Rules:
-- Use the strategy review (if provided) to judge what's "unusual" for this competitor — outliers vs their known direction.
-- If a posting's function is ambiguous, pick the closest bucket; never invent a new key.
-- common_roles describes the modal hiring; unusual_roles describes outliers within their own mix. Both are GENERIC: "senior backend engineers" not "Senior Software Engineer II - Marketplace".
-- Return ONLY the JSON object. No code fences, no preamble.
-"""
+# Both system prompts live in the skill system so analysts can edit them
+# via /settings/skills without a code change. Seeds in skill/. We resolve
+# both bodies once at the start of synthesize_hiring and pass them in to
+# avoid a DB hit per parallel per-competitor call.
+SKILL_PER_COMPETITOR = "market_hiring_per_competitor"
+SKILL_STITCH = "market_hiring_stitch"
 
 
 def _format_posting_for_step1(f: Finding) -> str:
@@ -238,11 +223,11 @@ Produce the JSON snapshot now.
 """
 
 
-def _classify_competitor(client, cut: _CompetitorCut) -> dict:
+def _classify_competitor(client, cut: _CompetitorCut, system_prompt: str) -> dict:
     resp = client.messages.create(
         model=MODEL,
         max_tokens=900,
-        system=_PER_COMPETITOR_SYSTEM,
+        system=system_prompt,
         messages=[{"role": "user", "content": _per_competitor_user_prompt(cut)}],
     )
     raw = resp.content[0].text.strip()
@@ -269,55 +254,7 @@ def _classify_competitor(client, cut: _CompetitorCut) -> dict:
 # Step 2 — cross-stitch
 # ──────────────────────────────────────────────────────────────────
 
-_STITCH_SYSTEM = """You are a competitive-intelligence analyst writing a cross-market hiring brief for a strategy team. Your input is a set of structured per-competitor snapshots already grouped by competitor category (job_board, ats, labour_hire, adjacent, etc.). Your job is to synthesise — not list every snapshot back.
-
-Output is a single Markdown document with EXACTLY this structure:
-
-## Top-line read
-
-2–3 sentences: total postings in window, dominant function across the market, one striking pattern (a category that's hiring against type, an unusual concentration, a gap nobody is filling). No preamble.
-
-## Hiring posture by competitor type
-
-For each competitor category present in the input — ordered by total postings in that category (most first) — write:
-
-### {category} ({total postings})
-
-- **What's common:** the typical hiring profile for this category, in plain prose. Generic role descriptions only ("senior backend engineers", "enterprise AEs", "data scientists"). Two or three sentences. Mention which competitors are in this category but DO NOT do per-competitor breakdowns.
-- **What's unusual:** outliers within this category — companies hiring against the grain of their type, novel role types nobody else in the category is recruiting for, surprising gaps. Two or three sentences.
-- **Strategic read:** one or two sentences on what this category's hiring profile suggests about where this *type* of competitor is investing.
-
-Skip categories with zero postings — they go in the Quiet section.
-
-## By function
-
-A short bulleted list, one bullet per major function (engineering, product, sales, etc.). Each bullet: total count, which competitor categories are driving demand. 5–9 bullets max.
-
-## By theme
-
-4–8 model-derived themes that span functions ("AI/ML platform build-out", "Enterprise GTM motion", "EU/APAC expansion", "Trust & safety", etc.). One short bullet per theme: which categories are pulling on this thread, and how hard.
-
-## Seniority signal
-
-A short paragraph or 2–4 bullets on the leadership-vs-IC mix where notable. Skip if uniform.
-
-## Geographic signal
-
-2–4 bullets on geographic concentrations or shifts (new offices, EU/APAC build-outs, hub shifts). Skip the section if nothing stands out.
-
-## Quiet types and competitors
-
-- A bullet for any competitor *category* with zero postings in the window.
-- A bullet for any individual competitor with zero postings (the caller will provide this list). One line each: "**{name}** ({category}) — no postings in window."
-
-## Rules
-
-- Plain prose, no marketing language.
-- Never quote raw posting titles. Always use generic role descriptions.
-- No per-competitor deep-dives — the unit of analysis is the category.
-- No fabrication: every claim must trace to an input snapshot.
-- No closing summary, no "in conclusion" tail.
-"""
+# System prompt lives in the skill system; seed at skill/market_hiring_stitch.md.
 
 
 def _format_snapshots_for_stitch(snapshots: list[dict]) -> str:
@@ -416,6 +353,12 @@ def synthesize_hiring(
     import analyzer
     client = analyzer.client
 
+    # Resolve both skill bodies once. Avoids a DB hit per parallel call
+    # in the fan-out below.
+    from .skills import load_active
+    per_competitor_system = load_active(SKILL_PER_COMPETITOR)
+    stitch_system = load_active(SKILL_STITCH)
+
     # Step 1 — fan out per-competitor calls. Concurrency kept modest so we
     # don't hammer rate limits on a 30-competitor org.
     snapshots: list[dict] = []
@@ -424,7 +367,10 @@ def synthesize_hiring(
         log(f"[hiring] step 1: fanning out {len(cuts)} per-competitor calls "
             f"(max_workers={max_workers})")
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            futures = {ex.submit(_classify_competitor, client, c): c for c in cuts}
+            futures = {
+                ex.submit(_classify_competitor, client, c, per_competitor_system): c
+                for c in cuts
+            }
             for fut in as_completed(futures):
                 cut = futures[fut]
                 try:
@@ -463,7 +409,7 @@ def synthesize_hiring(
     resp = client.messages.create(
         model=MODEL,
         max_tokens=4000,
-        system=_STITCH_SYSTEM,
+        system=stitch_system,
         messages=[{"role": "user", "content": user}],
     )
     body = resp.content[0].text
