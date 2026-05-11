@@ -4427,8 +4427,11 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
 
 /* ─── Stage 5: predicate / scenario edit forms ─────────────────────── */
 
-.predicate-card-edit,
-.scenario-card-edit {
+/* The same -edit class is reused by the Edit button on the card. Pin
+   this highlight to the article so only the in-place edit form gets the
+   accent outline; buttons stay calm .btn-ghost. */
+.predicate-card.predicate-card-edit,
+.scenario-card.scenario-card-edit {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent-soft-strong, rgba(94,106,210,0.25));
 }
