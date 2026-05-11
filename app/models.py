@@ -1064,6 +1064,11 @@ class PredicateEvidence(Base):
     counter_evidence_example: Mapped[str | None] = mapped_column(Text, nullable=True)
     incentive_bias: Mapped[str | None] = mapped_column(String(8), nullable=True)
     redundancy_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # P(E|¬H) bucket — the actual Bayesian discriminativeness question:
+    # if the predicate were in a different state, how often would I still
+    # see a finding like this? Values: "rare" | "occasional" | "common".
+    # NULL → neutral multiplier (=1.0) in the math layer.
+    evidence_under_alt_bucket: Mapped[str | None] = mapped_column(String(16), nullable=True)
     scorer_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     scored_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
