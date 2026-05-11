@@ -26,7 +26,7 @@ from datetime import datetime
 from .db import Base, SessionLocal, engine
 from . import scheduler, skills as skills_module, ui, usage, search_providers
 from .models import Run, RunEvent
-from .routes import status, competitors, runs, findings, reports, usage as usage_routes, skills as skills_routes, context as context_routes, providers as providers_routes, env_keys as env_keys_routes, filters as filters_routes, auth as auth_routes, users as users_routes, signal_events as signal_events_routes, preferences as preferences_routes, chat as chat_routes, notifications as notifications_routes, schedules as schedules_routes, scenarios as scenarios_routes, predicates as predicates_routes, agent_brand as agent_brand_routes, public as public_routes
+from .routes import status, competitors, runs, findings, reports, usage as usage_routes, skills as skills_routes, context as context_routes, providers as providers_routes, env_keys as env_keys_routes, filters as filters_routes, auth as auth_routes, users as users_routes, signal_events as signal_events_routes, preferences as preferences_routes, chat as chat_routes, notifications as notifications_routes, schedules as schedules_routes, scenarios as scenarios_routes, predicates as predicates_routes, agent_brand as agent_brand_routes, public as public_routes, voice as voice_routes
 
 
 def _reap_orphan_runs() -> int:
@@ -359,6 +359,7 @@ app.include_router(providers_routes.router)
 app.include_router(env_keys_routes.router)
 app.include_router(filters_routes.router)
 app.include_router(chat_routes.router)
+app.include_router(voice_routes.router)
 app.include_router(notifications_routes.router)
 app.include_router(schedules_routes.router)
 app.include_router(scenarios_routes.router)

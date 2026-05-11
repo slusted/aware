@@ -36,6 +36,146 @@
     return escapeHtml(text);
   }
 
+  // Voice input — MediaRecorder → POST /api/voice/transcribe → fill textarea.
+  // Bails silently if MediaRecorder or getUserMedia isn't available (older
+  // Safari, insecure-context, etc.) — chat still works fine without it.
+  function mountMicButton(form, input) {
+    if (!form || !input) return null;
+    if (!('MediaRecorder' in window) || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return null;
+    }
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chat-mic-btn';
+    btn.title = 'Voice input (Groq Whisper)';
+    btn.setAttribute('aria-label', 'Voice input');
+    btn.innerHTML = '<span class="chat-mic-icon" aria-hidden="true">🎤</span>';
+    var submit = form.querySelector('button[type="submit"]');
+    if (submit) form.insertBefore(btn, submit);
+    else form.appendChild(btn);
+
+    var recorder = null;
+    var stream = null;
+    var chunks = [];
+    var recording = false;
+    var busy = false;
+    var externalDisabled = false;
+
+    function refreshDisabled() {
+      btn.disabled = busy || externalDisabled || input.disabled;
+    }
+    function setBusy(v) {
+      busy = v;
+      btn.classList.toggle('chat-mic-busy', v);
+      refreshDisabled();
+    }
+    function setRecording(v) {
+      recording = v;
+      btn.classList.toggle('chat-mic-recording', v);
+      btn.title = v ? 'Stop recording' : 'Voice input (Groq Whisper)';
+    }
+    function stopStream() {
+      if (stream) {
+        stream.getTracks().forEach(function (t) { try { t.stop(); } catch (_) {} });
+        stream = null;
+      }
+    }
+    function appendToInput(text) {
+      if (!text) return;
+      var existing = input.value;
+      var sep = existing && !/\s$/.test(existing) ? ' ' : '';
+      input.value = existing + sep + text;
+      input.focus();
+      try { input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
+    }
+
+    async function startRecording() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        alert('Microphone access denied or unavailable: ' + (err && err.message ? err.message : err));
+        return;
+      }
+      chunks = [];
+      var mime = '';
+      var candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+      for (var i = 0; i < candidates.length; i++) {
+        if (window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(candidates[i])) {
+          mime = candidates[i];
+          break;
+        }
+      }
+      try {
+        recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      } catch (err) {
+        stopStream();
+        alert('MediaRecorder failed: ' + (err && err.message ? err.message : err));
+        return;
+      }
+      recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+      recorder.onstop = function () {
+        var type = recorder.mimeType || mime || 'audio/webm';
+        var blob = new Blob(chunks, { type: type });
+        stopStream();
+        setRecording(false);
+        if (!blob.size) { setBusy(false); return; }
+        transcribeBlob(blob, type);
+      };
+      recorder.start();
+      setRecording(true);
+    }
+
+    function stopRecording() {
+      if (recorder && recorder.state !== 'inactive') {
+        setBusy(true);
+        try { recorder.stop(); } catch (_) { setBusy(false); }
+      } else {
+        stopStream();
+        setRecording(false);
+      }
+    }
+
+    function transcribeBlob(blob, type) {
+      var ext = type.indexOf('ogg') !== -1 ? 'ogg' :
+                type.indexOf('mp4') !== -1 ? 'm4a' : 'webm';
+      var fd = new FormData();
+      fd.append('audio', blob, 'voice.' + ext);
+      fetch('/api/voice/transcribe', {
+        method: 'POST',
+        body: fd,
+        credentials: 'same-origin',
+      }).then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; });
+      }).then(function (res) {
+        if (!res.ok) {
+          var msg = (res.body && (res.body.detail || res.body.message)) || ('HTTP ' + res.status);
+          alert('Transcription failed: ' + msg);
+          return;
+        }
+        appendToInput((res.body && res.body.text) || '');
+      }).catch(function (err) {
+        alert('Network error: ' + err);
+      }).then(function () {
+        setBusy(false);
+      });
+    }
+
+    btn.addEventListener('click', function () {
+      if (busy) return;
+      if (recording) stopRecording();
+      else startRecording();
+    });
+
+    return {
+      setDisabled: function (v) { externalDisabled = v; refreshDisabled(); },
+      cleanup: function () {
+        if (recording) { try { recorder && recorder.stop(); } catch (_) {} }
+        stopStream();
+        if (btn.parentNode) btn.parentNode.removeChild(btn);
+      },
+    };
+  }
+
   function createInstance(rootEl) {
     var sessionId = rootEl.dataset.sessionId;
     var thread = rootEl.querySelector('.chat-thread');
@@ -44,6 +184,7 @@
     var titleEl = rootEl.querySelector('.chat-title');
     var renameBtn = rootEl.querySelector('.chat-rename-btn');
     var costEl = rootEl.querySelector('.chat-cost');
+    var micState = mountMicButton(form, input);
 
     if (!thread) return null;
 
@@ -158,6 +299,7 @@
       if (input) input.disabled = streaming;
       var submitBtn = form ? form.querySelector('button[type="submit"]') : null;
       if (submitBtn) submitBtn.disabled = streaming;
+      if (micState && micState.setDisabled) micState.setDisabled(streaming);
     }
 
     function updateCost(total) {
@@ -390,6 +532,7 @@
       thread.removeEventListener('click', onThreadClick);
       if (renameBtn) renameBtn.removeEventListener('click', startRename);
       if (titleEl) titleEl.removeEventListener('dblclick', startRename);
+      if (micState && micState.cleanup) micState.cleanup();
     }
 
     return { cleanup: cleanup, focusInput: function () { if (input) input.focus(); } };
