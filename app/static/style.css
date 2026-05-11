@@ -3137,6 +3137,69 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   50%      { box-shadow: 0 0 0 6px rgba(192, 57, 43, 0); }
 }
 
+/* Speaker button per assistant bubble — reads the message aloud via TTS. */
+.chat-bubble-assistant { position: relative; }
+.chat-speak-btn {
+  appearance: none;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-0);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.chat-bubble-assistant:hover .chat-speak-btn,
+.chat-speak-btn.chat-speak-playing,
+.chat-speak-btn.chat-speak-loading,
+.chat-speak-btn:focus-visible {
+  opacity: 1;
+}
+.chat-speak-btn:hover:not(:disabled) { color: var(--text-primary); border-color: var(--accent); }
+.chat-speak-btn:disabled { cursor: progress; }
+.chat-speak-btn.chat-speak-playing {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.chat-speak-btn.chat-speak-loading::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: chat-speak-spin 0.8s linear infinite;
+}
+@keyframes chat-speak-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Auto-play toggle in the chat header — small checkbox with a label. */
+.chat-autoplay-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: inherit;
+  cursor: pointer;
+  user-select: none;
+}
+.chat-autoplay-toggle input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 /* ---------- Floating chat drawer (docs/chat/03-floating-chat-panel.md) ---------- */
 
 .chat-launcher {

@@ -36,6 +36,100 @@
     return escapeHtml(text);
   }
 
+  // Voice output — POST /api/voice/speak with the assistant message text,
+  // play the returned WAV blob in an Audio element. One shared <audio> per
+  // chat instance so playing a new clip cancels the previous one. The
+  // speaker button on each bubble doubles as a play/stop toggle.
+  var AUTOPLAY_STORAGE_KEY = 'aware.chat.autoplay';
+
+  function readAutoplay() {
+    try { return window.localStorage.getItem(AUTOPLAY_STORAGE_KEY) === '1'; }
+    catch (_) { return false; }
+  }
+  function writeAutoplay(v) {
+    try { window.localStorage.setItem(AUTOPLAY_STORAGE_KEY, v ? '1' : '0'); }
+    catch (_) {}
+  }
+
+  function bubbleText(bubble) {
+    // The rendered HTML has markdown formatting; the raw source lives in
+    // data-md-src for historical messages and currentAssistantBuffer for
+    // streamed ones. Prefer data-md-src; fall back to textContent.
+    var src = bubble && bubble.dataset && bubble.dataset.mdSrc;
+    if (src) return src;
+    return (bubble && bubble.textContent) || '';
+  }
+
+  function mountSpeakerOn(bubbleWrap, getText, audioEl) {
+    // bubbleWrap = .chat-bubble (or wrapper); getText returns the live text.
+    if (!bubbleWrap || bubbleWrap.querySelector('.chat-speak-btn')) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chat-speak-btn';
+    btn.title = 'Read aloud';
+    btn.setAttribute('aria-label', 'Read aloud');
+    btn.textContent = '🔈';
+    bubbleWrap.appendChild(btn);
+
+    var inFlight = false;
+
+    function setPlaying(playing) {
+      btn.classList.toggle('chat-speak-playing', playing);
+      btn.title = playing ? 'Stop' : 'Read aloud';
+    }
+    function setLoading(loading) {
+      btn.classList.toggle('chat-speak-loading', loading);
+      btn.disabled = loading;
+    }
+
+    btn.addEventListener('click', function () {
+      // If this same bubble's audio is playing, stop it.
+      if (audioEl.current === btn && !audioEl.paused) {
+        audioEl.pause();
+        return;
+      }
+      play();
+    });
+
+    function play() {
+      if (inFlight) return;
+      var text = (getText() || '').trim();
+      if (!text) return;
+      inFlight = true;
+      setLoading(true);
+      fetch('/api/voice/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ text: text }),
+      }).then(function (r) {
+        if (!r.ok) return r.text().then(function (t) { throw new Error('HTTP ' + r.status + ': ' + t.slice(0, 200)); });
+        return r.blob();
+      }).then(function (blob) {
+        // Cancel anything playing on the shared <audio>.
+        try { audioEl.pause(); } catch (_) {}
+        if (audioEl.src && audioEl.src.indexOf('blob:') === 0) {
+          try { URL.revokeObjectURL(audioEl.src); } catch (_) {}
+        }
+        audioEl.src = URL.createObjectURL(blob);
+        audioEl.current = btn;
+        audioEl.onplay = function () { setPlaying(true); };
+        audioEl.onpause = function () { setPlaying(false); };
+        audioEl.onended = function () { setPlaying(false); };
+        audioEl.onerror = function () { setPlaying(false); };
+        return audioEl.play();
+      }).catch(function (err) {
+        alert('Voice output failed: ' + (err && err.message ? err.message : err));
+      }).then(function () {
+        inFlight = false;
+        setLoading(false);
+      });
+    }
+
+    btn._chatPlay = play;
+    return btn;
+  }
+
   // Voice input — MediaRecorder → POST /api/voice/transcribe → fill textarea.
   // Bails silently if MediaRecorder or getUserMedia isn't available (older
   // Safari, insecure-context, etc.) — chat still works fine without it.
@@ -185,6 +279,18 @@
     var renameBtn = rootEl.querySelector('.chat-rename-btn');
     var costEl = rootEl.querySelector('.chat-cost');
     var micState = mountMicButton(form, input);
+    var audioEl = new Audio();
+    audioEl.preload = 'none';
+    var autoplayToggle = rootEl.querySelector('[data-chat-autoplay]');
+    if (autoplayToggle) {
+      autoplayToggle.checked = readAutoplay();
+      autoplayToggle.addEventListener('change', function () {
+        writeAutoplay(autoplayToggle.checked);
+      });
+    }
+    function autoplayOn() {
+      return autoplayToggle ? autoplayToggle.checked : readAutoplay();
+    }
 
     if (!thread) return null;
 
@@ -212,6 +318,16 @@
     function hydrateMarkdown() {
       rootEl.querySelectorAll('.chat-md').forEach(function (el) {
         el.innerHTML = renderMarkdown(el.dataset.mdSrc || el.textContent);
+      });
+    }
+
+    function mountSpeakerOnHistorical() {
+      rootEl.querySelectorAll('.chat-msg-assistant .chat-bubble-assistant').forEach(function (bubble) {
+        var md = bubble.querySelector('.chat-md');
+        if (!md) return;
+        mountSpeakerOn(bubble, function () {
+          return md.dataset.mdSrc || md.textContent || '';
+        }, audioEl);
       });
     }
 
@@ -308,6 +424,24 @@
       }
     }
 
+    function finalizeAssistantTurn() {
+      // Called on turn_end. If the trailing bubble is the assistant's, mount
+      // the speaker button on it (so the user can re-listen later), and if
+      // auto-play is on, kick playback immediately.
+      if (!currentAssistantBubble) return;
+      var bubbleWrap = currentAssistantBubble.closest('.chat-bubble-assistant');
+      if (!bubbleWrap) return;
+      var buffered = currentAssistantBuffer;
+      var md = currentAssistantBubble;
+      // Persist the raw markdown source so a click later still reads the
+      // original text (innerHTML has been rewritten by markdown rendering).
+      if (buffered) md.dataset.mdSrc = buffered;
+      var btn = mountSpeakerOn(bubbleWrap, function () {
+        return md.dataset.mdSrc || md.textContent || '';
+      }, audioEl);
+      if (autoplayOn() && btn && btn._chatPlay) btn._chatPlay();
+    }
+
     // ---------------- SSE parsing ----------------
     function parseSSEFrames(buffer) {
       var frames = [];
@@ -366,6 +500,7 @@
           break;
         case 'turn_end':
           updateCost(data.session_total_cost_usd);
+          finalizeAssistantTurn();
           break;
         case 'error':
           appendErrorBubble(data.message || 'Error');
@@ -496,6 +631,7 @@
     if (titleEl) titleEl.addEventListener('dblclick', startRename);
 
     hydrateMarkdown();
+    mountSpeakerOnHistorical();
     scrollToBottom();
 
     // Page-mode only: /chat/new redirects with ?initial=… so the first
@@ -533,6 +669,11 @@
       if (renameBtn) renameBtn.removeEventListener('click', startRename);
       if (titleEl) titleEl.removeEventListener('dblclick', startRename);
       if (micState && micState.cleanup) micState.cleanup();
+      try { audioEl.pause(); } catch (_) {}
+      if (audioEl.src && audioEl.src.indexOf('blob:') === 0) {
+        try { URL.revokeObjectURL(audioEl.src); } catch (_) {}
+      }
+      audioEl.removeAttribute('src');
     }
 
     return { cleanup: cleanup, focusInput: function () { if (input) input.focus(); } };
