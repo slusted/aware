@@ -48,6 +48,12 @@
     <button type="submit" class="btn"
             {% if session.status != 'active' %}disabled{% endif %}>Send</button>
   </form>
+  <div class="chat-skill-cue" title="Every chat turn is driven by this LLM skill">
+    <span class="skill-cue">
+      <span class="skill-cue-label" aria-hidden="true">skill</span>
+      <a href="/admin/skills/chat_system" class="skill-cue-pill">chat_system</a>
+    </span>
+  </div>
 
   {% if session.status != 'active' %}
     <p class="muted" style="margin:8px 12px">This session is archived.</p>

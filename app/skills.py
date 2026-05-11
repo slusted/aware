@@ -167,6 +167,44 @@ def activate_version(name: str, version: int) -> Skill | None:
         db.close()
 
 
+# Map: Run.kind / Report.kind → skill name(s) the job invokes, in call
+# order. Used by templates to render a "skill: X" cue on run/report
+# cards so users can see which LLM skill drove the work. Two-phase jobs
+# list both skills (extract → narrative, per_competitor → stitch).
+# Keep this in sync with the load_active(...) call sites — anything
+# missing here just renders no cue, anything wrong here points the user
+# at the wrong skill admin page. Non-skill LLM flows (inline prompts in
+# classifier.py, autofill, etc.) are deliberately absent.
+KIND_TO_SKILLS: dict[str, tuple[str, ...]] = {
+    "scan": ("competitor_review", "market_digest"),
+    "competitor_scan": ("competitor_review",),
+    "market_digest": ("market_digest",),
+    "market_releases": ("market_releases",),
+    "market_hiring": ("market_hiring_per_competitor", "market_hiring_stitch"),
+    "market_synthesis": ("market_synthesis_brief",),
+    "deep_research": ("deep_research_brief",),
+    "discover_competitors": ("discover_competitors",),
+    "synthesise_voc_themes": ("voc_theme_synthesise",),
+    "predicate_proposal": ("predicate_proposer",),
+    "predicate_mece_audit": ("predicate_mece_audit",),
+    "scenarios_classify_sweep": ("predicate_scorer",),
+}
+
+
+def skills_for_kind(kind: str | None) -> tuple[str, ...]:
+    if not kind:
+        return ()
+    return KIND_TO_SKILLS.get(kind, ())
+
+
+def register_template_globals(templates) -> None:
+    """Wire `skills_for_kind` into a Jinja2Templates env so the
+    _skill_cue.html partial can resolve `kind` → skill list without each
+    caller passing it explicitly. Called from every router that renders
+    a template touching the cue."""
+    templates.env.globals["skills_for_kind"] = skills_for_kind
+
+
 def sync_files_to_db():
     """Called once at app startup. For each known skill, if no active DB row
     exists, seed version 1 from the file on disk. Idempotent."""

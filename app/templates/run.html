@@ -7,6 +7,9 @@
 {% endblock %}
 
 {% block content %}
+<div style="margin-bottom:12px">
+  {% with kind=run.kind %}{% include "_skill_cue.html" %}{% endwith %}
+</div>
 <div class="stat-grid" style="margin-bottom:20px">
   <div class="stat">
     <div class="label">Status</div>
