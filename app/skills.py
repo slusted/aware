@@ -73,6 +73,18 @@ KNOWN_SKILLS: dict[str, tuple[str, str]] = {
         "predicate_scorer.md",
         "Stage-7 evidence-quality scorer. Independently grades each Haiku-triaged proposal on four dimensions (mechanism, base rate, counter-evidence, incentive bias) so the posterior math can dampen weak/stacked findings. Sonnet 4.6 by default; one call per proposal during the sweep.",
     ),
+    "market_releases": (
+        "market_releases.md",
+        "Drives the cross-market Product Releases brief (single Haiku call over product_launch + messaging_shift findings in window). Theme clusters are derived from the data, not a fixed taxonomy.",
+    ),
+    "market_hiring_per_competitor": (
+        "market_hiring_per_competitor.md",
+        "Step 1 of 2 in the Hiring brief — turns one competitor's job postings into a structured JSON snapshot (by_function / by_seniority / themes / common_roles / unusual_roles). Fanned out in parallel, one call per competitor.",
+    ),
+    "market_hiring_stitch": (
+        "market_hiring_stitch.md",
+        "Step 2 of 2 in the Hiring brief — stitches per-competitor JSON snapshots grouped by Competitor.category into the cross-market markdown brief. Analytical unit is the competitor type, not the individual competitor.",
+    ),
 }
 
 
