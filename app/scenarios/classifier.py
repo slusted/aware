@@ -118,6 +118,23 @@ Strength bucket guide:
 
 Use direction="neutral" when the finding mentions a predicate but doesn't clearly support or contradict any one state — it's noted but doesn't move the math.
 
+## Calibration — most news is not strong evidence
+
+The default outcome for a finding is `evidence=[]`. Competitor activity exists; what's rare is activity that genuinely *moves a prior* about deep market structure. Return empty when:
+- The finding is news that a competitor exists, is hiring, is talking, is iterating — without a concrete state change.
+- The action is widely shared across the industry (everyone is doing it → not differentiating evidence for any one state).
+- You'd be guessing about the mechanism connecting the finding to the predicate state.
+- A single press release / blog post is the only source.
+
+Realistic mix across a typical batch of 20 findings:
+- ~60% return `evidence=[]` (no clear predicate mapping).
+- Of the rest: ~70% direction=support, ~15% contradict, ~15% neutral.
+- Of the non-neutral: ~10% strong, ~30% moderate, ~60% weak.
+
+If a batch comes back >50% support/strong, you are over-reading news flow. Re-read with skepticism: would a Bayesian forecaster, who has already priced in "competitors are active in this space," really update their belief that much on this specific finding? If not, drop the strength one bucket or return `[]`.
+
+Equal-weight disconfirmation: if a finding plausibly *contradicts* a state, label it contradict at the matching strength — don't downgrade contradicts just because supportive readings come more naturally from press copy.
+
 Predicate roster:
 {roster}
 
