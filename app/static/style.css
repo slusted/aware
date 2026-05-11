@@ -2161,6 +2161,14 @@ html.public-qa-drawer-active body { overflow: hidden; }
     border-right: none;
     border-bottom: 1px solid var(--border-subtle);
     background: var(--surface-1);
+    /* Desktop sets the sidebar as its own scroll container
+       (height:100vh, overflow-y:scroll, overscroll-behavior:contain).
+       On mobile height is auto, so there's nothing to scroll inside,
+       but the scroll container plus overscroll:contain still swallows
+       touch swipes — so the page itself can't be scrolled while the
+       menu is open. Reset both so the open menu scrolls with the page. */
+    overflow: visible;
+    overscroll-behavior: auto;
   }
 
   .sidebar .brand {
@@ -3201,6 +3209,35 @@ a.btn-ghost.landing-cta:hover { background: var(--surface-2); }
   border-color: var(--accent);
 }
 .chat-input-form textarea:disabled { opacity: 0.6; }
+
+.chat-mic-btn {
+  appearance: none;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-0);
+  color: var(--text-primary);
+  border-radius: var(--r);
+  padding: 0 12px;
+  height: 40px;
+  font-size: 16px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.chat-mic-btn:hover:not(:disabled) { border-color: var(--accent); }
+.chat-mic-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.chat-mic-btn.chat-mic-recording {
+  background: var(--err, #c0392b);
+  border-color: var(--err, #c0392b);
+  color: #fff;
+  animation: chat-mic-pulse 1.2s ease-in-out infinite;
+}
+.chat-mic-btn.chat-mic-busy { opacity: 0.7; }
+@keyframes chat-mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.5); }
+  50%      { box-shadow: 0 0 0 6px rgba(192, 57, 43, 0); }
+}
 
 /* ---------- Floating chat drawer (docs/chat/03-floating-chat-panel.md) ---------- */
 

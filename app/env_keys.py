@@ -52,6 +52,10 @@ MANAGED_KEYS: dict[str, dict] = {
         "category": "engine",
         "description": "Voyage AI (embeddings for semantic ranking — spec 08)",
     },
+    "GROQ_API_KEY": {
+        "category": "engine",
+        "description": "Groq (Whisper speech-to-text for chat voice input)",
+    },
     "GMAIL_USER": {
         "category": "notifications",
         "description": "Gmail address used to send digests, scheduled-question emails, and to receive replies via IMAP.",
