@@ -400,7 +400,7 @@ Clicking a prompt creates a new session (POST `/api/chat/sessions`) with that pr
 - Send "What's new with Ashby this week?" — agent calls `search_findings` and `get_competitor_profile`, streams an answer with `(finding #...)` citations.
 - Send "Run deep research on Ashby" — agent emits a confirmation card. Click Confirm → tool fires, returns the new run id, agent acknowledges. Click Cancel on a follow-up — tool short-circuits with `cancelled=true`, agent acknowledges and asks for direction.
 - Reload `/chat/{id}` mid-stream — page re-renders all prior messages, the interrupted assistant row shows a Retry button. Click Retry → the turn resumes from the last persisted state.
-- Hit the per-turn tool budget (8 calls) by asking a deliberately broad question — assistant sends the budget-hit message and stops cleanly.
+- Hit the per-turn tool budget (16 calls) by asking a deliberately broad question as a non-admin user — assistant sends the budget-hit message and stops cleanly. Admins are exempt and keep going (bounded by `CHAT_TURN_TIMEOUT_S` / `CHAT_SESSION_COST_HARD_USD`).
 - Hit the hard cost cap on a session — `POST /messages` returns 402 with a "session over budget" message; UI shows the cap banner and disables the input.
 - Try to load another user's session by id — 404, not 403 (don't leak existence).
 - As a viewer, send "Run a market synthesis" — agent's tool list doesn't include the write tool, so it explains it can't run that and suggests asking an admin.
