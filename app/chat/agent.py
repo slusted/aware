@@ -34,7 +34,7 @@ from . import tools as tools_module
 
 
 # Per-turn safety knobs. Override via env vars when tuning in prod.
-MAX_TOOL_CALLS_PER_TURN = int(os.environ.get("CHAT_MAX_TOOL_CALLS", "8"))
+MAX_TOOL_CALLS_PER_TURN = int(os.environ.get("CHAT_MAX_TOOL_CALLS", "16"))
 TURN_TIMEOUT_S = int(os.environ.get("CHAT_TURN_TIMEOUT_S", "90"))
 SESSION_COST_HARD_USD = float(os.environ.get("CHAT_SESSION_COST_HARD_USD", "5.0"))
 SESSION_COST_WARN_USD = float(os.environ.get("CHAT_SESSION_COST_WARN_USD", "1.0"))
@@ -573,7 +573,7 @@ def run_turn(
         prepared: list[tuple[dict, "tools_module.Tool | None", bool]] = []
         for block in tool_use_blocks:
             tool_calls_this_turn += 1
-            if tool_calls_this_turn > MAX_TOOL_CALLS_PER_TURN:
+            if user.role != "admin" and tool_calls_this_turn > MAX_TOOL_CALLS_PER_TURN:
                 msg = (
                     f"Hit the per-turn tool-call cap ({MAX_TOOL_CALLS_PER_TURN}). "
                     "Tell me how you'd like to continue."
