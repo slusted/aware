@@ -183,16 +183,20 @@ def _extract_text(interaction: Any) -> str:
     text, return it. Returns '' when nothing matches (caller promotes
     that to a diagnostic failure).
 
-    The Interactions API (confirmed from a live dump) puts text under
-    `interaction.outputs` as a list of blocks, some of which are text
-    (`{'text', 'type', 'annotations'}`) and some data/media
-    (`{'type', 'data', 'mime_type', 'uri'}`). Text-typed blocks are
-    concatenated in document order."""
-    # 1. outputs[*] — the real path. Use _text_from so we tolerate items
-    # whose text lives under .content / .parts / a nested dict, not just a
-    # flat .text attribute. The original "outputs[*].text only" path missed
-    # a shape variant where the block carries text under a content wrapper
-    # and produced empty bodies even when sources extracted fine.
+    The Interactions API carries the report body as a list of text/data
+    blocks (text: `{'text', 'type', 'annotations'}`, data/media:
+    `{'type', 'data', 'mime_type', 'uri'}`). The container around those
+    blocks has shifted between SDK previews — early shape was a flat
+    `interaction.outputs`, current shape (May 2026) is
+    `interaction.steps[*].content` for steps with `type == 'model_output'`.
+    `_outputs_of` hides that drift and returns the flat block list either
+    way. Text-typed blocks are concatenated in document order."""
+    # 1. outputs[*] — the primary path. Use _text_from so we tolerate
+    # items whose text lives under .content / .parts / a nested dict, not
+    # just a flat .text attribute. The original "outputs[*].text only"
+    # path missed a shape variant where the block carries text under a
+    # content wrapper and produced empty bodies even when sources
+    # extracted fine.
     outputs = _outputs_of(interaction)
     if outputs:
         chunks: list[str] = []
@@ -224,20 +228,63 @@ def _extract_text(interaction: Any) -> str:
 
 
 def _outputs_of(interaction: Any) -> list:
-    """Return `interaction.outputs` as a list. Handles the attr form,
-    Pydantic model_dump fallback, and None. Used by both text and
-    source extraction."""
+    """Return the list of output blocks Gemini produced. Used by both
+    text and source extraction.
+
+    Two SDK shapes seen in the wild:
+      - `interaction.outputs` — flat list of text/data blocks (older preview).
+      - `interaction.steps`   — list of step objects whose `type` is one of
+        `user_input` / `thought` / `model_output`. The report body lives in
+        the `model_output` step(s) under `content` (a list of the same
+        text/data blocks the old `outputs` field carried). We flatten those
+        content lists in document order and drop the non-model steps —
+        `user_input` is the brief we sent and `thought` is internal
+        reasoning, neither belongs in the report body or the citations.
+
+    Handles attr access, Pydantic `model_dump`, and None — anything missing
+    falls back to []."""
     outputs = getattr(interaction, "outputs", None)
     if outputs is None:
         dump = getattr(interaction, "model_dump", None)
         if callable(dump):
             try:
-                outputs = dump().get("outputs")
+                data = dump()
             except Exception:
-                outputs = None
+                data = None
+            if isinstance(data, dict):
+                outputs = data.get("outputs")
+                if outputs is None:
+                    outputs = _blocks_from_steps(data.get("steps"))
+    if outputs is None:
+        outputs = _blocks_from_steps(getattr(interaction, "steps", None))
     if outputs is None:
         return []
     return list(outputs) if not isinstance(outputs, list) else outputs
+
+
+def _blocks_from_steps(steps: Any) -> list | None:
+    """Flatten the content blocks of every `model_output` step into a
+    single list. Returns None when there are no steps to walk (so callers
+    can distinguish "shape not present" from "shape present but empty")."""
+    if not steps:
+        return None
+    blocks: list = []
+    for step in steps:
+        step_type = (
+            step.get("type") if isinstance(step, dict)
+            else getattr(step, "type", None)
+        )
+        if str(step_type or "").lower() != "model_output":
+            continue
+        content = (
+            step.get("content") if isinstance(step, dict)
+            else getattr(step, "content", None)
+        )
+        if isinstance(content, list):
+            blocks.extend(content)
+        elif content is not None:
+            blocks.append(content)
+    return blocks
 
 
 def _text_from(obj: Any) -> str:
