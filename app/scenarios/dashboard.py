@@ -109,6 +109,7 @@ class EvidenceContribView(NamedTuple):
     counter_evidence_example: str | None
     incentive_bias: str | None
     redundancy_score: float | None
+    evidence_under_alt_bucket: str | None
     scorer_model: str | None
 
 
@@ -389,6 +390,7 @@ def _evidence_to_contrib_view(
         counter_evidence_strength=ev.counter_evidence_strength,
         incentive_bias=ev.incentive_bias,
         redundancy_score=ev.redundancy_score,
+        evidence_under_alt_bucket=ev.evidence_under_alt_bucket,
     )
     return EvidenceContribView(
         id=ev.id,
@@ -413,6 +415,7 @@ def _evidence_to_contrib_view(
         counter_evidence_example=ev.counter_evidence_example,
         incentive_bias=ev.incentive_bias,
         redundancy_score=ev.redundancy_score,
+        evidence_under_alt_bucket=ev.evidence_under_alt_bucket,
         scorer_model=ev.scorer_model,
     )
 

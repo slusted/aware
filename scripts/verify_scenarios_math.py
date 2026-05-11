@@ -1070,6 +1070,54 @@ def test_scorer_multipliers_and_cap():
           almost(actual_lor, expected_lor, tol=1e-9),
           f"got {actual_lor:.6f}, expected {expected_lor:.6f}")
 
+    # P(E|¬H) discriminativeness — the new Bayesian pass.
+    # evidence_under_alt=common collapses LR by 0.3 — even a strong-
+    # support headline barely moves the needle when the finding isn't
+    # actually discriminating between predicate states.
+    ev_common = [EvidenceInput(
+        "a", "support", "strong", 1.0, now,
+        evidence_under_alt_bucket="common",
+    )]
+    p_common = compute_posterior(prior, ev_common, LR, HL, now=now)
+    expected_lor = math.log(3.0) * 0.3
+    actual_lor = math.log(p_common["a"] / p_common["b"])
+    check("evidence_under_alt=common dampens by ×0.3 (P(E|¬H) is high)",
+          almost(actual_lor, expected_lor, tol=1e-9),
+          f"got {actual_lor:.6f}, expected {expected_lor:.6f}")
+
+    # rare = full weight (genuinely discriminating evidence).
+    ev_rare = [EvidenceInput(
+        "a", "support", "strong", 1.0, now,
+        evidence_under_alt_bucket="rare",
+    )]
+    p_rare = compute_posterior(prior, ev_rare, LR, HL, now=now)
+    expected_lor = math.log(3.0) * 1.0
+    actual_lor = math.log(p_rare["a"] / p_rare["b"])
+    check("evidence_under_alt=rare keeps full weight (×1.0)",
+          almost(actual_lor, expected_lor, tol=1e-9))
+
+    # occasional = ×0.6 — mid-grade discriminativeness.
+    ev_occ = [EvidenceInput(
+        "a", "support", "strong", 1.0, now,
+        evidence_under_alt_bucket="occasional",
+    )]
+    p_occ = compute_posterior(prior, ev_occ, LR, HL, now=now)
+    expected_lor = math.log(3.0) * 0.6
+    actual_lor = math.log(p_occ["a"] / p_occ["b"])
+    check("evidence_under_alt=occasional dampens by ×0.6",
+          almost(actual_lor, expected_lor, tol=1e-9))
+
+    # Unknown / typo bucket → neutral fallback (1.0), no crash.
+    ev_typo = [EvidenceInput(
+        "a", "support", "strong", 1.0, now,
+        evidence_under_alt_bucket="ubiquitous",  # not in the table
+    )]
+    p_typo = compute_posterior(prior, ev_typo, LR, HL, now=now)
+    expected_lor = math.log(3.0) * 1.0
+    actual_lor = math.log(p_typo["a"] / p_typo["b"])
+    check("evidence_under_alt=<unknown> falls back to 1.0 (no crash)",
+          almost(actual_lor, expected_lor, tol=1e-9))
+
     # Direct unit tests on the cap function. The cap is intentionally
     # permissive at the default value (log(10) ≈ 2.30, ~10× odds) so it
     # rarely fires under normal evidence — but its job is to keep one
@@ -1104,7 +1152,8 @@ def test_scorer_parser():
       "mechanism": {"present": "yes", "type": "pricing"},
       "base_rate": {"bucket": "high"},
       "counter_evidence": {"strength": "weak", "example": "could be marketing"},
-      "incentive_bias": {"value": "+"}
+      "incentive_bias": {"value": "+"},
+      "evidence_under_alt": {"bucket": "rare"}
     }"""
     s = parse_response(valid)
     check("parse: valid all-fields response",
@@ -1114,7 +1163,33 @@ def test_scorer_parser():
           and s.base_rate_bucket == "high"
           and s.counter_evidence_strength == "weak"
           and s.counter_evidence_example == "could be marketing"
-          and s.incentive_bias == "+")
+          and s.incentive_bias == "+"
+          and s.evidence_under_alt_bucket == "rare")
+
+    # Missing evidence_under_alt block → field is None (legacy-compatible).
+    legacy = """{
+      "mechanism": {"present": "yes", "type": "pricing"},
+      "base_rate": {"bucket": "high"},
+      "counter_evidence": {"strength": "none", "example": null},
+      "incentive_bias": {"value": "0"}
+    }"""
+    s = parse_response(legacy)
+    check("parse: missing evidence_under_alt → None (legacy compat)",
+          s is not None and s.evidence_under_alt_bucket is None)
+
+    # Invalid evidence_under_alt bucket → None, other fields preserved.
+    bad_alt = """{
+      "mechanism": {"present": "yes", "type": "pricing"},
+      "base_rate": {"bucket": "medium"},
+      "counter_evidence": {"strength": "none", "example": null},
+      "incentive_bias": {"value": "0"},
+      "evidence_under_alt": {"bucket": "ubiquitous"}
+    }"""
+    s = parse_response(bad_alt)
+    check("parse: invalid evidence_under_alt bucket falls back to None",
+          s is not None
+          and s.evidence_under_alt_bucket is None
+          and s.base_rate_bucket == "medium")
 
     # mechanism=no zeroes out type even if the LLM filled it.
     no_mech = """{

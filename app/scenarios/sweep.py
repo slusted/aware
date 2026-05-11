@@ -212,6 +212,7 @@ def _proposed_to_evidence_row(
         row.counter_evidence_strength = scored.counter_evidence_strength
         row.counter_evidence_example = scored.counter_evidence_example
         row.incentive_bias = scored.incentive_bias
+        row.evidence_under_alt_bucket = scored.evidence_under_alt_bucket
         row.scorer_model = scorer_model
         row.scored_at = now
     if redundancy is not None:

@@ -39,6 +39,7 @@ class EvidenceInput(NamedTuple):
     counter_evidence_strength: str | None = None  # "none" | "weak" | "strong"
     incentive_bias: str | None = None           # "+" | "-" | "0"
     redundancy_score: float | None = None       # 0–1 (1 = near-duplicate)
+    evidence_under_alt_bucket: str | None = None  # "rare" | "occasional" | "common"
 
 
 class ScenarioLink(NamedTuple):
@@ -95,6 +96,18 @@ _INCENTIVE_MULT: dict[str | None, float] = {
     None: 1.0,
 }
 
+# Discriminativeness — P(E | ¬H), the actual Bayesian quantity. If the
+# scorer judges that this kind of finding would appear about as often
+# under any state of the predicate, the likelihood ratio collapses to
+# ~1 regardless of how the headline reads — and we want the math to
+# reflect that, not the surface tone.
+_EVIDENCE_UNDER_ALT_MULT: dict[str | None, float] = {
+    "rare": 1.0,         # strongly discriminating — full weight
+    "occasional": 0.6,   # somewhat discriminating — partial weight
+    "common": 0.3,       # non-discriminating — heavy dampening
+    None: 1.0,           # legacy / unscored — neutral
+}
+
 # Per-evidence cap on |Δ logit| applied to the target state. Caps after
 # multiplier composition; sign-preserving so contradictory evidence stays
 # contradictory.
@@ -146,6 +159,7 @@ def _scorer_multiplier(ev: "EvidenceInput") -> float:
         * _COUNTER_MULT.get(ev.counter_evidence_strength, 1.0)
         * _INCENTIVE_MULT.get(ev.incentive_bias, 1.0)
         * _redundancy_multiplier(ev.redundancy_score)
+        * _EVIDENCE_UNDER_ALT_MULT.get(ev.evidence_under_alt_bucket, 1.0)
     )
 
 
@@ -409,6 +423,7 @@ def log_odds_contribution(
     counter_evidence_strength: str | None = None,
     incentive_bias: str | None = None,
     redundancy_score: float | None = None,
+    evidence_under_alt_bucket: str | None = None,
 ) -> float:
     """Per-evidence log-odds contribution as it actually lands in the
     posterior — log(LR) × credibility × decay × scorer multipliers,
@@ -438,6 +453,7 @@ def log_odds_contribution(
         * _COUNTER_MULT.get(counter_evidence_strength, 1.0)
         * _INCENTIVE_MULT.get(incentive_bias, 1.0)
         * _redundancy_multiplier(redundancy_score)
+        * _EVIDENCE_UNDER_ALT_MULT.get(evidence_under_alt_bucket, 1.0)
     )
     return cap_logit_delta(raw)
 
