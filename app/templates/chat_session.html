@@ -33,6 +33,11 @@
       <span class="chat-cost">${{ '%.4f'|format(session.total_cost_usd or 0) }}</span>
       <span aria-hidden="true">·</span>
       <span>{{ session.model }}</span>
+      <span aria-hidden="true">·</span>
+      <label class="chat-autoplay-toggle" title="Read assistant replies aloud as they finish">
+        <input type="checkbox" data-chat-autoplay>
+        <span>🔈 auto-play</span>
+      </label>
     </div>
   </div>
 
