@@ -166,6 +166,11 @@
       <a href="/admin/competitors" class="nav-item {% if path.startswith('/admin/competitors') %}active{% endif %}">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h10v10H3z"/><path d="M3 6h10M6 3v10"/></svg>
         Watchlist
+        {# Live competitor suggestions awaiting review — HTMX-loaded on page load. Hidden when zero. #}
+        <span class="nav-badge-slot"
+              hx-get="/partials/competitor-suggested-count"
+              hx-trigger="load"
+              hx-swap="innerHTML"></span>
       </a>
       <a href="/admin/skills" class="nav-item {% if path.startswith('/admin/skills') %}active{% endif %}">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h12v10H2z"/><path d="M5 6h6M5 9h4"/></svg>

@@ -715,6 +715,23 @@ def admin_competitors(request: Request, db: Session = Depends(get_db), user=Depe
     return templates.TemplateResponse(request, "admin_competitors.html", ctx)
 
 
+@router.get("/partials/competitor-suggested-count", response_class=HTMLResponse)
+def competitor_suggested_count_partial(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    n = (
+        db.query(CompetitorCandidate)
+        .filter(CompetitorCandidate.status == "suggested")
+        .count()
+    )
+    if n <= 0:
+        return HTMLResponse("")
+    return HTMLResponse(
+        f'<span class="nav-badge" title="Competitor suggestions awaiting review">{n}</span>'
+    )
+
+
 @router.get("/partials/discover_status", response_class=HTMLResponse)
 def partial_discover_status(request: Request, db: Session = Depends(get_db),
                             _=Depends(get_current_user)):
