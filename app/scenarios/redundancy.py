@@ -32,8 +32,16 @@ from ..models import Finding, PredicateEvidence
 
 # Cosine sim below this contributes 0; at 1.0 contributes 1.0; linear
 # scale in between so the penalty grows smoothly with similarity.
-_SIM_THRESHOLD = 0.7
-_LOOKBACK_DAYS = 30
+#
+# 0.5 threshold + 90-day window is deliberately tight: news flow about a
+# single competitor theme produces strings of findings that cluster well
+# below 0.7 cosine (paraphrased headlines, different outlets covering
+# similar angles). With the prior 0.7/30d settings, that whole stack
+# updated the posterior as if every story were independent. 0.5/90d
+# treats the 5th headline on the same theme as ~half-weight evidence,
+# which is much closer to its real information content.
+_SIM_THRESHOLD = 0.5
+_LOOKBACK_DAYS = 90
 _MAX_NEIGHBOURS_SCANNED = 50
 
 

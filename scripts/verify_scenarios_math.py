@@ -82,6 +82,9 @@ def almost(a: float, b: float, tol: float = 1e-6) -> bool:
 # ── Pure math (no DB) ────────────────────────────────────────────────
 
 def _likelihood_table_for_tests() -> dict[tuple[str, str], float]:
+    # Mirrors scripts/scenarios_seed.json. Contradict values are reciprocals
+    # of the matching support values so equal-strength evidence cancels
+    # exactly on the log-odds line.
     return {
         ("support", "strong"): 3.0,
         ("support", "moderate"): 1.8,
@@ -89,9 +92,9 @@ def _likelihood_table_for_tests() -> dict[tuple[str, str], float]:
         ("neutral", "weak"): 1.0,
         ("neutral", "moderate"): 1.0,
         ("neutral", "strong"): 1.0,
-        ("contradict", "weak"): 0.8,
-        ("contradict", "moderate"): 0.55,
-        ("contradict", "strong"): 0.4,
+        ("contradict", "weak"): 1.0 / 1.2,
+        ("contradict", "moderate"): 1.0 / 1.8,
+        ("contradict", "strong"): 1.0 / 3.0,
     }
 
 
@@ -142,18 +145,17 @@ def test_pure_math():
           almost(pb["a"], expected_pa, tol=1e-9),
           f"got {pb['a']:.6f}, expected {expected_pa:.6f}")
 
-    # Strong support + strong contradict on the same target ~ prior.
+    # Strong support + strong contradict on the same target: with
+    # symmetric LRs (contradict/strong = 1/3) the log-odds cancel
+    # exactly, so the posterior equals the prior.
     ev_offset = [
         EvidenceInput("a", "support", "strong", 1.0, now),
         EvidenceInput("a", "contradict", "strong", 1.0, now),
     ]
     po = compute_posterior(prior_bin, ev_offset, LR, HL, now=now)
-    # log(3.0) + log(0.4) = log(1.2) — slight net positive on support side.
-    expected_net_lr = 3.0 * 0.4
-    expected_odds = (0.55 / 0.45) * expected_net_lr
-    expected_pa = expected_odds / (1 + expected_odds)
-    check("binary: support+contradict net to LR=1.2",
-          almost(po["a"], expected_pa, tol=1e-9))
+    check("binary: equal-strength support+contradict cancel out",
+          almost(po["a"], 0.55, tol=1e-9),
+          f"got {po['a']:.6f}")
 
     # Decay halves log-odds movement at one half-life.
     ev_old = [EvidenceInput("a", "support", "strong", 1.0, now - timedelta(days=HL))]
@@ -191,6 +193,25 @@ def test_pure_math():
     p_neut = compute_posterior(prior_bin, ev_neutral, LR, HL, now=now)
     check("neutral evidence: posterior == prior",
           almost(p_neut["a"], 0.55, tol=1e-9))
+
+    # Probability ceiling: a runaway stack of supportive evidence
+    # can't push the posterior past MAX_POSTERIOR (default 0.99).
+    # Without the ceiling, 50 strong-support findings on a binary
+    # predicate would push P→1.0 with no path back for contradiction.
+    from app.scenarios.posterior import MAX_POSTERIOR
+    ev_avalanche = [
+        EvidenceInput("a", "support", "strong", 1.0, now)
+        for _ in range(50)
+    ]
+    p_av = compute_posterior(prior_bin, ev_avalanche, LR, HL, now=now)
+    check("ceiling: 50 strong supports cap at MAX_POSTERIOR",
+          p_av["a"] <= MAX_POSTERIOR + 1e-9,
+          f"a={p_av['a']:.6f}, cap={MAX_POSTERIOR}")
+    check("ceiling: residual mass preserved on losing state",
+          p_av["b"] >= (1.0 - MAX_POSTERIOR) - 1e-9,
+          f"b={p_av['b']:.6f}")
+    check("ceiling: capped distribution still sums to 1",
+          almost(sum(p_av.values()), 1.0, tol=1e-9))
 
     # Evidence referencing an unknown state is silently skipped (config drift).
     ev_drift = [EvidenceInput("zzz", "support", "strong", 1.0, now)]
@@ -834,8 +855,8 @@ def test_dashboard_math():
     c_neutral = log_odds_contribution("neutral", "moderate", 1.0, now, LR, HL, now=now)
     check("contrib: neutral = 0.0", almost(c_neutral, 0.0, tol=1e-9))
     c_contradict = log_odds_contribution("contradict", "strong", 1.0, now, LR, HL, now=now)
-    check("contrib: contradict/strong = log(0.4) (negative)",
-          almost(c_contradict, math.log(0.4), tol=1e-9) and c_contradict < 0)
+    check("contrib: contradict/strong = -log(3) (mirrors support/strong)",
+          almost(c_contradict, math.log(1.0 / 3.0), tol=1e-9) and c_contradict < 0)
     c_unknown = log_odds_contribution("madeup", "wibble", 1.0, now, LR, HL, now=now)
     check("contrib: unknown LR returns 0 (no crash)", c_unknown == 0.0)
 

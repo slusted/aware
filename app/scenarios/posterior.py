@@ -126,6 +126,63 @@ def _read_cap() -> float:
 MAX_ABS_LOGIT_DELTA = _read_cap()
 
 
+# ─── Posterior probability ceiling ──────────────────────────────────────
+#
+# With no ceiling, a steady drip of supportive evidence pushes a
+# predicate's posterior asymptotically to 1.0 — arithmetically impossible
+# for new contradicting evidence to ever flip back, and visually
+# misleading on the dashboard. True Bayesian forecasting reserves
+# residual probability for "the evidence model itself could be wrong" /
+# "we're not seeing every relevant signal." A soft cap of 0.99 (i.e.
+# 1% residual on the losing state) operationalises that humility.
+#
+# Override via SCENARIOS_MAX_POSTERIOR env var. Clamped to (0.5, 1.0)
+# to prevent foot-guns. 1.0 disables the ceiling entirely.
+
+def _read_max_posterior() -> float:
+    raw = os.environ.get("SCENARIOS_MAX_POSTERIOR")
+    if not raw:
+        return 0.99
+    try:
+        v = float(raw)
+        if v <= 0.5 or v > 1.0:
+            return 0.99
+        return v
+    except ValueError:
+        return 0.99
+
+
+MAX_POSTERIOR = _read_max_posterior()
+
+
+def apply_probability_ceiling(probs: dict[str, float]) -> dict[str, float]:
+    """Cap any state at MAX_POSTERIOR; redistribute the excess
+    proportionally across the remaining states so the distribution
+    still sums to 1.0.
+
+    Single-pass is sufficient: at most one state can exceed
+    MAX_POSTERIOR at a time (they sum to 1), and bringing that state
+    down only adds mass elsewhere. Public so the scenario layer can
+    apply the same cap to scenario probabilities.
+    """
+    if not probs or MAX_POSTERIOR >= 1.0:
+        return probs
+    top_key = max(probs, key=probs.get)
+    top_p = probs[top_key]
+    if top_p <= MAX_POSTERIOR:
+        return probs
+    rest_total = 1.0 - top_p
+    if rest_total <= 0:
+        others = [k for k in probs if k != top_key]
+        if not others:
+            return probs
+        share = (1.0 - MAX_POSTERIOR) / len(others)
+        return {k: (MAX_POSTERIOR if k == top_key else share) for k in probs}
+    scale = (1.0 - MAX_POSTERIOR) / rest_total
+    return {k: (MAX_POSTERIOR if k == top_key else probs[k] * scale)
+            for k in probs}
+
+
 def _redundancy_multiplier(score: float | None) -> float:
     """Linear penalty: redundancy 0 → 1.0 (no penalty), 1 → 0.5
     (half-weight). Out-of-range / None values fall back to 1.0 so a
@@ -236,7 +293,7 @@ def compute_posterior(
         )
         logits[ev.target_state_key] += cap_logit_delta(weight)
 
-    return _softmax(logits)
+    return apply_probability_ceiling(_softmax(logits))
 
 
 def _softmax(logits: dict[str, float]) -> dict[str, float]:
@@ -301,7 +358,7 @@ def compute_scenario_probabilities(
             any_resolved = True
         log_unnorm[sc.key] = log_score if any_resolved else float("-inf")
 
-    return _softmax_no_renorm_check(log_unnorm)
+    return apply_probability_ceiling(_softmax_no_renorm_check(log_unnorm))
 
 
 def _softmax_no_renorm_check(log_unnorm: dict[str, float]) -> dict[str, float]:
