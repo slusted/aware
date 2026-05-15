@@ -362,6 +362,65 @@ def _latest_context(db: Session, scope: str) -> dict:
     }
 
 
+def _h_web_search(
+    db: Session,
+    user: User,
+    *,
+    query: str,
+    topic: str = "general",
+    since_days: int | None = None,
+    max_results: int = 5,
+    **_: Any,
+) -> dict:
+    """Live web search via Tavily — used when the watch's own data can't
+    answer the user (company off the watchlist, fresh news, general
+    context). Returns title/url/snippet plus a short content excerpt per
+    result. Tavily usage is metered to /usage automatically."""
+    if not os.environ.get("TAVILY_API_KEY", "").strip():
+        return {"error": "TAVILY_API_KEY is not set. Add it on /settings/keys."}
+    q = (query or "").strip()
+    if not q:
+        return {"error": "query is required"}
+    topic = topic if topic in ("general", "news") else "general"
+    max_results = max(1, min(int(max_results), 8))
+
+    from ..search_providers.tavily import search_tavily
+
+    try:
+        rows = search_tavily(
+            q,
+            search_depth="advanced",
+            topic=topic,
+            max_results=max_results,
+            days=since_days,
+            include_raw=True,
+        )
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+    EXCERPT = 1200
+    results = []
+    for r in rows:
+        content = r.get("content") or r.get("snippet") or ""
+        if isinstance(content, str) and len(content) > EXCERPT:
+            content = content[:EXCERPT].rstrip() + "…"
+        results.append({
+            "title": r.get("title", ""),
+            "url": r.get("url", ""),
+            "snippet": r.get("snippet", ""),
+            "content": content,
+            "score": r.get("score", 0),
+            "published": r.get("published", ""),
+        })
+    return {
+        "query": q,
+        "topic": topic,
+        "since_days": since_days,
+        "results": results,
+        "returned": len(results),
+    }
+
+
 def _h_get_skill_body(db: Session, user: User, *, name: str, **_: Any) -> dict:
     if name not in skills_module.KNOWN_SKILLS:
         return {"error": f"unknown skill: {name!r}"}
@@ -996,6 +1055,49 @@ TOOLS: list[Tool] = [
         description="Fetch the latest synthesised brief about our customers — what they want, how they're shifting.",
         input_schema={"type": "object", "properties": {}, "additionalProperties": False},
         handler=_h_get_customer_brief,
+        requires_role="viewer",
+    ),
+    Tool(
+        name="web_search",
+        description=(
+            "Live web search via Tavily — for questions the watch's own data can't "
+            "answer (company NOT on the watchlist, general industry context, fresh "
+            "news not yet captured as a finding). Returns title/url/snippet plus a "
+            "short content excerpt per result. Always cite the URL when you use a "
+            "result. Prefer the watch's internal tools (search_findings, "
+            "get_competitor_profile) FIRST for companies that are on the watchlist — "
+            "this tool exists for the gaps. topic='news' biases to recent articles; "
+            "since_days narrows the lookback window."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query. Be specific — include company name, what you want to know.",
+                },
+                "topic": {
+                    "type": "string",
+                    "enum": ["general", "news"],
+                    "description": "general = mixed web pages (default); news = recent articles only.",
+                },
+                "since_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 365,
+                    "description": "Optional freshness window. Omit for no restriction.",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 8,
+                    "description": "Number of results to return. Defaults to 5.",
+                },
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        handler=_h_web_search,
         requires_role="viewer",
     ),
     Tool(
